@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}{{ user.username }}'s Profile{% endblock %}
+{% block content %}
+    <div class="profile-container">
+        <h1>{{ user.username }}'s Profile</h1>
+        <div class="profile-picture">
+            {# Assuming profile_picture_url is just the filename e.g., 'my_pic.jpg' or 'default_profile_pic.png' #}
+            {# If it can be a full URL, logic might need adjustment #}
+            <img src="{{ url_for('static', filename='images/' + user.profile_picture_url) }}" alt="Profile Picture" width="150" height="150">
+        </div>
+        <div class="profile-info">
+            <p><strong>Username:</strong> {{ user.username }}</p>
+            <p><strong>Email:</strong> {{ user.email }}</p> {# Consider privacy for email #}
+            <p><strong>Bio:</strong> {{ user.bio if user.bio else 'No bio yet.' }}</p>
+        </div>
+
+        {# Optional: Link to edit profile if viewing your own profile #}
+        {% if current_user.is_authenticated and current_user.id == user.id %}
+            <a href="{{ url_for('main.edit_profile') }}">Edit Profile</a> {# edit_profile route to be created later #}
+        {% endif %}
+    </div>
+{% endblock %}
