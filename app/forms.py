@@ -32,3 +32,7 @@ class EditProfileForm(FlaskForm):
     bio = TextAreaField('Bio', validators=[Length(min=0, max=250)])
     profile_picture = FileField('Update Profile Picture', validators=[FileAllowed(['jpg', 'png', 'jpeg'], 'Images only!')])
     submit = SubmitField('Submit Changes')
+
+class PostForm(FlaskForm):
+    body = TextAreaField('What\'s on your mind?', validators=[DataRequired(), Length(min=1, max=500)])
+    submit = SubmitField('Post')

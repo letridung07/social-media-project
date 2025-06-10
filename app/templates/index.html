@@ -1,10 +1,20 @@
 {% extends "base.html" %}
-{% block title %}Home{% endblock %}
-{% block content %}
-    <h1>Welcome to My Flask App!</h1>
+
+{% block content %} {# Adjusted from app_content to content, and removed title block as per original example #}
+    <h1>Hi, {{ current_user.username if current_user.is_authenticated else "Guest" }}!</h1>
+
     {% if current_user.is_authenticated %}
-        <p>Hello, {{ current_user.username }}!</p>
+        <div>
+            <p><a href="{{ url_for('main.create_post') }}">Create a New Post</a></p>
+        </div>
+    {% endif %}
+
+    <h2>Recent Posts:</h2>
+    {% if posts %}
+        {% for post in posts %}
+            {% include '_post.html' %}
+        {% endfor %}
     {% else %}
-        <p>Please <a href="{{ url_for('main.login') }}">log in</a> or <a href="{{ url_for('main.register') }}">register</a>.</p>
+        <p>No posts yet. Be the first one or follow some users!</p>
     {% endif %}
 {% endblock %}

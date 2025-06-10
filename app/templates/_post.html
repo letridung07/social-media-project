@@ -1,0 +1,18 @@
+{# app/templates/_post.html #}
+<article class="post">
+    <div class="post-avatar">
+        <img src="{{ url_for('static', filename='images/' + post.author.profile_picture_url) }}" alt="{{ post.author.username }}'s profile picture" class="rounded-circle" width="40" height="40">
+    </div>
+    <div class="post-content">
+        <div class="post-author">
+            <a href="{{ url_for('main.profile', username=post.author.username) }}">{{ post.author.username }}</a>
+        </div>
+        <div class="post-timestamp">
+            <small>{{ post.timestamp.strftime('%Y-%m-%d %H:%M:%S') }} UTC</small>
+        </div>
+        <div class="post-body">
+            <p>{{ post.body }}</p>
+        </div>
+    </div>
+</article>
+<hr>

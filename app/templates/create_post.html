@@ -1,0 +1,12 @@
+{# app/templates/create_post.html #}
+{% extends "base.html" %}
+{% import "bootstrap/wtf.html" as wtf %} {# Assuming bootstrap-flask is used or wtf.html is styled similarly #}
+
+{% block content %} {# Adjusted from app_content to content #}
+    <h1>Create a New Post</h1>
+    <div class="row">
+        <div class="col-md-6">
+            {{ wtf.quick_form(form) }}
+        </div>
+    </div>
+{% endblock %}
