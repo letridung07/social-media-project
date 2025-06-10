@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Edit Profile{% endblock %}
+{% block content %}
+    <div class="form-container">
+        <h2>Edit Profile</h2>
+        {# Display current profile picture #}
+        <img src="{{ url_for('static', filename='images/' + current_user.profile_picture_url) }}" alt="Current Profile Picture" width="100" height="100" style="margin-bottom: 10px;">
+
+        <form method="POST" action="{{ url_for('main.edit_profile') }}" enctype="multipart/form-data">
+            {{ form.hidden_tag() }}
+            <fieldset class="form-group">
+                <legend class="border-bottom mb-4">Profile Info</legend>
+                <div class="form-group">
+                    {{ form.bio.label(class="form-control-label") }}
+                    {% if form.bio.errors %}
+                        {{ form.bio(class="form-control form-control-lg is-invalid") }}
+                        <div class="invalid-feedback">
+                            {% for error in form.bio.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        {{ form.bio(class="form-control form-control-lg") }}
+                    {% endif %}
+                </div>
+                <div class="form-group">
+                    {{ form.profile_picture.label(class="form-control-label") }}
+                    {{ form.profile_picture(class="form-control-file") }}
+                    {% if form.profile_picture.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.profile_picture.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+            </fieldset>
+            <div class="form-group">
+                {{ form.submit(class="btn btn-primary") }}
+            </div>
+        </form>
+    </div>
+{% endblock %}
