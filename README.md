@@ -1,6 +1,6 @@
 # Flask Social Platform
 
-A social media platform built with Flask, featuring user authentication, profiles, content posting, user following, likes, and comments. The application also features a refreshed, modern user interface for an enhanced experience.
+A social media platform built with Flask, featuring user authentication, profiles, content posting, user following, likes, comments, and real-time chat. The application also features a refreshed, modern user interface for an enhanced experience.
 
 ## Features
 
@@ -25,9 +25,43 @@ A social media platform built with Flask, featuring user authentication, profile
     *   Like counts are displayed for each post.
     *   Users can add comments to posts.
     *   Comments are displayed chronologically under each post, showing the author and timestamp.
+*   **Real-time Chat:** (See dedicated section below for more details)
+    *   One-on-one conversations.
+    *   Real-time messaging with Socket.IO.
+    *   Typing indicators.
+    *   Read receipts.
+    *   Basic emoji support.
 *   CSRF Protection for forms.
 *   Default profile picture for new users.
-*   Basic unit tests for authentication, profile management, posts, following, and engagement (likes/comments).
+*   Basic unit tests for authentication, profile management, posts, following, engagement (likes/comments), and chat.
+
+## Real-time Chat
+
+The platform includes a real-time chat feature allowing users to engage in one-on-one conversations.
+
+**Key Chat Features:**
+
+*   **One-on-one Conversations:** Users can initiate private chats with other users.
+*   **Real-time Messaging:** Messages are sent and received instantly without needing to refresh the page, powered by Flask-SocketIO.
+*   **Typing Indicators:** Users can see when the other person in the conversation is typing a message.
+*   **Read Receipts:** Sent messages display "✓ Sent" status, which updates to "✓ Read" when the recipient has viewed the message.
+*   **Emoji Support (Basic):** A simple emoji picker allows users to insert common emojis into their messages.
+*   **Message History:** Past messages in a conversation are loaded and displayed.
+*   **Notifications:** New chat messages trigger real-time notifications for the recipient (integrated with the existing notification system).
+
+**Chat Screenshots:**
+
+*   **Conversation List View:**
+    `[Screenshot of Conversation List]`
+    *Description: Shows a list of active conversations for the logged-in user, typically ordered by the most recent activity.*
+
+*   **Chat View:**
+    `[Screenshot of Chat View]`
+    *Description: Displays the message history with another user. Features include dynamically grouped messages, typing indicators when the other user is active, and read receipts for sent messages.*
+
+*   **Chat View with Emoji Panel Open:**
+    `[Screenshot of Chat View with Emoji Panel]`
+    *Description: Shows the emoji panel open, allowing users to easily select and insert emojis into their chat messages.*
 
 ## Frontend Technologies & Styling
 
@@ -39,17 +73,18 @@ The frontend of this platform is built using:
     *   A unique color palette.
     *   The "Lato" Google Font for typography.
     *   Customized styling for Bootstrap components (cards, buttons, forms) to create a distinct look and feel.
+*   **JavaScript & Socket.IO Client:** For real-time features like chat, notifications, typing indicators, and read receipts.
 
 ## Screenshots
 
 *(Coming Soon: The following screenshots will demonstrate key features of the application.)*
 
-*   **User Registration and Login:** Shows the clean and intuitive interface for account creation and access.
-*   **User Profile Page:** Highlights how user information (bio, profile picture) is displayed.
-*   **Content Feed:** Illustrates the main content feed, showcasing posts from followed users.
-*   **Creating a Post:** Demonstrates the process of composing and sharing a new post.
-*   **Post Engagement:** Shows how users can like and comment on posts.
-*   **Chat Interface:** (If applicable and screenshots are planned for chat) Shows the direct messaging system.
+*   User Registration and Login
+*   User Profile Page
+*   Content Feed
+*   Creating a Post
+*   Post Engagement
+*   *(Chat screenshots are now in the dedicated "Real-time Chat" section)*
 
 ## Getting Started
 
@@ -119,12 +154,15 @@ Follow these instructions to get a copy of the project up and running on your lo
 ├── app/                  # Main application package
 │   ├── static/           # Static files (CSS, JS, images)
 │   │   ├── css/
+│   │   ├── js/           # JavaScript files (e.g., chat_page.js, notifications.js)
 │   │   └── images/
 │   ├── templates/        # HTML templates
+│   │   └── chat/         # Chat specific templates
 │   ├── __init__.py       # Application factory, initializes Flask app and extensions
 │   ├── forms.py          # WTForms definitions
 │   ├── models.py         # SQLAlchemy database models
 │   ├── routes.py         # Application routes (views)
+│   ├── events.py         # Socket.IO event handlers
 │   └── utils.py          # Utility functions (e.g., saving pictures)
 ├── tests/                # Unit tests
 │   ├── __init__.py
@@ -132,7 +170,8 @@ Follow these instructions to get a copy of the project up and running on your lo
 │   ├── test_profile.py   # Profile management tests
 │   ├── test_posts.py     # Tests for creating and viewing posts
 │   ├── test_follow.py    # Tests for following/unfollowing users and feed generation
-│   └── test_engagement.py # Tests for liking/unliking posts and adding/viewing comments
+│   ├── test_engagement.py # Tests for liking/unliking posts and adding/viewing comments
+│   └── test_chat.py      # Chat functionality tests
 ├── venv/                 # Python virtual environment (if created with this name)
 ├── .gitignore            # Specifies intentionally untracked files that Git should ignore
 ├── config.py             # Configuration settings (e.g., SECRET_KEY, database URI)
@@ -140,6 +179,7 @@ Follow these instructions to get a copy of the project up and running on your lo
 ├── requirements.txt      # Python package dependencies
 └── run.py                # Script to run the Flask development server
 ```
+*(Note: Project structure updated to reflect chat-related files like `events.py`, `js/chat_page.js`, and `templates/chat/`)*
 
 ## Contributing
 
@@ -163,4 +203,3 @@ We welcome contributions to the Flask Social Platform! Here are some ways you ca
     9.  Open a pull request against our `main` (or `develop`) branch.
 
 We'll do our best to review contributions in a timely manner.
-```

@@ -7,17 +7,49 @@
     <div id="chat-messages-container" class="mb-3 p-3 border rounded" style="height: 400px; overflow-y: auto;">
         {% if messages %}
             {% for message in messages %}
-                <div class="chat-message mb-2 {% if message.sender_id == current_user.id %}text-right{% else %}text-left{% endif %}">
+                {% set show_sender = loop.first or message.sender_id != loop.previtem.sender_id %}
+                <div class="chat-message mb-2 {% if message.sender_id == current_user.id %}text-right{% else %}text-left{% endif %}"
+                     data-message-id="{{ message.id }}"
+                     data-sender-id="{{ message.sender_id }}"
+                     data-timestamp="{{ message.timestamp.isoformat() ~ 'Z' }}"> {# Add ISO timestamp for JS #}
+
+                    {% if show_sender %}
                     <small class="font-weight-bold">{{ message.sender.username }}</small>
+                    {% else %}
+                    {# Optionally add some visual cue for grouped message, e.g., smaller margin. Using a class is better. #}
+                    <div class="grouped-message-spacer"></div>
+                    {% endif %}
+
                     <div class="message-body p-2 d-inline-block rounded {% if message.sender_id == current_user.id %}bg-primary text-white{% else %}bg-light{% endif %}">
                         {{ message.body }}
                     </div>
-                    <small class="d-block text-muted">{{ message.timestamp.strftime('%Y-%m-%d %H:%M:%S') }} UTC</small>
+                    <small class="d-block text-muted message-timestamp" data-utc-timestamp="{{ message.timestamp.isoformat() ~ 'Z' }}">
+                        {{ message.timestamp.strftime('%Y-%m-%d %H:%M:%S') }} UTC {# Placeholder, will be replaced by JS #}
+                    </small>
+                    {% if message.sender_id == current_user.id %}
+                        <span class="read-receipt-status" data-message-id="{{ message.id }}">
+                            {% if message.is_read %}<small class="text-muted">✓ Read</small>{% else %}<small class="text-muted">✓ Sent</small>{% endif %}
+                            {% endif %}
+                        </span>
+                    {% endif %}
                 </div>
             {% endfor %}
         {% else %}
             <p id="no-messages-yet">No messages in this conversation yet. Send the first one!</p>
         {% endif %}
+    </div>
+
+    <!-- Typing Indicator Area -->
+    <div id="typing-indicator-container" class="mb-2" style="min-height: 20px;">
+        <!-- Typing indicators will appear here -->
+    </div>
+
+    <!-- Emoji Picker -->
+    <div id="emoji-picker-container" class="mb-1 d-flex justify-content-end">
+        <button type="button" id="emoji-toggle-button" class="btn btn-sm btn-outline-secondary">😊</button>
+    </div>
+    <div id="emoji-panel" class="border rounded p-2 mb-2" style="display: none;">
+        <!-- Emojis will be populated here by JS -->
     </div>
 
     <form id="send-message-form">

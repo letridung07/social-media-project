@@ -157,3 +157,71 @@ footer p {
   white-space: nowrap;
   border: 0;
 }
+
+/* Chat message grouping spacer */
+.grouped-message-spacer {
+    margin-top: -10px; /* Adjust as needed for desired spacing */
+    /* For a more subtle approach, you might reduce padding/margin of the .chat-message itself when grouped */
+}
+
+/* Chat Specific Styles */
+#chat-messages-container {
+    scroll-behavior: smooth;
+    /* Consider a subtle background or border if needed, but Bootstrap's "border rounded" is already applied */
+    /* background-color: #fdfdfd; */
+}
+
+.chat-message .message-body {
+    border-radius: 15px; /* Softer look for message bubbles */
+    padding: 8px 12px; /* Custom padding */
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1); /* Subtle shadow for depth */
+    max-width: 80%; /* Prevent messages from being too wide */
+    word-wrap: break-word; /* Ensure long words without spaces break */
+}
+
+/* Outgoing messages specific styling (if .bg-primary and .text-white are not enough) */
+/* .chat-message.text-right .message-body { } */
+
+/* Incoming messages specific styling (if .bg-light is not enough) */
+/* .chat-message.text-left .message-body { } */
+
+.message-timestamp,
+.read-receipt-status small {
+    font-size: 0.75rem; /* Smaller text for metadata */
+    color: #6c757d; /* Bootstrap's default muted color, usually good */
+}
+
+#typing-indicator-container {
+    min-height: 20px; /* Already set inline, but good to have in CSS */
+    /* font-style: italic; is set by <small><em> in JS, but can be enforced here */
+}
+
+#emoji-picker-container {
+    /* Styles for the container of the emoji button, if needed */
+}
+
+#emoji-panel {
+    max-height: 150px;
+    overflow-y: auto;
+    display: flex; /* Enable flex for gap and alignment */
+    flex-wrap: wrap; /* Allow emojis to wrap */
+    gap: 5px; /* Spacing between emoji options */
+    /* display: none; is handled by JS initially and on toggle */
+}
+
+.emoji-option {
+    font-size: 1.25rem; /* Make emojis a bit larger */
+    border-radius: 4px; /* Slight rounding for hover effect */
+    transition: background-color 0.2s ease-in-out;
+    /* p-1 m-1 classes are already applied in JS, but can be defined here for consistency */
+    padding: 0.25rem;
+    margin: 0.25rem;
+}
+
+.emoji-option:hover {
+    background-color: #e9ecef; /* Bootstrap's light gray, good for hover */
+}
+
+#send-message-form .input-group {
+    margin-top: 1rem; /* Add some space above the input form */
+}
