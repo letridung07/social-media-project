@@ -1,6 +1,6 @@
 # Flask Social Platform
 
-A basic social media platform built with Flask, featuring user authentication, profiles, and more.
+A social media platform built with Flask, featuring user authentication, profiles, content posting, user following, likes, and comments.
 
 ## Features
 
@@ -11,9 +11,19 @@ A basic social media platform built with Flask, featuring user authentication, p
 *   User profile editing:
     *   Update biography
     *   Upload new profile picture (supports JPG, PNG, JPEG)
-*   Basic unit tests for authentication and profile management modules.
+*   **Content Posting:**
+    *   Users can create and share text-based posts.
+*   **Following System:**
+    *   Users can follow and unfollow other users.
+    *   Personalized feed on the homepage displaying posts from followed users and own posts.
+*   **Post Engagement:**
+    *   Users can like and unlike posts.
+    *   Like counts are displayed for each post.
+    *   Users can add comments to posts.
+    *   Comments are displayed chronologically under each post, showing the author and timestamp.
 *   CSRF Protection for forms.
 *   Default profile picture for new users.
+*   Basic unit tests for authentication, profile management, posts, following, and engagement (likes/comments).
 
 ## Getting Started
 
@@ -70,7 +80,7 @@ Follow these instructions to get a copy of the project up and running on your lo
 
 ### Running Tests
 
-1.  Ensure your virtual environment is activated and development dependencies (if any specific ones were added for testing, though current tests use built-in `unittest` and project dependencies) are installed.
+1.  Ensure your virtual environment is activated and development dependencies are installed.
 2.  From the project root directory, run the tests:
     ```bash
     python3 -m unittest discover tests
@@ -93,7 +103,10 @@ Follow these instructions to get a copy of the project up and running on your lo
 ├── tests/                # Unit tests
 │   ├── __init__.py
 │   ├── test_auth.py      # Authentication tests
-│   └── test_profile.py   # Profile management tests
+│   ├── test_profile.py   # Profile management tests
+│   ├── test_posts.py     # Tests for creating and viewing posts
+│   ├── test_follow.py    # Tests for following/unfollowing users and feed generation
+│   └── test_engagement.py # Tests for liking/unliking posts and adding/viewing comments
 ├── venv/                 # Python virtual environment (if created with this name)
 ├── .gitignore            # Specifies intentionally untracked files that Git should ignore
 ├── config.py             # Configuration settings (e.g., SECRET_KEY, database URI)
@@ -106,3 +119,4 @@ Follow these instructions to get a copy of the project up and running on your lo
 
 Contributions are welcome! Please feel free to submit a pull request or open an issue.
 (Further details on contributing can be added here if desired).
+```
