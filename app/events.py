@@ -2,7 +2,7 @@ from flask_socketio import join_room, leave_room, emit
 from flask_login import current_user
 from flask import request
 from app import socketio, db # Assuming socketio and db are initialized in app/__init__.py
-from app.models import Conversation, ChatMessage, User
+from app.models import Conversation, ChatMessage, User, Notification # Import Notification
 from datetime import datetime, timezone
 
 @socketio.on('connect')
@@ -81,6 +81,27 @@ def handle_send_chat_message(data):
 
     conversation.last_updated = message.timestamp
     db.session.commit()
+
+    # Create notifications for other participants
+    for participant in conversation.participants:
+        if participant.id != current_user.id:
+            notification = Notification(
+                recipient_id=participant.id,
+                actor_id=current_user.id,
+                type='new_chat_message',
+                related_post_id=None,  # Explicitly None for chat messages
+                related_conversation_id=conversation.id # Link to the conversation
+            )
+            db.session.add(notification)
+            # Emit real-time notification to the specific participant
+            socketio.emit('new_notification', {
+                'message': f'{current_user.username} sent you a new chat message.',
+                'type': 'new_chat_message',
+                'actor_username': current_user.username,
+                'sender_id': current_user.id,
+                'conversation_id': conversation.id
+            }, room=str(participant.id))
+    db.session.commit() # Commit notifications
 
     emit_data = {
         'conversation_id': conversation.id,

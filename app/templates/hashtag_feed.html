@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <h1>{{ title }}</h1> {# Title is passed from the route #}
+
+    {% if hashtag and posts %}
+        {# Hashtag exists and has posts #}
+        <p class="lead">Displaying posts tagged with
+            <span class="badge badge-primary">#{{ hashtag.tag_text }}</span>.
+        </p>
+        {% for post in posts %}
+            {% include "_post.html" %}
+        {% endfor %}
+    {% elif hashtag %}
+        {# Hashtag exists but has no posts #}
+        <p>No posts found yet for the tag
+            <span class="badge badge-primary">#{{ hashtag.tag_text }}</span>.
+        </p>
+    {% else %}
+        {# Hashtag does not exist (query was made but no hashtag object found) #}
+        {# The title, set by the route, already indicates "No posts found for #{{ query }}" #}
+        {# query is the original tag_text from the URL, hashtag object is None here #}
+        <p>Please try searching for a different tag, or explore other posts.</p>
+    {% endif %}
+</div>
+{% endblock content %}

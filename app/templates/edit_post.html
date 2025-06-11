@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <h1>Edit Post</h1>
+    <div class="row">
+        <div class="col-md-6">
+            <form method="POST" action="" enctype="multipart/form-data"> {# Changed action to "" #}
+                {{ form.hidden_tag() }} {# CSRF token #}
+
+                <div class="form-group">
+                    {{ form.body.label(class="form-control-label") }}
+                    {{ form.body(class="form-control", rows="3") }}
+                    {% if form.body.errors %}
+                        {% for error in form.body.errors %}
+                            <span class="text-danger">{{ error }}</span><br>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+
+                {# Display current image if exists #}
+                {% if post.image_filename %}
+                    <div class="mb-2">
+                        <p>Current Image:</p>
+                        <img src="{{ url_for('static', filename='post_images/' + post.image_filename) }}" alt="Current post image" style="max-width: 300px; height: auto; border-radius: 8px; display: block;">
+                    </div>
+                {% endif %}
+
+                <div class="form-group">
+                    {{ form.image_file.label(class="form-control-label") }}
+                    {{ form.image_file(class="form-control-file") }}
+                    {% if form.image_file.errors %}
+                        {% for error in form.image_file.errors %}
+                            <span class="text-danger">{{ error }}</span><br>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+
+                {# Display current video if exists #}
+                {% if post.video_filename %}
+                    <div class="mb-2">
+                        <p>Current Video:</p>
+                        <video width="300" controls>
+                            <source src="{{ url_for('static', filename='videos/' + post.video_filename) }}" type="video/mp4">
+                            Your browser does not support the video tag.
+                        </video>
+                    </div>
+                {% endif %}
+
+                <div class="form-group">
+                    {{ form.video_file.label(class="form-control-label") }}
+                    {{ form.video_file(class="form-control-file") }}
+                    {% if form.video_file.errors %}
+                        {% for error in form.video_file.errors %}
+                            <span class="text-danger">{{ error }}</span><br>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+
+                <div class="form-group">
+                    {{ form.submit(class="btn btn-primary", value="Save Changes") }} {# Changed submit button text #}
+                </div>
+            </form>
+        </div>
+    </div>
+{% endblock %}

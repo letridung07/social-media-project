@@ -33,6 +33,16 @@
             </div>
         {% endif %}
 
+        {% if post.hashtags %}
+            <div class="post-hashtags mt-2 mb-2">
+                {% for hashtag in post.hashtags %}
+                    <a href="{{ url_for('main.hashtag_feed', tag_text=hashtag.tag_text) }}" class="badge badge-info mr-1" style="text-decoration: none; color: white; background-color: #17a2b8;"> {# badge-info might need explicit styling for anchor #}
+                        #{{ hashtag.tag_text }}
+                    </a>
+                {% endfor %}
+            </div>
+        {% endif %}
+
         <div class="post-actions mb-2"> {# Added mb-2 for spacing #}
             <small>{{ post.like_count() }} like{% if post.like_count() != 1 %}s{% endif %}</small>
             {% if current_user.is_authenticated %}
@@ -47,6 +57,17 @@
                         <button type="submit" class="btn btn-link btn-sm p-0">Like</button>
                     </form>
                 {% endif %}
+            {% endif %}
+
+            {# Edit and Delete buttons for post author #}
+            {% if current_user.is_authenticated and current_user == post.author %}
+                <div style="display: inline-block; margin-left: 15px;"> {# Wrapper for spacing and inline layout #}
+                    <a href="{{ url_for('main.edit_post', post_id=post.id) }}" class="btn btn-sm btn-outline-secondary">Edit</a>
+                    <form action="{{ url_for('main.delete_post', post_id=post.id) }}" method="POST" style="display: inline; margin-left: 5px;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token else '' }}"/>
+                        <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Are you sure you want to delete this post?');">Delete</button>
+                    </form>
+                </div>
             {% endif %}
         </div>
 

@@ -2,6 +2,8 @@ from app import db
 from flask_login import UserMixin
 from passlib.hash import sha256_crypt
 from datetime import datetime, timezone
+from itsdangerous import TimedJSONWebSignatureSerializer as Serializer
+from flask import current_app
 
 # Define the association table for followers
 followers = db.Table('followers',
@@ -15,6 +17,12 @@ conversation_participants = db.Table('conversation_participants',
     db.Column('conversation_id', db.Integer, db.ForeignKey('conversations.id'), primary_key=True)
 )
 
+# Define the association table for post_hashtags
+post_hashtags = db.Table('post_hashtags',
+    db.Column('post_id', db.Integer, db.ForeignKey('post.id'), primary_key=True),
+    db.Column('hashtag_id', db.Integer, db.ForeignKey('hashtag.id'), primary_key=True)
+)
+
 class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(64), index=True, unique=True, nullable=False)
@@ -22,6 +30,7 @@ class User(db.Model, UserMixin):
     password_hash = db.Column(db.String(256), nullable=False)
     bio = db.Column(db.String(250), nullable=True)
     profile_picture_url = db.Column(db.String(200), nullable=True, default='default_profile_pic.png')
+    is_admin = db.Column(db.Boolean, nullable=False, default=False)
 
     # Relationship to Post
     posts = db.relationship('Post', backref='author', lazy='dynamic')
@@ -73,6 +82,20 @@ class User(db.Model, UserMixin):
         own_posts_query = Post.query.filter_by(user_id=self.id)
         return followed_posts_query.union(own_posts_query).order_by(Post.timestamp.desc())
 
+    def get_reset_password_token(self, expires_sec=1800):
+        s = Serializer(current_app.config['SECRET_KEY'], expires_in=expires_sec)
+        return s.dumps({'user_id': self.id}).decode('utf-8')
+
+    @staticmethod
+    def verify_reset_password_token(token):
+        s = Serializer(current_app.config['SECRET_KEY'])
+        try:
+            data = s.loads(token)
+            user_id = data.get('user_id')
+        except Exception: # Catches expired signature, bad signature, etc.
+            return None
+        return User.query.get(user_id)
+
 class Post(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     body = db.Column(db.Text, nullable=False)
@@ -88,6 +111,13 @@ class Post(db.Model):
     likes = db.relationship('Like', backref='post', lazy='dynamic', cascade='all, delete-orphan')
     # To get comments in ascending order by timestamp by default when accessing post.comments
     comments = db.relationship('Comment', backref='commented_post', lazy='dynamic', cascade='all, delete-orphan', order_by='Comment.timestamp.asc()')
+
+    # Relationship to Hashtags (many-to-many)
+    hashtags = db.relationship(
+        'Hashtag', secondary=post_hashtags,
+        backref=db.backref('posts', lazy='dynamic'), # Creates 'hashtag.posts'
+        lazy='dynamic' # Allows querying on post.hashtags
+    )
 
     def __repr__(self):
         return f'<Post {self.body[:50]}...>'
@@ -125,6 +155,14 @@ class Comment(db.Model):
     def __repr__(self):
         return f'<Comment {self.body[:50]}...>'
 
+class Hashtag(db.Model):
+    __tablename__ = 'hashtag' # Explicit table name
+    id = db.Column(db.Integer, primary_key=True)
+    tag_text = db.Column(db.String(100), unique=True, nullable=False, index=True)
+
+    def __repr__(self):
+        return f'<Hashtag {self.tag_text}>'
+
 class Notification(db.Model):
     __tablename__ = 'notifications'
     id = db.Column(db.Integer, primary_key=True)
@@ -132,6 +170,7 @@ class Notification(db.Model):
     actor_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False) # User who triggered the notification
     type = db.Column(db.String(50), nullable=False)  # e.g., 'like', 'comment', 'follow'
     related_post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=True)
+    related_conversation_id = db.Column(db.Integer, db.ForeignKey('conversations.id'), nullable=True)
     # related_comment_id could be added if direct linking to comments is desired
     timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
     is_read = db.Column(db.Boolean, default=False, nullable=False)
@@ -140,6 +179,7 @@ class Notification(db.Model):
     recipient = db.relationship('User', foreign_keys=[recipient_id], backref=db.backref('notifications_received', lazy='dynamic'))
     actor = db.relationship('User', foreign_keys=[actor_id], backref=db.backref('notifications_sent', lazy='dynamic'))
     related_post = db.relationship('Post', foreign_keys=[related_post_id], backref=db.backref('related_notifications', lazy='dynamic'))
+    related_conversation = db.relationship('Conversation', foreign_keys=[related_conversation_id], lazy='joined')
 
     def __repr__(self):
         return f'<Notification {self.type} for User ID {self.recipient_id} by User ID {self.actor_id}>'
