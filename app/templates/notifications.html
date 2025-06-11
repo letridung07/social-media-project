@@ -23,6 +23,12 @@
                             <a href="{{ url_for('main.profile', username=notification.actor.username) }}">{{ notification.actor.username }}</a>
                             sent you a new message.
                             <a href="{{ url_for('main.view_conversation', conversation_id=notification.related_conversation_id) }}">View chat</a>.
+                        {% elif notification.type.startswith('like_milestone_') %}
+                            {% set parts = notification.type.split('_') %}
+                            {% set milestone_count = parts[-1] if parts|length > 2 else 'a' %} {# Extracts '10' from 'like_milestone_10' #}
+                            <a href="{{ url_for('main.profile', username=notification.actor.username) }}">{{ notification.actor.username }}</a>
+                            helped your <a href="{{ url_for('main.profile', username=notification.related_post.author.username) }}#post-{{ notification.related_post.id }}">post</a>
+                            reach {{ milestone_count }} likes!
                         {% else %}
                             A new notification. <!-- Generic fallback -->
                         {% endif %}

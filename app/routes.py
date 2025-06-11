@@ -11,6 +11,8 @@ from app.email_utils import send_password_reset_email # Import email utility
 
 main = Blueprint('main', __name__)
 
+LIKE_MILESTONES = [10, 50, 100, 250, 500, 1000]
+
 # Helper function for processing hashtags
 def process_hashtags(post_body, post_object):
     # Clear existing hashtags for the post (important for edits)
@@ -411,19 +413,53 @@ def like_post(post_id): # Renamed function to avoid conflict with Like model
     else:
         like = Like(user_id=current_user.id, post_id=post.id)
         db.session.add(like)
-        db.session.commit()
+        db.session.commit() # Commit the like first to update post.like_count()
         flash('You liked the post!', 'success')
 
-        # Notification and event for like
+        # Notification and event for like (and milestones)
         if post.author.id != current_user.id:
-            notification = Notification(
+            # Standard 'like' notification
+            std_like_notification = Notification(
                 recipient_id=post.author.id,
                 actor_id=current_user.id,
                 type='like',
                 related_post_id=post.id
             )
-            db.session.add(notification)
+            db.session.add(std_like_notification)
+            # Commit the standard 'like' notification first if it's the only one or before milestone processing
+            # This ensures its availability if milestone logic depends on it, though it doesn't directly.
+            # More importantly, it makes its emission happen after its commit.
+
+            # db.session.add(std_like_notification) # This was duplicated and part of the syntax error source
+
+            # Buffer for milestone notifications to be created
+            # new_milestone_notifications_to_emit = [] # Not strictly needed if we iterate milestones_hit_this_like
+            milestones_hit_this_like = [] # To store (milestone_obj, milestone_count)
+
+            current_like_count = post.like_count()
+            for milestone_val in LIKE_MILESTONES:
+                if current_like_count == milestone_val:
+                    existing_milestone_notif = Notification.query.filter_by(
+                        recipient_id=post.author.id,
+                        related_post_id=post.id,
+                        type=f'like_milestone_{milestone_val}'
+                    ).first()
+                    if not existing_milestone_notif:
+                        milestone_notif = Notification(
+                            recipient_id=post.author.id,
+                            actor_id=current_user.id,
+                            type=f'like_milestone_{milestone_val}',
+                            related_post_id=post.id
+                        )
+                        db.session.add(milestone_notif)
+                        # Prepare data for emit, but don't emit yet
+                        milestones_hit_this_like.append({'milestone_obj': milestone_notif, 'milestone_count': milestone_val})
+
+            # Commit all new notifications (standard like + any milestones) together
             db.session.commit()
+
+            # Now emit events after commit
+            # Standard like notification (if post author is not current user)
             socketio.emit('new_notification',
                           {'message': f'{current_user.username} liked your post.',
                            'type': 'like',
@@ -432,6 +468,20 @@ def like_post(post_id): # Renamed function to avoid conflict with Like model
                            'post_author_username': post.author.username
                            },
                           room=str(post.author.id))
+
+            # Milestone notifications
+            for item in milestones_hit_this_like:
+                # milestone_notif_obj = item['milestone_obj'] # Object reference if needed later
+                milestone_count = item['milestone_count']
+                socketio.emit('new_notification',
+                              {'message': f"Your post '{post.body[:30]}{'...' if len(post.body) > 30 else ''}' reached {milestone_count} likes!",
+                               'type': f'like_milestone_{milestone_count}',
+                               'actor_username': current_user.username,
+                               'post_id': post.id,
+                               'post_author_username': post.author.username,
+                               'milestone_count': milestone_count
+                               },
+                              room=str(post.author.id))
 
     # Consider redirecting to request.referrer if available and safe, otherwise index or post permalink
     return redirect(request.referrer or url_for('main.index'))
@@ -470,10 +520,10 @@ def add_comment(post_id):
                 # Consider adding related_comment_id=comment.id if useful
             )
             db.session.add(notification)
-            db.session.commit()
-            socketio.emit('new_notification',
+            db.session.commit() # Commit notification
+            socketio.emit('new_notification', # Emit after commit
                           {'message': f'{current_user.username} commented on your post.',
-                           'type': 'comment',
+                           'type': 'comment', # notification.type
                            'actor_username': current_user.username,
                            'post_id': post.id,
                            'post_author_username': post.author.username,

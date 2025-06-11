@@ -87,6 +87,13 @@ document.addEventListener('DOMContentLoaded', function () {
                         sent you a new message.
                         <a href="/chat/${data.conversation_id}">View chat</a>.
                     `;
+                } else if (data.type && data.type.startsWith('like_milestone_')) {
+                    // The message is pre-formatted from the backend for socket events
+                    contentHTML = `
+                        <a href="${userProfileBaseUrl}${data.actor_username}">${data.actor_username}</a>
+                        helped your <a href="${postBaseUrl}${data.post_author_username}#post-${data.post_id}">post</a>
+                        reach ${data.milestone_count} likes!
+                    `;
                 } else {
                     contentHTML = 'A new notification.'; // Generic fallback
                 }
@@ -117,6 +124,15 @@ document.addEventListener('DOMContentLoaded', function () {
                 browserNotification.onclick = function() {
                     window.location.href = '/chat/' + data.conversation_id;
                 };
+            } else if (data.type && data.type.startsWith('like_milestone_')) {
+                browserNotification = new Notification("Post Milestone Reached!", {
+                    body: data.message, // e.g., "Your post '...' reached 10 likes!"
+                    // icon: "..." // Optional: milestone icon
+                });
+                browserNotification.onclick = function() {
+                    // Link to the post itself
+                    window.location.href = `${postBaseUrl}${data.post_author_username}#post-${data.post_id}`;
+                };
             } else { // For other types of notifications like 'like', 'comment', 'follow'
                 browserNotification = new Notification("New Notification", {
                     body: data.message || "You have a new notification."
@@ -139,6 +155,14 @@ document.addEventListener('DOMContentLoaded', function () {
                         });
                         browserNotification.onclick = function() {
                             window.location.href = '/chat/' + data.conversation_id;
+                        };
+                    } else if (data.type && data.type.startsWith('like_milestone_')) {
+                        browserNotification = new Notification("Post Milestone Reached!", {
+                            body: data.message,
+                            // icon: "..." // Optional: milestone icon
+                        });
+                        browserNotification.onclick = function() {
+                            window.location.href = `${postBaseUrl}${data.post_author_username}#post-${data.post_id}`;
                         };
                     } else {
                         browserNotification = new Notification("New Notification", {
