@@ -3,7 +3,7 @@ from flask_login import login_user, current_user, logout_user, login_required
 from app import db
 from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm
 from app.models import User, Post, Like, Comment
-from app.utils import save_picture
+from app.utils import save_picture, save_post_image
 
 main = Blueprint('main', __name__)
 
@@ -98,11 +98,21 @@ def edit_profile():
 def create_post():
     form = PostForm()
     if form.validate_on_submit():
-        post = Post(body=form.body.data, author=current_user)
+        image_filename_to_save = None # Initialize
+        if form.image_file.data:
+            try:
+                image_filename_to_save = save_post_image(form.image_file.data)
+            except Exception as e:
+                # Log the error e (e.g., using current_app.logger.error(f"Image upload error: {e}"))
+                flash('An error occurred while uploading the image. Please try a different image or contact support.', 'danger')
+                return render_template('create_post.html', title='Create Post', form=form) # Re-render form
+
+        # Create Post object, including the image_filename if one was saved
+        post = Post(body=form.body.data, author=current_user, image_filename=image_filename_to_save)
         db.session.add(post)
         db.session.commit()
         flash('Your post is now live!', 'success')
-        return redirect(url_for('main.index')) # Or redirect to profile page
+        return redirect(url_for('main.index'))
     return render_template('create_post.html', title='Create Post', form=form)
 
 @main.route('/follow/<username>', methods=['POST']) # Use POST as it changes state

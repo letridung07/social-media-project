@@ -35,6 +35,9 @@ class EditProfileForm(FlaskForm):
 
 class PostForm(FlaskForm):
     body = TextAreaField('What\'s on your mind?', validators=[DataRequired(), Length(min=1, max=500)])
+    image_file = FileField('Upload Image (Optional)', validators=[
+        FileAllowed(['jpg', 'png', 'jpeg', 'gif'], 'Images only!')
+    ]) # New field
     submit = SubmitField('Post')
 
 class CommentForm(FlaskForm):

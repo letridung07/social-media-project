@@ -98,8 +98,9 @@ class AuthTestCase(unittest.TestCase):
         # Login
         login_response = self._login_user(self.test_user_email, self.test_user_password)
         self.assertEqual(login_response.status_code, 200) # Redirects to index
-        self.assertIn(b'Welcome to My Flask App!', login_response.data) # Check for index page content
-        self.assertIn(bytes(f'Hello, {self.test_user_username}!', 'utf-8'), login_response.data)
+        self.assertIn(bytes(f'Hi, {self.test_user_username}!', 'utf-8'), login_response.data) # Updated
+        self.assertNotIn(b'Welcome to My Flask App!', login_response.data)
+        self.assertNotIn(bytes(f'Hello, {self.test_user_username}!', 'utf-8'), login_response.data)
 
         # Access a protected-ish route (profile page of the logged-in user)
         profile_response = self.app.get(f'/user/{self.test_user_username}')
@@ -110,7 +111,8 @@ class AuthTestCase(unittest.TestCase):
         # Logout
         logout_response = self._logout_user()
         self.assertEqual(logout_response.status_code, 200) # Redirects to index
-        self.assertIn(b'Welcome to My Flask App!', logout_response.data) # Check for index page content
+        self.assertIn(b'Hi, Guest!', logout_response.data) # Updated
+        self.assertNotIn(b'Welcome to My Flask App!', logout_response.data)
         self.assertIn(b'Login', logout_response.data) # Nav link changes to Login
         self.assertNotIn(b'My Profile', logout_response.data)
 

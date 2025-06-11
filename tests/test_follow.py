@@ -99,18 +99,18 @@ class FollowSystemCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
 
         # Check for posts: John's own, Susan's, and David's
-        self.assertIn(b"John's first post", response.data)
-        self.assertIn(b"Susan's first post", response.data)
-        self.assertIn(b"David's first post", response.data)
+        self.assertIn(b"John&#39;s first post", response.data) # HTML escaped
+        self.assertIn(b"Susan&#39;s first post", response.data) # HTML escaped
+        self.assertIn(b"David&#39;s first post", response.data) # HTML escaped
 
         # Susan logs in (she is not following anyone)
         self._logout()
         self._login(self.u2.email, 'dog')
         response = self.client.get('/')
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Susan's first post", response.data) # Only her own post
-        self.assertNotIn(b"John's first post", response.data)
-        self.assertNotIn(b"David's first post", response.data)
+        self.assertIn(b"Susan&#39;s first post", response.data) # HTML escaped, Only her own post
+        self.assertNotIn(b"John&#39;s first post", response.data)
+        self.assertNotIn(b"David&#39;s first post", response.data)
 
         self._logout()
 
@@ -118,9 +118,9 @@ class FollowSystemCase(unittest.TestCase):
         # No one is logged in
         response = self.client.get('/')
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"John's first post", response.data)
-        self.assertIn(b"Susan's first post", response.data)
-        self.assertIn(b"David's first post", response.data)
+        self.assertIn(b"John&#39;s first post", response.data) # HTML escaped
+        self.assertIn(b"Susan&#39;s first post", response.data) # HTML escaped
+        self.assertIn(b"David&#39;s first post", response.data) # HTML escaped
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

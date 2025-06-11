@@ -40,6 +40,7 @@ class EngagementSystemCase(unittest.TestCase):
     # --- Like Tests ---
     def test_like_unlike_post(self):
         self._login(self.u2.email, 'pass2') # user2 logs in
+        self.client.post(f'/follow/{self.u1.username}', follow_redirects=True) # user2 follows user1
 
         # user2 likes post1
         response = self.client.post(f'/like/{self.post1.id}', follow_redirects=True)
@@ -83,6 +84,7 @@ class EngagementSystemCase(unittest.TestCase):
     # --- Comment Tests ---
     def test_add_comment(self):
         self._login(self.u2.email, 'pass2') # user2 logs in
+        self.client.post(f'/follow/{self.u1.username}', follow_redirects=True) # user2 follows user1
         comment_text = "This is a test comment from user2!"
 
         response = self.client.post(f'/post/{self.post1.id}/comment', data={

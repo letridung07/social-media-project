@@ -5,7 +5,8 @@ class Config:
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
         'sqlite:///' + os.path.join(os.path.abspath(os.path.dirname(__file__)), 'app.db')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    UPLOAD_FOLDER = 'app/static/images' # Added in case needed by app logic elsewhere
+    UPLOAD_FOLDER = 'app/static/images' # For profile pictures
+    POST_IMAGES_UPLOAD_FOLDER = 'app/static/post_images' # New config for post images
 
 class TestingConfig(Config):
     TESTING = True
