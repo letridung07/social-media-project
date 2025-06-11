@@ -42,7 +42,14 @@ The frontend of this platform is built using:
 
 ## Screenshots
 
-*(Coming Soon: Screenshots demonstrating the application's user interface will be added here.)*
+*(Coming Soon: The following screenshots will demonstrate key features of the application.)*
+
+*   **User Registration and Login:** Shows the clean and intuitive interface for account creation and access.
+*   **User Profile Page:** Highlights how user information (bio, profile picture) is displayed.
+*   **Content Feed:** Illustrates the main content feed, showcasing posts from followed users.
+*   **Creating a Post:** Demonstrates the process of composing and sharing a new post.
+*   **Post Engagement:** Shows how users can like and comment on posts.
+*   **Chat Interface:** (If applicable and screenshots are planned for chat) Shows the direct messaging system.
 
 ## Getting Started
 
@@ -136,6 +143,24 @@ Follow these instructions to get a copy of the project up and running on your lo
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a pull request or open an issue.
-(Further details on contributing can be added here if desired).
+We welcome contributions to the Flask Social Platform! Here are some ways you can contribute:
+
+*   **Reporting Bugs:** If you find a bug, please open an issue on our issue tracker. Include as much detail as possible:
+    *   Steps to reproduce the bug.
+    *   Expected behavior.
+    *   Actual behavior.
+    *   Your environment (e.g., browser, OS).
+*   **Suggesting Enhancements:** If you have an idea for a new feature or an improvement to an existing one, please open an issue to discuss it.
+*   **Pull Requests:** We are happy to review pull requests. To make the process smoother:
+    1.  Fork the repository.
+    2.  Create a new branch for your feature or bug fix (`git checkout -b feature/your-feature-name` or `git checkout -b fix/your-bug-fix`).
+    3.  Make your changes.
+    4.  Ensure your code adheres to any existing style guidelines (if we establish them).
+    5.  Write tests for your changes if applicable.
+    6.  Ensure all tests pass (`python3 -m unittest discover tests`).
+    7.  Commit your changes with a clear and descriptive commit message.
+    8.  Push your branch to your fork (`git push origin feature/your-feature-name`).
+    9.  Open a pull request against our `main` (or `develop`) branch.
+
+We'll do our best to review contributions in a timely manner.
 ```
