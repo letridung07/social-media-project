@@ -106,6 +106,7 @@ class Post(db.Model):
     # New field for image filename
     image_filename = db.Column(db.String(100), nullable=True)
     video_filename = db.Column(db.String(100), nullable=True)
+    alt_text = db.Column(db.String(500), nullable=True) # <-- New field added here
 
     # likes received by this post
     likes = db.relationship('Like', backref='post', lazy='dynamic', cascade='all, delete-orphan')

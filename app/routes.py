@@ -244,7 +244,13 @@ def create_post():
                 return render_template('create_post.html', title='Create Post', form=form) # Re-render form
 
         # Create Post object, including the image_filename if one was saved
-        post = Post(body=form.body.data, author=current_user, image_filename=image_filename_to_save, video_filename=video_filename_to_save)
+        post = Post(
+            body=form.body.data,
+            author=current_user,
+            image_filename=image_filename_to_save, # If applicable
+            video_filename=video_filename_to_save, # If applicable
+            alt_text=form.alt_text.data # <-- Add this line
+        )
         db.session.add(post)
         # Process hashtags before committing the post
         process_hashtags(post.body, post)
@@ -303,6 +309,7 @@ def edit_post(post_id):
                 return render_template('edit_post.html', title='Edit Post', form=form, post=post)
 
         # Process hashtags before committing the post changes
+        post.alt_text = form.alt_text.data # <-- Add this line
         process_hashtags(post.body, post)
         db.session.commit()
         flash('Your post has been updated!', 'success')

@@ -2,7 +2,7 @@ from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, SubmitField, BooleanField, TextAreaField
 from wtforms.fields import FileField # Correct import for FileField
 from flask_wtf.file import FileAllowed # For validation
-from wtforms.validators import DataRequired, Length, Email, EqualTo, ValidationError
+from wtforms.validators import DataRequired, Length, Email, EqualTo, ValidationError, Optional
 from app.models import User
 
 class RegistrationForm(FlaskForm):
@@ -39,6 +39,11 @@ class PostForm(FlaskForm):
         FileAllowed(['jpg', 'png', 'jpeg', 'gif'], 'Images only!')
     ]) # New field
     video_file = FileField('Upload Video (Optional)', validators=[FileAllowed(['mp4', 'mov', 'avi', 'mkv'], 'Videos only!')])
+    alt_text = TextAreaField(
+        'Alternative Text (for accessibility)',
+        description='Describe your image or video for users who cannot see it. This is optional but highly recommended.',
+        validators=[Length(max=500), Optional()] # Added Optional() validator
+    )
     submit = SubmitField('Post')
 
 class CommentForm(FlaskForm):

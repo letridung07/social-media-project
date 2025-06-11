@@ -94,9 +94,11 @@ class PostModelCase(unittest.TestCase):
         mock_file = FileStorage(stream=mock_image_data, filename="test_image.png", content_type="image/png")
 
         post_body_text = "This is a post with an image!"
+        alt_text_for_image = "This is the alt text for the test image."
         response = self.client.post('/create_post', data={
             'body': post_body_text,
-            'image_file': mock_file
+            'image_file': mock_file,
+            'alt_text': alt_text_for_image
         }, content_type='multipart/form-data', follow_redirects=True)
 
         self.assertEqual(response.status_code, 200)
@@ -105,16 +107,39 @@ class PostModelCase(unittest.TestCase):
         post = Post.query.filter_by(body=post_body_text).first()
         self.assertIsNotNone(post)
         self.assertIsNotNone(post.image_filename) # Check filename is stored
+        self.assertEqual(post.alt_text, alt_text_for_image)
 
         # Verify image file exists
         expected_image_path = os.path.join(self.post_images_path, post.image_filename)
         self.assertTrue(os.path.exists(expected_image_path))
 
         # Verify image is displayed on index page (where redirect goes)
-        self.assertIn(f'<img src="/static/post_images/{post.image_filename}"'.encode(), response.data)
+        expected_img_tag_html = f'<img src="/static/post_images/{post.image_filename}" alt="{alt_text_for_image}"'
+        self.assertIn(expected_img_tag_html.encode(), response.data)
         self.assertIn(post_body_text.encode(), response.data)
-
         self._logout()
+
+        # Test case for image without alt text
+        self._login('john@example.com', 'cat')
+        mock_image_data_no_alt = io.BytesIO(base64.b64decode(png_b64)) # Recreate stream
+        mock_file_no_alt = FileStorage(stream=mock_image_data_no_alt, filename="test_image_no_alt.png", content_type="image/png")
+        post_body_no_alt = "Image post without alt text"
+        response_no_alt = self.client.post('/create_post', data={
+            'body': post_body_no_alt,
+            'image_file': mock_file_no_alt
+            # No alt_text provided
+        }, content_type='multipart/form-data', follow_redirects=True)
+        self.assertEqual(response_no_alt.status_code, 200)
+        post_no_alt = Post.query.filter_by(body=post_body_no_alt).first()
+        self.assertIsNotNone(post_no_alt)
+        self.assertIsNone(post_no_alt.alt_text) # Should be None or empty
+
+        # Verify fallback alt text in rendered HTML
+        fallback_alt_text = f'Image for post by {self.user1.username}'
+        expected_img_tag_no_alt_html = f'<img src="/static/post_images/{post_no_alt.image_filename}" alt="{fallback_alt_text}"'
+        self.assertIn(expected_img_tag_no_alt_html.encode(), response_no_alt.data)
+        self._logout()
+
 
     def test_create_post_with_video(self):
         self._login('john@example.com', 'cat')
@@ -124,9 +149,11 @@ class PostModelCase(unittest.TestCase):
         mock_video_file = FileStorage(stream=video_data, filename="test_video.mp4", content_type="video/mp4")
 
         post_body_text = "This is a post with a video!"
+        alt_text_for_video = "This is the alt text for the test video."
         response = self.client.post('/create_post', data={
             'body': post_body_text,
-            'video_file': mock_video_file
+            'video_file': mock_video_file,
+            'alt_text': alt_text_for_video
         }, content_type='multipart/form-data', follow_redirects=True)
 
         self.assertEqual(response.status_code, 200)
@@ -136,21 +163,44 @@ class PostModelCase(unittest.TestCase):
         self.assertIsNotNone(post)
         self.assertIsNotNone(post.video_filename)
         self.assertTrue(post.video_filename.endswith('.mp4'))
+        self.assertEqual(post.alt_text, alt_text_for_video)
         self.assertIsNone(post.image_filename) # Ensure no image was inadvertently picked up
 
         # Verify video file exists in the correct test upload folder
         expected_video_path = os.path.join(self.post_videos_path, post.video_filename)
         self.assertTrue(os.path.exists(expected_video_path))
 
-        # Verify video is mentioned (by filename) on index page (where redirect goes)
-        # Note: The actual <video> tag might be more complex to assert without parsing HTML
-        self.assertIn(post.video_filename.encode(), response.data)
+        # Verify video is displayed with alt text on index page
+        expected_video_tag_html = f'<video width="100%" controls aria-describedby="video-alt-text-{post.id}"'
+        self.assertIn(expected_video_tag_html.encode(), response.data)
+        expected_alt_text_p_html = f'<p id="video-alt-text-{post.id}" class="visually-hidden">{alt_text_for_video}</p>'
+        self.assertIn(expected_alt_text_p_html.encode(), response.data)
         self.assertIn(post_body_text.encode(), response.data)
-
-        # Clean up the created video file for this specific test if not handled by tearDown per file
-        # os.remove(expected_video_path) # tearDown should handle this based on directory cleanup
-
         self._logout()
+
+        # Test case for video without alt text
+        self._login('john@example.com', 'cat')
+        video_data_no_alt = io.BytesIO(b"dummy video content no alt")
+        mock_video_file_no_alt = FileStorage(stream=video_data_no_alt, filename="test_video_no_alt.mp4", content_type="video/mp4")
+        post_body_no_alt_video = "Video post without alt text"
+        response_no_alt_video = self.client.post('/create_post', data={
+            'body': post_body_no_alt_video,
+            'video_file': mock_video_file_no_alt
+            # No alt_text
+        }, content_type='multipart/form-data', follow_redirects=True)
+        self.assertEqual(response_no_alt_video.status_code, 200)
+        post_no_alt_video_db = Post.query.filter_by(body=post_body_no_alt_video).first()
+        self.assertIsNotNone(post_no_alt_video_db)
+        self.assertIsNone(post_no_alt_video_db.alt_text)
+
+        # Verify video tag does not have aria-describedby and no hidden p for alt text
+        self.assertNotIn(b'aria-describedby="video-alt-text-', response_no_alt_video.data)
+        self.assertNotIn(f'class="visually-hidden">{alt_text_for_video}'.encode(), response_no_alt_video.data)
+        # Ensure the video tag itself is there
+        self.assertIn(f'<video width="100%" controls'.encode(), response_no_alt_video.data)
+        self.assertIn(post_no_alt_video_db.video_filename.encode(), response_no_alt_video.data)
+        self._logout()
+
 
     def test_create_post_with_invalid_file_type(self):
         self._login('john@example.com', 'cat')
@@ -272,6 +322,67 @@ class PostModelCase(unittest.TestCase):
 
         self._logout()
         # Video file cleanup is handled by tearDown
+
+    def test_edit_post_alt_text(self):
+        self._login('john@example.com', 'cat')
+
+        # Setup: Create an initial post with an image but without alt_text
+        png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+        mock_image_data = io.BytesIO(base64.b64decode(png_b64))
+        mock_file = FileStorage(stream=mock_image_data, filename="edit_test_image.png", content_type="image/png")
+        initial_post_body = "Post for alt text editing test"
+
+        create_response = self.client.post('/create_post', data={
+            'body': initial_post_body,
+            'image_file': mock_file
+            # No alt_text initially
+        }, content_type='multipart/form-data', follow_redirects=True)
+        self.assertEqual(create_response.status_code, 200)
+
+        initial_post = Post.query.filter_by(body=initial_post_body).first()
+        self.assertIsNotNone(initial_post)
+        self.assertIsNone(initial_post.alt_text)
+        self.assertIsNotNone(initial_post.image_filename) # Ensure image was saved
+
+        initial_alt_text = "Initial alt text for edit test."
+        updated_alt_text = "Updated alt text after editing."
+
+        # First Edit (Add alt_text)
+        edit_response_1 = self.client.post(f'/edit_post/{initial_post.id}', data={
+            'body': initial_post_body, # Keep the body same or change if needed for test scope
+            'alt_text': initial_alt_text
+            # No image_file means we are not changing the image itself
+        }, content_type='multipart/form-data', follow_redirects=True)
+
+        self.assertEqual(edit_response_1.status_code, 200)
+        self.assertIn(b'Your post has been updated!', edit_response_1.data)
+
+        db.session.refresh(initial_post) # Refresh from DB
+        self.assertEqual(initial_post.alt_text, initial_alt_text)
+
+        # Second Edit (Change alt_text)
+        edit_response_2 = self.client.post(f'/edit_post/{initial_post.id}', data={
+            'body': initial_post_body,
+            'alt_text': updated_alt_text
+        }, content_type='multipart/form-data', follow_redirects=True)
+
+        self.assertEqual(edit_response_2.status_code, 200)
+        self.assertIn(b'Your post has been updated!', edit_response_2.data)
+
+        db.session.refresh(initial_post)
+        self.assertEqual(initial_post.alt_text, updated_alt_text)
+
+        # Verify Rendered HTML on user's profile page
+        profile_response = self.client.get(f'/user/{self.user1.username}')
+        self.assertEqual(profile_response.status_code, 200)
+
+        # Ensure the specific post's image is rendered with the updated alt text
+        # The image filename is initial_post.image_filename
+        expected_img_tag_html = f'<img src="/static/post_images/{initial_post.image_filename}" alt="{updated_alt_text}"'
+        self.assertIn(expected_img_tag_html.encode(), profile_response.data)
+
+        self._logout()
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
