@@ -15,7 +15,7 @@
                     <li><a href="{{ url_for('main.profile', username=current_user.username) }}">My Profile</a></li>
                     <li>
                         <a href="{{ url_for('main.notifications') }}">
-                            Notifications <span id="notification-count-badge" style="display: none; background-color: red; color: white; border-radius: 0.75em; padding: 0.1em 0.4em; font-size: 0.8em;">0</span>
+                            Notifications <span id="notification-count-badge" style="display: {% if unread_notification_count == 0 %}none{% else %}inline{% endif %}; background-color: red; color: white; border-radius: 0.75em; padding: 0.1em 0.4em; font-size: 0.8em;">{{ unread_notification_count }}</span>
                         </a>
                     </li>
                     <li><a href="{{ url_for('main.logout') }}">Logout</a></li>
@@ -24,6 +24,18 @@
                     <li><a href="{{ url_for('main.register') }}">Register</a></li>
                 {% endif %}
             </ul>
+            <!-- Search Form -->
+            <div class="navbar-search-form-container" style="padding: 8px; text-align: right;"> {# Basic styling for positioning #}
+                <form method="GET" action="{{ url_for('main.search') }}" class="form-inline my-2 my-lg-0" id="navbar-search-form" style="display: inline-block;">
+                    {{ search_form.hidden_tag() }} {# CSRF token - less critical for GET but good practice #}
+                    <div class="input-group">
+                        {{ search_form.query(class="form-control form-control-sm", placeholder="Search...", name="q") }} {# name="q" is crucial #}
+                        <div class="input-group-append">
+                            {{ search_form.submit(class="btn btn-sm btn-outline-secondary") }}
+                        </div>
+                    </div>
+                </form>
+            </div>
         </nav>
     </header>
     <div class="container">

@@ -1,13 +1,35 @@
 import os # Ensure os is imported
+import re # For hashtag parsing
 from flask import Blueprint, render_template, redirect, url_for, flash, request, abort, current_app # Ensure current_app is imported
 from flask_login import login_user, current_user, logout_user, login_required
 from sqlalchemy import or_
 from app import db, socketio # Import socketio
-from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm
-from app.models import User, Post, Like, Comment, Notification, Conversation, ChatMessage # Import Notification, Conversation, ChatMessage
+from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm # Import new forms
+from app.models import User, Post, Like, Comment, Notification, Conversation, ChatMessage, Hashtag # Import Hashtag
 from app.utils import save_picture, save_post_image, save_post_video
+from app.email_utils import send_password_reset_email # Import email utility
 
 main = Blueprint('main', __name__)
+
+# Helper function for processing hashtags
+def process_hashtags(post_body, post_object):
+    # Clear existing hashtags for the post (important for edits)
+    post_object.hashtags = []
+
+    # Regex to find hashtags: words starting with #, alphanumeric characters and underscores
+    hashtag_regex = r"#([a-zA-Z0-9_]+)"
+    found_tags_texts = re.findall(hashtag_regex, post_body)
+
+    for tag_text in set(found_tags_texts): # Use set to avoid duplicate processing for same tag in one post
+        normalized_tag = tag_text.lower() # Normalize to lowercase
+        hashtag = Hashtag.query.filter_by(tag_text=normalized_tag).first()
+        if not hashtag:
+            hashtag = Hashtag(tag_text=normalized_tag)
+            db.session.add(hashtag)
+            # No commit here yet, will be committed with the post
+
+        if hashtag not in post_object.hashtags: # Ensure not to add duplicates
+             post_object.hashtags.append(hashtag)
 
 @main.route('/')
 @main.route('/index')
@@ -35,6 +57,51 @@ def index():
     # The template 'index.html' already iterates through 'posts'
     comment_form = CommentForm() # Instantiate the form
     return render_template('index.html', title='Home', posts=posts, comment_form=comment_form) # Pass to template
+
+
+@main.route('/search')
+def search():
+    query = request.args.get('q', '').strip()
+    users_found = []
+    posts_found = []
+
+    if query:
+        # Search Users by username or email (case-insensitive)
+        users_found = User.query.filter(
+            or_(
+                User.username.ilike(f'%{query}%'),
+                User.email.ilike(f'%{query}%')
+            )
+        ).all()
+
+        # Search Posts by body content (case-insensitive)
+        posts_found = Post.query.filter(
+            Post.body.ilike(f'%{query}%')
+        ).order_by(Post.timestamp.desc()).all()
+
+    return render_template('search_results.html',
+                           title=f'Search Results for "{query}"' if query else 'Search',
+                           query=query,
+                           users=users_found,
+                           posts=posts_found)
+
+
+@main.route('/hashtag/<string:tag_text>')
+def hashtag_feed(tag_text):
+    normalized_tag_text = tag_text.lower()
+    hashtag = Hashtag.query.filter_by(tag_text=normalized_tag_text).first()
+    posts = []
+    title = f'No posts found for #{normalized_tag_text}'
+
+    if hashtag:
+        posts = hashtag.posts.order_by(Post.timestamp.desc()).all()
+        title = f'Posts tagged #{hashtag.tag_text}'
+        if not posts: # Hashtag exists but no posts are associated
+             title = f'No posts found for #{hashtag.tag_text}'
+
+
+    return render_template('hashtag_feed.html', title=title, hashtag=hashtag, posts=posts, query=tag_text) # Pass original tag_text as query for display
+
 
 @main.route('/register', methods=['GET', 'POST'])
 def register():
@@ -67,6 +134,53 @@ def login():
 def logout():
     logout_user()
     return redirect(url_for('main.index'))
+
+
+@main.route('/forgot_password', methods=['GET', 'POST'])
+def forgot_password():
+    if current_user.is_authenticated:
+        return redirect(url_for('main.index'))
+    form = ForgotPasswordForm()
+    if form.validate_on_submit():
+        user = User.query.filter_by(email=form.email.data).first()
+        if user:
+            token = user.get_reset_password_token()
+            reset_url = url_for('main.reset_password', token=token, _external=True)
+            email_sent = send_password_reset_email(user.email, user.username, reset_url)
+            if email_sent:
+                flash('An email has been sent with instructions to reset your password.', 'info')
+            else:
+                flash('There was an issue sending the password reset email. Please try again later or contact support.', 'danger')
+        else:
+            # Generic message for security (doesn't reveal if email exists or not)
+            # flash('If an account with that email exists, a password reset link has been sent.', 'info')
+            # To avoid user confusion if email sending fails, it's better to give the success message always here
+            # as the email sending failure is already handled above by a more specific error.
+            # However, for strict security against user enumeration, the generic message is preferred.
+            # Let's stick to the more user-friendly approach for now, assuming logger captures send errors.
+             flash('If an account with that email exists, instructions to reset your password have been sent.', 'info')
+        return redirect(url_for('main.login'))
+    return render_template('forgot_password.html', title='Forgot Password', form=form)
+
+
+@main.route('/reset_password/<token>', methods=['GET', 'POST'])
+def reset_password(token):
+    if current_user.is_authenticated:
+        return redirect(url_for('main.index'))
+    user = User.verify_reset_password_token(token)
+    if not user:
+        flash('That is an invalid or expired token.', 'warning')
+        return redirect(url_for('main.forgot_password'))
+
+    form = ResetPasswordForm()
+    if form.validate_on_submit():
+        user.set_password(form.password.data)
+        db.session.commit()
+        flash('Your password has been updated! You are now able to log in.', 'success')
+        return redirect(url_for('main.login'))
+
+    return render_template('reset_password_form.html', title='Reset Password', form=form, token=token)
+
 
 @main.route('/user/<username>')
 def profile(username):
@@ -132,10 +246,109 @@ def create_post():
         # Create Post object, including the image_filename if one was saved
         post = Post(body=form.body.data, author=current_user, image_filename=image_filename_to_save, video_filename=video_filename_to_save)
         db.session.add(post)
+        # Process hashtags before committing the post
+        process_hashtags(post.body, post)
         db.session.commit()
         flash('Your post is now live!', 'success')
         return redirect(url_for('main.index'))
     return render_template('create_post.html', title='Create Post', form=form)
+
+
+@main.route('/edit_post/<int:post_id>', methods=['GET', 'POST'])
+@login_required
+def edit_post(post_id):
+    post = Post.query.get_or_404(post_id)
+    if post.author != current_user:
+        abort(403)  # Forbidden access
+
+    form = PostForm(obj=post)  # Pre-populate with existing post data for GET
+
+    if form.validate_on_submit():
+        post.body = form.body.data
+
+        # Handle image update
+        if form.image_file.data:
+            # Delete old image if it exists and is not the default
+            if post.image_filename:
+                try:
+                    old_image_path = os.path.join(current_app.root_path, current_app.config.get('POST_IMAGES_UPLOAD_FOLDER', 'app/static/post_images_default'), post.image_filename)
+                    if os.path.exists(old_image_path):
+                        os.remove(old_image_path)
+                except Exception as e:
+                    current_app.logger.error(f"Error deleting old post image {post.image_filename}: {e}")
+                    flash('Error removing old image.', 'warning')
+            # Save new image
+            try:
+                post.image_filename = save_post_image(form.image_file.data)
+            except Exception as e:
+                flash('An error occurred while uploading the new image. Please try again.', 'danger')
+                return render_template('edit_post.html', title='Edit Post', form=form, post=post)
+
+        # Handle video update
+        if form.video_file.data:
+            # Delete old video if it exists
+            if post.video_filename:
+                try:
+                    old_video_path = os.path.join(current_app.root_path, current_app.config.get('VIDEO_UPLOAD_FOLDER', 'app/static/videos_default'), post.video_filename)
+                    if os.path.exists(old_video_path):
+                        os.remove(old_video_path)
+                except Exception as e:
+                    current_app.logger.error(f"Error deleting old post video {post.video_filename}: {e}")
+                    flash('Error removing old video.', 'warning')
+            # Save new video
+            try:
+                post.video_filename = save_post_video(form.video_file.data)
+            except Exception as e:
+                flash('An error occurred while uploading the new video. Please try again.', 'danger')
+                return render_template('edit_post.html', title='Edit Post', form=form, post=post)
+
+        # Process hashtags before committing the post changes
+        process_hashtags(post.body, post)
+        db.session.commit()
+        flash('Your post has been updated!', 'success')
+        return redirect(url_for('main.profile', username=current_user.username)) # Or redirect to post view: url_for('main.view_post', post_id=post.id)
+
+    # For GET requests, pre-fill form fields if not already done by obj=post for WTForms-Alchemy
+    # For standard WTForms, you might do:
+    # elif request.method == 'GET':
+    # form.body.data = post.body
+    # The image/video fields are not pre-filled as they are file inputs
+
+    return render_template('edit_post.html', title='Edit Post', form=form, post=post)
+
+
+@main.route('/delete_post/<int:post_id>', methods=['POST'])
+@login_required
+def delete_post(post_id):
+    post = Post.query.get_or_404(post_id)
+    if post.author != current_user:
+        abort(403)
+
+    # Delete associated image file
+    if post.image_filename:
+        try:
+            image_path = os.path.join(current_app.root_path, current_app.config.get('POST_IMAGES_UPLOAD_FOLDER', 'app/static/post_images_default'), post.image_filename)
+            if os.path.exists(image_path):
+                os.remove(image_path)
+        except Exception as e:
+            current_app.logger.error(f"Error deleting post image {post.image_filename}: {e}")
+            flash('Error deleting post image file.', 'warning') # Inform user, but proceed with DB deletion
+
+    # Delete associated video file
+    if post.video_filename:
+        try:
+            video_path = os.path.join(current_app.root_path, current_app.config.get('VIDEO_UPLOAD_FOLDER', 'app/static/videos_default'), post.video_filename)
+            if os.path.exists(video_path):
+                os.remove(video_path)
+        except Exception as e:
+            current_app.logger.error(f"Error deleting post video {post.video_filename}: {e}")
+            flash('Error deleting post video file.', 'warning') # Inform user, but proceed with DB deletion
+
+    db.session.delete(post)
+    db.session.commit()
+    flash('Your post has been deleted!', 'success')
+    return redirect(url_for('main.profile', username=current_user.username)) # Or redirect to main.index
+
 
 @main.route('/follow/<username>', methods=['POST']) # Use POST as it changes state
 @login_required
@@ -274,8 +487,9 @@ def add_comment(post_id):
 def notifications():
     # Fetch notifications for the current user, newest first
     user_notifications = Notification.query.filter_by(recipient_id=current_user.id).order_by(Notification.timestamp.desc()).all()
-    # Optionally, mark notifications as read when they are viewed, or implement a separate mechanism.
-    # For now, just fetch them.
+    for notification in user_notifications:
+        notification.is_read = True
+    db.session.commit()
     return render_template('notifications.html', title='Your Notifications', notifications=user_notifications)
 
 

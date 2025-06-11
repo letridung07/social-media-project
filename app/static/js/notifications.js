@@ -23,19 +23,13 @@ document.addEventListener('DOMContentLoaded', function () {
     // Initialize badge (e.g., fetch initial unread count via an API endpoint, or start at 0)
     // For simplicity, we'll start at 0 and only increment with new real-time notifications.
     // A more robust solution would fetch the current unread count on page load.
-    if (notificationBadge) { // Check if the element actually exists on the current page
-         // Attempt to get initial count from the badge text content if it was rendered by server
+    if (notificationBadge) {
         let initialCount = parseInt(notificationBadge.textContent);
         if (!isNaN(initialCount)) {
             currentNotificationCount = initialCount;
         } else {
-             // If not, try to get it from a data attribute or default to 0
-            const unreadCountElement = document.getElementById('initial-unread-count'); // Example
-            if (unreadCountElement) {
-                currentNotificationCount = parseInt(unreadCountElement.value) || 0;
-            } else {
-                currentNotificationCount = 0; // Default if no initial count found
-            }
+            // Fallback if textContent is not a number for some reason, though it should be.
+            currentNotificationCount = 0;
         }
         updateNotificationBadge(currentNotificationCount);
     }
@@ -49,25 +43,47 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Optional: Display a browser notification (requires user permission)
         if (Notification.permission === "granted") {
-            var browserNotification = new Notification("New Notification", {
-                body: data.message || "You have a new notification."
-                // icon: "/static/images/favicon.ico" // Optional: path to an icon - REMOVED
-            });
-            // Optional: link to notifications page when notification is clicked
-            browserNotification.onclick = function() {
-                window.location.href = "/notifications";
-            };
+            let browserNotification;
+            if (data.type === 'new_chat_message' && data.conversation_id) {
+                browserNotification = new Notification("New Chat Message", {
+                    body: data.message || `New message from ${data.actor_username}`,
+                    // icon: "..." // Optional: chat icon
+                });
+                browserNotification.onclick = function() {
+                    window.location.href = '/chat/' + data.conversation_id;
+                };
+            } else { // For other types of notifications like 'like', 'comment', 'follow'
+                browserNotification = new Notification("New Notification", {
+                    body: data.message || "You have a new notification."
+                    // icon: "..." // Optional: general notification icon
+                });
+                browserNotification.onclick = function() {
+                    window.location.href = "/notifications";
+                };
+            }
         } else if (Notification.permission !== "denied") {
             // Request permission if not already granted or denied
             Notification.requestPermission().then(function (permission) {
                 if (permission === "granted") {
-                    var browserNotification = new Notification("New Notification", {
-                        body: data.message || "You have a new notification."
-                        // icon: "/static/images/favicon.ico" // Optional: path to an icon - REMOVED
-                    });
-                    browserNotification.onclick = function() {
-                        window.location.href = "/notifications";
-                    };
+                    let browserNotification;
+                    // Duplicate the logic from above for when permission is granted immediately
+                    if (data.type === 'new_chat_message' && data.conversation_id) {
+                        browserNotification = new Notification("New Chat Message", {
+                            body: data.message || `New message from ${data.actor_username}`,
+                            // icon: "..."
+                        });
+                        browserNotification.onclick = function() {
+                            window.location.href = '/chat/' + data.conversation_id;
+                        };
+                    } else {
+                        browserNotification = new Notification("New Notification", {
+                            body: data.message || "You have a new notification."
+                            // icon: "..."
+                        });
+                        browserNotification.onclick = function() {
+                            window.location.href = "/notifications";
+                        };
+                    }
                 }
             });
         }

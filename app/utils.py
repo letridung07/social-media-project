@@ -61,3 +61,18 @@ def save_post_video(form_video_file):
 
     form_video_file.save(video_full_path)
     return video_fn
+
+from flask_login import current_user
+from app.models import Notification
+from app.forms import SearchForm # Import SearchForm
+
+def inject_unread_notification_count():
+    if current_user.is_authenticated:
+        count = Notification.query.filter_by(recipient_id=current_user.id, is_read=False).count()
+    else:
+        count = 0
+    return {'unread_notification_count': count}
+
+def inject_search_form():
+    form = SearchForm()
+    return {'search_form': form}

@@ -19,6 +19,10 @@
                         {% elif notification.type == 'follow' %}
                             <a href="{{ url_for('main.profile', username=notification.actor.username) }}">{{ notification.actor.username }}</a>
                             started following you.
+                        {% elif notification.type == 'new_chat_message' %}
+                            <a href="{{ url_for('main.profile', username=notification.actor.username) }}">{{ notification.actor.username }}</a>
+                            sent you a new message.
+                            <a href="{{ url_for('main.view_conversation', conversation_id=notification.related_conversation_id) }}">View chat</a>.
                         {% else %}
                             A new notification. <!-- Generic fallback -->
                         {% endif %}
