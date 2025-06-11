@@ -36,3 +36,7 @@ class EditProfileForm(FlaskForm):
 class PostForm(FlaskForm):
     body = TextAreaField('What\'s on your mind?', validators=[DataRequired(), Length(min=1, max=500)])
     submit = SubmitField('Post')
+
+class CommentForm(FlaskForm):
+    body = TextAreaField('Your Comment', validators=[DataRequired(), Length(min=1, max=280)]) # Max length can be adjusted
+    submit = SubmitField('Add Comment')

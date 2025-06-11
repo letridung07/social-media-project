@@ -1,5 +1,5 @@
 {# app/templates/_post.html #}
-<article class="post">
+<article class="post mb-3"> {# Added mb-3 for spacing between posts #}
     <div class="post-avatar">
         <img src="{{ url_for('static', filename='images/' + post.author.profile_picture_url) }}" alt="{{ post.author.username }}'s profile picture" class="rounded-circle" width="40" height="40">
     </div>
@@ -12,6 +12,62 @@
         </div>
         <div class="post-body">
             <p>{{ post.body }}</p>
+        </div>
+        <div class="post-actions mb-2"> {# Added mb-2 for spacing #}
+            <small>{{ post.like_count() }} like{% if post.like_count() != 1 %}s{% endif %}</small>
+            {% if current_user.is_authenticated %}
+                {% if post.is_liked_by(current_user) %}
+                    <form action="{{ url_for('main.unlike_post', post_id=post.id) }}" method="post" style="display: inline; margin-left: 10px;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token else '' }}"/>
+                        <button type="submit" class="btn btn-link btn-sm p-0">Unlike</button>
+                    </form>
+                {% else %}
+                    <form action="{{ url_for('main.like_post', post_id=post.id) }}" method="post" style="display: inline; margin-left: 10px;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token else '' }}"/>
+                        <button type="submit" class="btn btn-link btn-sm p-0">Like</button>
+                    </form>
+                {% endif %}
+            {% endif %}
+        </div>
+
+        {# New section for comments #}
+        <div class="comments-section mt-2">
+            <h5>Comments</h5>
+            {# Display existing comments #}
+            {% if post.comments %}
+                {% for comment in post.comments %} {# Assumes post.comments is ordered by timestamp asc #}
+                    <div class="comment mb-2">
+                        <strong><a href="{{ url_for('main.profile', username=comment.author.username) }}">{{ comment.author.username }}</a></strong>
+                        <small class="text-muted">{{ comment.timestamp.strftime('%Y-%m-%d %H:%M') }}</small>
+                        <p style="margin-left: 10px; white-space: pre-wrap;">{{ comment.body }}</p>
+                    </div>
+                {% endfor %}
+            {% else %}
+                <p><small>No comments yet.</small></p>
+            {% endif %}
+
+            {# Display CommentForm for authenticated users #}
+            {% if current_user.is_authenticated %}
+                <div class="add-comment-form mt-2">
+                    {# Assumes 'comment_form' is passed to this template. #}
+                    {% if comment_form %}
+                        <form method="POST" action="{{ url_for('main.add_comment', post_id=post.id) }}">
+                            {{ comment_form.hidden_tag() }} {# Includes CSRF token #}
+                            <div class="form-group">
+                                {{ comment_form.body(class="form-control form-control-sm", rows="2", placeholder="Add a comment...") }}
+                                {% for error in comment_form.body.errors %}
+                                    <span class="text-danger"><small>{{ error }}</small></span><br>
+                                {% endfor %}
+                            </div>
+                            <div class="form-group mt-1">
+                                {{ comment_form.submit(class="btn btn-primary btn-sm") }}
+                            </div>
+                        </form>
+                    {% else %}
+                        <p><small>Error: Comment form not available.</small></p> {# Fallback if form not passed #}
+                    {% endif %}
+                </div>
+            {% endif %}
         </div>
     </div>
 </article>

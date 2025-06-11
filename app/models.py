@@ -30,6 +30,10 @@ class User(db.Model, UserMixin):
         lazy='dynamic'
     )
 
+    # likes given by this user
+    likes = db.relationship('Like', backref='user', lazy='dynamic', cascade='all, delete-orphan')
+    comments = db.relationship('Comment', backref='author', lazy='dynamic', cascade='all, delete-orphan')
+
     def __repr__(self):
         return f'<User {self.username}>'
 
@@ -70,5 +74,43 @@ class Post(db.Model):
     timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
+    # likes received by this post
+    likes = db.relationship('Like', backref='post', lazy='dynamic', cascade='all, delete-orphan')
+    # To get comments in ascending order by timestamp by default when accessing post.comments
+    comments = db.relationship('Comment', backref='commented_post', lazy='dynamic', cascade='all, delete-orphan', order_by='Comment.timestamp.asc()')
+
     def __repr__(self):
         return f'<Post {self.body[:50]}...>'
+
+    def like_count(self):
+        return self.likes.count() # self.likes is the relationship
+
+    def is_liked_by(self, user):
+        if not user or not user.is_authenticated: # Handle anonymous or uncommitted users
+            return False
+        # Check if a Like record exists for this post and the given user
+        return self.likes.filter_by(user_id=user.id).count() > 0
+
+class Like(db.Model):
+    __tablename__ = 'likes'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False)
+    timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+
+    # Composite unique constraint to prevent duplicate likes from the same user on the same post
+    __table_args__ = (db.UniqueConstraint('user_id', 'post_id', name='_user_post_uc'),)
+
+    def __repr__(self):
+        return f'<Like user_id={self.user_id} post_id={self.post_id}>'
+
+class Comment(db.Model):
+    __tablename__ = 'comments'
+    id = db.Column(db.Integer, primary_key=True)
+    body = db.Column(db.Text, nullable=False)
+    timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False)
+
+    def __repr__(self):
+        return f'<Comment {self.body[:50]}...>'
