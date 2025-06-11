@@ -8,6 +8,7 @@ from app.models import User, Post
 from config import TestingConfig # Using TestingConfig for tests
 from werkzeug.datastructures import FileStorage # For creating mock FileStorage object
 from datetime import datetime, timedelta
+import base64 # For decoding the dummy image
 
 class PostModelCase(unittest.TestCase):
     def setUp(self):
@@ -25,6 +26,9 @@ class PostModelCase(unittest.TestCase):
 
         # Path for post images - ensure it's cleaned up
         self.post_images_path = os.path.join(current_app.root_path, current_app.config['POST_IMAGES_UPLOAD_FOLDER'])
+        # Path for post videos
+        self.post_videos_path = os.path.join(current_app.root_path, current_app.config.get('VIDEO_UPLOAD_FOLDER', 'app/static/videos_test')) # Using a default for safety
+        os.makedirs(self.post_videos_path, exist_ok=True) # Ensure it exists for tests
 
 
     def tearDown(self):
@@ -35,11 +39,22 @@ class PostModelCase(unittest.TestCase):
         # Clean up post_images directory
         if os.path.exists(self.post_images_path):
             for f in os.listdir(self.post_images_path):
-                os.remove(os.path.join(self.post_images_path, f))
-            if not os.listdir(self.post_images_path): # Only remove if empty after deleting files
+                try:
+                    os.remove(os.path.join(self.post_images_path, f))
+                except OSError:
+                    pass # Ignore if file is already removed or other issues
+            if not os.listdir(self.post_images_path):
                  os.rmdir(self.post_images_path)
-            elif os.path.isdir(self.post_images_path) and not os.listdir(self.post_images_path): # Check again if it became empty
-                 os.rmdir(self.post_images_path)
+
+        # Clean up post_videos directory
+        if os.path.exists(self.post_videos_path):
+            for f in os.listdir(self.post_videos_path):
+                try:
+                    os.remove(os.path.join(self.post_videos_path, f))
+                except OSError:
+                    pass # Ignore
+            if not os.listdir(self.post_videos_path):
+                os.rmdir(self.post_videos_path)
 
 
     def _login(self, email, password):
@@ -61,19 +76,21 @@ class PostModelCase(unittest.TestCase):
 
         # Check if the post appears on the index page (where redirect goes)
         self.assertIn(b'This is a text-only post!', response.data)
-        self.assertNotIn(b'<img src=', response.data) # No image tag
+        self.assertNotIn(b'/static/post_images/', response.data) # Check that no post-specific image is shown
 
         # Check profile page as well
         response_profile = self.client.get(f'/user/{self.user1.username}')
         self.assertIn(b'This is a text-only post!', response_profile.data)
-        self.assertNotIn(b'<img src=', response_profile.data)
+        self.assertNotIn(b'/static/post_images/', response_profile.data) # Check that no post-specific image is shown
         self._logout()
 
     def test_create_post_with_image(self):
         self._login('john@example.com', 'cat')
 
-        # Create a mock image file
-        mock_image_data = io.BytesIO(b"dummy image data for a fake png")
+        # Create a mock image file (1x1 transparent PNG)
+        # Base64 encoded: R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7
+        png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+        mock_image_data = io.BytesIO(base64.b64decode(png_b64))
         mock_file = FileStorage(stream=mock_image_data, filename="test_image.png", content_type="image/png")
 
         post_body_text = "This is a post with an image!"
@@ -96,6 +113,42 @@ class PostModelCase(unittest.TestCase):
         # Verify image is displayed on index page (where redirect goes)
         self.assertIn(f'<img src="/static/post_images/{post.image_filename}"'.encode(), response.data)
         self.assertIn(post_body_text.encode(), response.data)
+
+        self._logout()
+
+    def test_create_post_with_video(self):
+        self._login('john@example.com', 'cat')
+
+        # Create a mock video file
+        video_data = io.BytesIO(b"dummy video content for a fake mp4")
+        mock_video_file = FileStorage(stream=video_data, filename="test_video.mp4", content_type="video/mp4")
+
+        post_body_text = "This is a post with a video!"
+        response = self.client.post('/create_post', data={
+            'body': post_body_text,
+            'video_file': mock_video_file
+        }, content_type='multipart/form-data', follow_redirects=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Your post is now live!', response.data)
+
+        post = Post.query.filter_by(body=post_body_text).first()
+        self.assertIsNotNone(post)
+        self.assertIsNotNone(post.video_filename)
+        self.assertTrue(post.video_filename.endswith('.mp4'))
+        self.assertIsNone(post.image_filename) # Ensure no image was inadvertently picked up
+
+        # Verify video file exists in the correct test upload folder
+        expected_video_path = os.path.join(self.post_videos_path, post.video_filename)
+        self.assertTrue(os.path.exists(expected_video_path))
+
+        # Verify video is mentioned (by filename) on index page (where redirect goes)
+        # Note: The actual <video> tag might be more complex to assert without parsing HTML
+        self.assertIn(post.video_filename.encode(), response.data)
+        self.assertIn(post_body_text.encode(), response.data)
+
+        # Clean up the created video file for this specific test if not handled by tearDown per file
+        # os.remove(expected_video_path) # tearDown should handle this based on directory cleanup
 
         self._logout()
 
@@ -182,6 +235,43 @@ class PostModelCase(unittest.TestCase):
 
         post = Post.query.filter_by(body='Trying to post without login').first()
         self.assertIsNone(post)
+
+    def test_view_post_with_video_on_index_and_profile(self):
+        # Log in user
+        self._login('john@example.com', 'cat')
+
+        # Create a post with a video
+        video_data = io.BytesIO(b"dummy video content for test_view")
+        video_file = FileStorage(stream=video_data, filename="view_test_video.mp4", content_type="video/mp4")
+        post_body = "Video post for viewing test"
+
+        self.client.post('/create_post', data={
+            'body': post_body,
+            'video_file': video_file
+        }, content_type='multipart/form-data', follow_redirects=True)
+
+        # Retrieve the post from DB to get video_filename
+        post = Post.query.filter_by(body=post_body).first()
+        self.assertIsNotNone(post)
+        self.assertIsNotNone(post.video_filename)
+
+        # Test index page
+        response_index = self.client.get('/')
+        self.assertEqual(response_index.status_code, 200)
+        self.assertIn(post.video_filename.encode(), response_index.data)
+        self.assertIn(b'<video', response_index.data) # Check for <video tag
+        self.assertIn(b'controls', response_index.data) # Check for controls attribute
+        self.assertIn(f'src="/static/videos/{post.video_filename}"'.encode(), response_index.data)
+
+        # Test user's profile page
+        response_profile = self.client.get(f'/user/{self.user1.username}')
+        self.assertEqual(response_profile.status_code, 200)
+        self.assertIn(post.video_filename.encode(), response_profile.data)
+        self.assertIn(b'<video', response_profile.data)
+        self.assertIn(f'src="/static/videos/{post.video_filename}"'.encode(), response_profile.data)
+
+        self._logout()
+        # Video file cleanup is handled by tearDown
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

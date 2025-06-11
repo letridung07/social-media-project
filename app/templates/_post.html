@@ -23,6 +23,16 @@
             </div>
         {% endif %}
 
+        {% if post.video_filename %}
+            <div class="post-video-container mt-2 mb-2">
+                <video width="100%" controls>
+                    <source src="{{ url_for('static', filename='videos/' + post.video_filename) }}" type="video/mp4">
+                    <!-- Add more <source> tags for other video types if needed, e.g., mov, avi -->
+                    Your browser does not support the video tag.
+                </video>
+            </div>
+        {% endif %}
+
         <div class="post-actions mb-2"> {# Added mb-2 for spacing #}
             <small>{{ post.like_count() }} like{% if post.like_count() != 1 %}s{% endif %}</small>
             {% if current_user.is_authenticated %}

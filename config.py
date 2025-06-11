@@ -7,9 +7,11 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     UPLOAD_FOLDER = 'app/static/images' # For profile pictures
     POST_IMAGES_UPLOAD_FOLDER = 'app/static/post_images' # New config for post images
+    VIDEO_UPLOAD_FOLDER = 'app/static/videos' # New config for post videos
 
 class TestingConfig(Config):
     TESTING = True
     SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:' # Use in-memory SQLite for tests
     WTF_CSRF_ENABLED = False # Disable CSRF forms protection in testing
+    VIDEO_UPLOAD_FOLDER = 'app/static/videos_test' # For test video uploads
     # LOGIN_DISABLED = True # Useful if you want to bypass login in some tests

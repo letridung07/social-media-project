@@ -2,11 +2,13 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_wtf.csrf import CSRFProtect
 from flask_login import LoginManager # Import LoginManager
+from flask_socketio import SocketIO
 from config import Config
 
 db = SQLAlchemy()
 csrf = CSRFProtect()
 login_manager = LoginManager() # Initialize LoginManager
+socketio = SocketIO()
 login_manager.login_view = 'main.login' # Corrected login view
 login_manager.login_message_category = 'info'
 
@@ -18,6 +20,7 @@ def create_app(config_class=Config):
     db.init_app(app)
     csrf.init_app(app)
     login_manager.init_app(app) # Initialize LoginManager with the app
+    socketio.init_app(app)
 
     from app.routes import main as main_blueprint
     app.register_blueprint(main_blueprint)
@@ -29,6 +32,7 @@ def create_app(config_class=Config):
     with app.app_context():
         db.create_all() # Create database tables if they don't exist
 
+    from app import events # noqa
     return app
 
 

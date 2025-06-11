@@ -38,6 +38,7 @@ class PostForm(FlaskForm):
     image_file = FileField('Upload Image (Optional)', validators=[
         FileAllowed(['jpg', 'png', 'jpeg', 'gif'], 'Images only!')
     ]) # New field
+    video_file = FileField('Upload Video (Optional)', validators=[FileAllowed(['mp4', 'mov', 'avi', 'mkv'], 'Videos only!')])
     submit = SubmitField('Post')
 
 class CommentForm(FlaskForm):

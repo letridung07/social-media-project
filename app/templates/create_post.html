@@ -1,12 +1,46 @@
-{# app/templates/create_post.html #}
 {% extends "base.html" %}
-{% import "bootstrap/wtf.html" as wtf %} {# Assuming bootstrap-flask is used or wtf.html is styled similarly #}
 
-{% block content %} {# Adjusted from app_content to content #}
+{% block content %}
     <h1>Create a New Post</h1>
     <div class="row">
         <div class="col-md-6">
-            {{ wtf.quick_form(form) }}
+            <form method="POST" action="{{ url_for('main.create_post') }}" enctype="multipart/form-data">
+                {{ form.hidden_tag() }} {# CSRF token #}
+
+                <div class="form-group">
+                    {{ form.body.label(class="form-control-label") }}
+                    {{ form.body(class="form-control", rows="3") }}
+                    {% if form.body.errors %}
+                        {% for error in form.body.errors %}
+                            <span class="text-danger">{{ error }}</span><br>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+
+                <div class="form-group">
+                    {{ form.image_file.label(class="form-control-label") }}
+                    {{ form.image_file(class="form-control-file") }}
+                    {% if form.image_file.errors %}
+                        {% for error in form.image_file.errors %}
+                            <span class="text-danger">{{ error }}</span><br>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+
+                <div class="form-group">
+                    {{ form.video_file.label(class="form-control-label") }}
+                    {{ form.video_file(class="form-control-file") }}
+                    {% if form.video_file.errors %}
+                        {% for error in form.video_file.errors %}
+                            <span class="text-danger">{{ error }}</span><br>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+
+                <div class="form-group">
+                    {{ form.submit(class="btn btn-primary") }}
+                </div>
+            </form>
         </div>
     </div>
 {% endblock %}
