@@ -1,6 +1,6 @@
 # Flask Social Platform
 
-A social media platform built with Flask, featuring user authentication, profiles, content posting, user following, likes, and comments.
+A social media platform built with Flask, featuring user authentication, profiles, content posting, user following, likes, and comments. The application also features a refreshed, modern user interface for an enhanced experience.
 
 ## Features
 
@@ -11,6 +11,10 @@ A social media platform built with Flask, featuring user authentication, profile
 *   User profile editing:
     *   Update biography
     *   Upload new profile picture (supports JPG, PNG, JPEG)
+*   **User Interface & Experience:**
+    *   Modern, responsive UI built with Bootstrap 4.5.2 and a custom theme.
+    *   Improved visual styling for enhanced readability and aesthetics.
+    *   Intuitive navigation and user flows.
 *   **Content Posting:**
     *   Users can create and share text-based posts.
 *   **Following System:**
@@ -24,6 +28,21 @@ A social media platform built with Flask, featuring user authentication, profile
 *   CSRF Protection for forms.
 *   Default profile picture for new users.
 *   Basic unit tests for authentication, profile management, posts, following, and engagement (likes/comments).
+
+## Frontend Technologies & Styling
+
+The frontend of this platform is built using:
+
+*   **Flask Templates (Jinja2):** For dynamic HTML rendering.
+*   **Bootstrap 4.5.2:** As the core CSS framework for layout, components, and responsiveness. Bootstrap is integrated via CDN.
+*   **Custom Modern Theme:** Applied via `app/static/css/style.css`, this theme includes:
+    *   A unique color palette.
+    *   The "Lato" Google Font for typography.
+    *   Customized styling for Bootstrap components (cards, buttons, forms) to create a distinct look and feel.
+
+## Screenshots
+
+*(Coming Soon: Screenshots demonstrating the application's user interface will be added here.)*
 
 ## Getting Started
 
