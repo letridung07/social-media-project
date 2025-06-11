@@ -1,17 +1,38 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request, abort
 from flask_login import login_user, current_user, logout_user, login_required
 from app import db
-from app.forms import RegistrationForm, LoginForm, EditProfileForm # Import EditProfileForm
-from app.models import User
-from app.utils import save_picture # Import save_picture utility
-from app.models import User
+from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm
+from app.models import User, Post, Like, Comment
+from app.utils import save_picture
 
 main = Blueprint('main', __name__)
 
 @main.route('/')
-@main.route('/index') # Add /index route
+@main.route('/index')
 def index():
-    return render_template('index.html', title='Home') # Render index.html
+    page = request.args.get('page', 1, type=int) # Optional: for pagination later
+    if current_user.is_authenticated:
+        # Personalized feed for logged-in users
+        # followed_posts() returns a query, so we can paginate it if needed
+        # For now, just get all:
+        posts = current_user.followed_posts().all()
+        # If pagination was desired:
+        # posts_query = current_user.followed_posts()
+        # posts_pagination = posts_query.paginate(page=page, per_page=current_app.config.get('POSTS_PER_PAGE', 10), error_out=False)
+        # posts = posts_pagination.items
+        # render_template('index.html', ..., pagination=posts_pagination)
+    else:
+        # Public feed for guests (e.g., most recent posts from all users)
+        posts = Post.query.order_by(Post.timestamp.desc()).all()
+        # If pagination was desired:
+        # posts_query = Post.query.order_by(Post.timestamp.desc())
+        # posts_pagination = posts_query.paginate(page=page, per_page=current_app.config.get('POSTS_PER_PAGE', 10), error_out=False)
+        # posts = posts_pagination.items
+        # render_template('index.html', ..., pagination=posts_pagination)
+
+    # The template 'index.html' already iterates through 'posts'
+    comment_form = CommentForm() # Instantiate the form
+    return render_template('index.html', title='Home', posts=posts, comment_form=comment_form) # Pass to template
 
 @main.route('/register', methods=['GET', 'POST'])
 def register():
@@ -48,7 +69,10 @@ def logout():
 @main.route('/user/<username>')
 def profile(username):
     user = User.query.filter_by(username=username).first_or_404()
-    return render_template('profile.html', title=f"{user.username}'s Profile", user=user)
+    # Query posts for this specific user, newest first
+    posts = user.posts.order_by(Post.timestamp.desc()).all() # Assuming 'posts' is the relationship name
+    comment_form = CommentForm() # Instantiate the form
+    return render_template('profile.html', title=f"{user.username}'s Profile", user=user, posts=posts, comment_form=comment_form) # Pass to template
 
 @main.route('/edit_profile', methods=['GET', 'POST'])
 @login_required
@@ -68,3 +92,104 @@ def edit_profile():
         # The profile picture field is not pre-filled for security and usability reasons.
         # Users must re-select a file if they want to change it.
     return render_template('edit_profile.html', title='Edit Profile', form=form)
+
+@main.route('/create_post', methods=['GET', 'POST'])
+@login_required
+def create_post():
+    form = PostForm()
+    if form.validate_on_submit():
+        post = Post(body=form.body.data, author=current_user)
+        db.session.add(post)
+        db.session.commit()
+        flash('Your post is now live!', 'success')
+        return redirect(url_for('main.index')) # Or redirect to profile page
+    return render_template('create_post.html', title='Create Post', form=form)
+
+@main.route('/follow/<username>', methods=['POST']) # Use POST as it changes state
+@login_required
+def follow(username):
+    user = User.query.filter_by(username=username).first_or_404()
+    if user == current_user:
+        flash('You cannot follow yourself!', 'warning')
+        return redirect(url_for('main.profile', username=username))
+    if current_user.is_following(user):
+        flash(f'You are already following {username}.', 'info')
+        return redirect(url_for('main.profile', username=username))
+
+    current_user.follow(user)
+    db.session.commit()
+    flash(f'You are now following {username}!', 'success')
+    return redirect(url_for('main.profile', username=username))
+
+@main.route('/unfollow/<username>', methods=['POST']) # Use POST as it changes state
+@login_required
+def unfollow(username):
+    user = User.query.filter_by(username=username).first_or_404()
+    if user == current_user:
+        flash('You cannot unfollow yourself!', 'warning')
+        return redirect(url_for('main.profile', username=username))
+    if not current_user.is_following(user):
+        flash(f'You are not following {username}.', 'info')
+        return redirect(url_for('main.profile', username=username))
+
+    current_user.unfollow(user)
+    db.session.commit()
+    flash(f'You have unfollowed {username}.', 'success')
+    return redirect(url_for('main.profile', username=username))
+
+@main.route('/like/<int:post_id>', methods=['POST'])
+@login_required
+def like_post(post_id): # Renamed function to avoid conflict with Like model
+    post = Post.query.get_or_404(post_id)
+    if Like.query.filter_by(user_id=current_user.id, post_id=post.id).first():
+        flash('You have already liked this post.', 'info')
+    else:
+        like = Like(user_id=current_user.id, post_id=post.id)
+        db.session.add(like)
+        db.session.commit()
+        flash('You liked the post!', 'success')
+    # Consider redirecting to request.referrer if available and safe, otherwise index or post permalink
+    return redirect(request.referrer or url_for('main.index'))
+
+@main.route('/unlike/<int:post_id>', methods=['POST'])
+@login_required
+def unlike_post(post_id): # Renamed function
+    post = Post.query.get_or_404(post_id) # Ensure post exists
+    like = Like.query.filter_by(user_id=current_user.id, post_id=post.id).first()
+    if like:
+        db.session.delete(like)
+        db.session.commit()
+        flash('You unliked the post.', 'success')
+    else:
+        flash('You have not liked this post yet.', 'info')
+    return redirect(request.referrer or url_for('main.index'))
+
+@main.route('/post/<int:post_id>/comment', methods=['POST'])
+@login_required
+def add_comment(post_id):
+    post = Post.query.get_or_404(post_id)
+    form = CommentForm() # This form will be submitted from the template where the post is displayed
+    if form.validate_on_submit(): # Check if the submitted form (from the template) is valid
+        comment = Comment(body=form.body.data, author=current_user, commented_post=post)
+        db.session.add(comment)
+        db.session.commit()
+        flash('Your comment has been added!', 'success')
+    else:
+        # Handle form errors, e.g., if comment is empty or too long.
+        # Flashing errors might be one way, but usually, the form is re-rendered with errors.
+        # For now, just a generic flash if validation fails, though this is not ideal UX.
+        # A better approach for complex pages is AJAX or rendering the page again with form errors.
+        if form.errors:
+            error_messages = []
+            for field, errors in form.errors.items():
+                for error in errors:
+                    error_messages.append(f"{field.capitalize()}: {error}")
+            flash("Error adding comment: " + "; ".join(error_messages), 'danger')
+        else:
+            flash('Error adding comment. Please try again.', 'danger')
+
+    # Redirect to the previous page, or the index page as a fallback.
+    # Ideally, redirect to the post itself, perhaps with an anchor to the comments section.
+    # e.g., redirect(url_for('main.some_post_view_route', post_id=post.id) + '#comments')
+    # For now, request.referrer is a good general solution.
+    return redirect(request.referrer or url_for('main.index'))

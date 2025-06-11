@@ -1,22 +1,40 @@
 {% extends "base.html" %}
-{% block title %}{{ user.username }}'s Profile{% endblock %}
-{% block content %}
-    <div class="profile-container">
-        <h1>{{ user.username }}'s Profile</h1>
-        <div class="profile-picture">
-            {# Assuming profile_picture_url is just the filename e.g., 'my_pic.jpg' or 'default_profile_pic.png' #}
-            {# If it can be a full URL, logic might need adjustment #}
-            <img src="{{ url_for('static', filename='images/' + user.profile_picture_url) }}" alt="Profile Picture" width="150" height="150">
-        </div>
-        <div class="profile-info">
-            <p><strong>Username:</strong> {{ user.username }}</p>
-            <p><strong>Email:</strong> {{ user.email }}</p> {# Consider privacy for email #}
-            <p><strong>Bio:</strong> {{ user.bio if user.bio else 'No bio yet.' }}</p>
-        </div>
 
-        {# Optional: Link to edit profile if viewing your own profile #}
-        {% if current_user.is_authenticated and current_user.id == user.id %}
-            <a href="{{ url_for('main.edit_profile') }}">Edit Profile</a> {# edit_profile route to be created later #}
-        {% endif %}
+{% block content %} {# Adjusted from app_content to content #}
+    <div class="row">
+        <div class="col-md-4">
+            <div class="profile-header">
+                <img src="{{ url_for('static', filename='images/' + user.profile_picture_url) }}" alt="{{ user.username }}'s profile picture" class="img-thumbnail mb-3" style="width: 150px; height: 150px;">
+                <h2>{{ user.username }}</h2>
+                {% if user.bio %}
+                    <p class="text-muted">{{ user.bio }}</p>
+                {% endif %}
+                {% if user == current_user %}
+                    <p><a href="{{ url_for('main.edit_profile') }}" class="btn btn-secondary btn-sm">Edit Profile</a></p>
+                {% elif current_user.is_authenticated %} {# Ensure current_user is authenticated before checking is_following #}
+                    {% if current_user.is_following(user) %}
+                        <form action="{{ url_for('main.unfollow', username=user.username) }}" method="post" style="display: inline;">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token else '' }}"/>
+                            <input type="submit" value="Unfollow" class="btn btn-danger btn-sm">
+                        </form>
+                    {% else %}
+                        <form action="{{ url_for('main.follow', username=user.username) }}" method="post" style="display: inline;">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token else '' }}"/>
+                            <input type="submit" value="Follow" class="btn btn-primary btn-sm">
+                        </form>
+                    {% endif %}
+                {% endif %}
+            </div>
+        </div>
+        <div class="col-md-8">
+            <h3>{{ user.username }}'s Posts:</h3>
+            {% if posts %}
+                {% for post in posts %}
+                    {% include '_post.html' %}
+                {% endfor %}
+            {% else %}
+                <p>{{ user.username }} has not posted anything yet.</p>
+            {% endif %}
+        </div>
     </div>
 {% endblock %}
