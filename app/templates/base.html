@@ -6,13 +6,18 @@
     <title>{% block title %}My Flask App{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
-<body>
+<body data-current-user-username="{{ current_user.username if current_user.is_authenticated else '' }}">
     <header>
         <nav>
             <ul>
                 <li><a href="{{ url_for('main.index') }}">Home</a></li>
                 {% if current_user.is_authenticated %}
                     <li><a href="{{ url_for('main.profile', username=current_user.username) }}">My Profile</a></li>
+                    <li>
+                        <a href="{{ url_for('main.notifications') }}">
+                            Notifications <span id="notification-count-badge" style="display: none; background-color: red; color: white; border-radius: 0.75em; padding: 0.1em 0.4em; font-size: 0.8em;">0</span>
+                        </a>
+                    </li>
                     <li><a href="{{ url_for('main.logout') }}">Logout</a></li>
                 {% else %}
                     <li><a href="{{ url_for('main.login') }}">Login</a></li>
@@ -36,5 +41,7 @@
     <footer>
         <p>&copy; My Flask App</p>
     </footer>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="{{ url_for('static', filename='js/notifications.js') }}"></script>
 </body>
 </html>

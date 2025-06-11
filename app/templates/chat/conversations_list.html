@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <h1>{{ title }}</h1>
+    {% if conversations %}
+        <div class="list-group">
+            {% for conv in conversations %}
+                <a href="{{ url_for('main.view_conversation', conversation_id=conv.id) }}" class="list-group-item list-group-item-action">
+                    <div class="d-flex w-100 justify-content-between">
+                        <h5 class="mb-1">
+                            {% set participants_count = conv.participants | length %}
+                            {% if participants_count == 1 and current_user in conv.participants %}
+                                Saved Messages (You)
+                            {% else %}
+                                Chat with
+                                {% for user in conv.participants %}
+                                    {% if user.id != current_user.id %}
+                                        {{ user.username }}{% if not loop.last and participants_count > 2 %}, {% endif %}
+                                    {% endif %}
+                                {% endfor %}
+                            {% endif %}
+                        </h5>
+                        <small>{{ conv.last_updated.strftime('%Y-%m-%d %H:%M') }} UTC</small>
+                    </div>
+                    {% set last_message = conv.messages.order_by(ChatMessage.timestamp.desc()).first() %}
+                    <p class="mb-1">
+                        {% if last_message %}
+                            {{ last_message.sender.username }}: {{ last_message.body[:70] }}{% if last_message.body|length > 70 %}...{% endif %}
+                        {% else %}
+                            No messages yet.
+                        {% endif %}
+                    </p>
+                </a>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p>You have no active conversations. Start one from a user's profile!</p>
+        <!-- Link to find users or a search page could go here -->
+    {% endif %}
+    <!-- Button/link to start a new chat (e.g., by searching for a user) could be added here -->
+</div>
+{% endblock %}

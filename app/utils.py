@@ -46,3 +46,18 @@ def save_post_image(form_image_field):
 
     img.save(picture_path)
     return image_fn
+
+def save_post_video(form_video_file):
+    random_hex = secrets.token_hex(12)
+    _, f_ext = os.path.splitext(form_video_file.filename)
+    video_fn = random_hex + f_ext
+
+    # Use the configuration variable for the upload path
+    upload_path_from_config = current_app.config.get('VIDEO_UPLOAD_FOLDER', 'app/static/videos_default') # Default fallback
+    video_full_path = os.path.join(current_app.root_path, upload_path_from_config, video_fn)
+
+    # Ensure the target directory exists
+    os.makedirs(os.path.dirname(video_full_path), exist_ok=True)
+
+    form_video_file.save(video_full_path)
+    return video_fn

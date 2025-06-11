@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <div class="container">
+        <h1>{{ title }}</h1>
+        {% if notifications %}
+            <ul class="list-group">
+                {% for notification in notifications %}
+                    <li class="list-group-item {% if not notification.is_read %}list-group-item-info{% endif %}">
+                        {% if notification.type == 'like' %}
+                            <a href="{{ url_for('main.profile', username=notification.actor.username) }}">{{ notification.actor.username }}</a>
+                            liked your
+                            <a href="{{ url_for('main.profile', username=notification.related_post.author.username) }}#post-{{ notification.related_post.id }}">post</a>.
+                        {% elif notification.type == 'comment' %}
+                            <a href="{{ url_for('main.profile', username=notification.actor.username) }}">{{ notification.actor.username }}</a>
+                            commented on your
+                            <a href="{{ url_for('main.profile', username=notification.related_post.author.username) }}#post-{{ notification.related_post.id }}">post</a>:
+                            <em>"{{ notification.related_post.comments.filter_by(user_id=notification.actor_id, post_id=notification.related_post.id).order_by(Comment.timestamp.desc()).first().body[:50] }}..."</em>
+                        {% elif notification.type == 'follow' %}
+                            <a href="{{ url_for('main.profile', username=notification.actor.username) }}">{{ notification.actor.username }}</a>
+                            started following you.
+                        {% else %}
+                            A new notification. <!-- Generic fallback -->
+                        {% endif %}
+                        <br>
+                        <small class="text-muted">{{ notification.timestamp.strftime('%Y-%m-%d %H:%M:%S') }} UTC</small>
+                        <!-- Add a link/button to mark as read if implementing that feature -->
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p>You have no notifications.</p>
+        {% endif %}
+    </div>
+{% endblock %}

@@ -139,6 +139,71 @@ class ProfileTestCase(unittest.TestCase):
         expected_pic_path = os.path.join(self.app_instance.root_path, 'static/images', updated_user.profile_picture_url)
         self.assertTrue(os.path.exists(expected_pic_path))
 
+    def test_update_profile_picture_deletes_old_custom_one(self):
+        self._login('user1@example.com', 'password123')
+
+        # Upload first custom picture
+        import base64
+        png_b64_1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=" # 1x1 PNG
+        pic1_bytes = base64.b64decode(png_b64_1)
+
+        initial_upload_data = {
+            'profile_picture': (io.BytesIO(pic1_bytes), 'pic1.png')
+        }
+        self.app.post('/edit_profile', data=initial_upload_data, content_type='multipart/form-data', follow_redirects=True)
+
+        user_after_pic1 = User.query.get(self.user1.id)
+        old_pic_filename = user_after_pic1.profile_picture_url
+        self.assertIsNotNone(old_pic_filename)
+        self.assertNotEqual(old_pic_filename, 'default_profile_pic.png')
+        old_pic_filepath = os.path.join(self.app_instance.root_path, 'static/images', old_pic_filename)
+        self.assertTrue(os.path.exists(old_pic_filepath), "First picture was not saved.")
+
+        # Upload second custom picture
+        png_b64_2 = "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" # 1x1 GIF (actually, but using .png)
+        pic2_bytes = base64.b64decode(png_b64_2)
+
+        second_upload_data = {
+            'profile_picture': (io.BytesIO(pic2_bytes), 'pic2.png')
+        }
+        self.app.post('/edit_profile', data=second_upload_data, content_type='multipart/form-data', follow_redirects=True)
+
+        user_after_pic2 = User.query.get(self.user1.id)
+        new_pic_filename = user_after_pic2.profile_picture_url
+        self.assertIsNotNone(new_pic_filename)
+        self.assertNotEqual(new_pic_filename, 'default_profile_pic.png')
+        self.assertNotEqual(new_pic_filename, old_pic_filename, "Profile picture URL did not change.")
+
+        new_pic_filepath = os.path.join(self.app_instance.root_path, 'static/images', new_pic_filename)
+        self.assertTrue(os.path.exists(new_pic_filepath), "Second picture was not saved.")
+        self.assertFalse(os.path.exists(old_pic_filepath), "Old custom picture was not deleted.")
+
+    def test_update_profile_picture_from_default_does_not_delete(self):
+        self._login('user1@example.com', 'password123')
+        # Ensure user starts with default picture
+        self.user1.profile_picture_url = 'default_profile_pic.png'
+        db.session.commit()
+        self.assertEqual(User.query.get(self.user1.id).profile_picture_url, 'default_profile_pic.png')
+
+        import base64
+        png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+        pic_bytes = base64.b64decode(png_b64)
+
+        upload_data = {
+            'profile_picture': (io.BytesIO(pic_bytes), 'new_custom.png')
+        }
+        self.app.post('/edit_profile', data=upload_data, content_type='multipart/form-data', follow_redirects=True)
+
+        user_after_upload = User.query.get(self.user1.id)
+        new_pic_filename = user_after_upload.profile_picture_url
+        self.assertIsNotNone(new_pic_filename)
+        self.assertNotEqual(new_pic_filename, 'default_profile_pic.png')
+
+        new_pic_filepath = os.path.join(self.app_instance.root_path, 'static/images', new_pic_filename)
+        self.assertTrue(os.path.exists(new_pic_filepath), "New custom picture was not saved.")
+        # We don't need to check if default_profile_pic.png exists, as it's a static asset that shouldn't be touched.
+        # The key is that the app didn't try to delete it and error out, or delete something it shouldn't.
+
     # The current /edit_profile route always pertains to current_user.
     # So, a direct test for "editing another user's profile via URL manipulation" isn't applicable
     # in the same way as if the URL contained the username to be edited.
