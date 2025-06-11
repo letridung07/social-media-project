@@ -4,55 +4,71 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}My Flask App{% endblock %}</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body data-current-user-username="{{ current_user.username if current_user.is_authenticated else '' }}">
-    <header>
-        <nav>
-            <ul>
-                <li><a href="{{ url_for('main.index') }}">Home</a></li>
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+        <a class="navbar-brand" href="{{ url_for('main.index') }}">My Flask App</a>
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav mr-auto">
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('main.index') }}">Home</a>
+                </li>
                 {% if current_user.is_authenticated %}
-                    <li><a href="{{ url_for('main.profile', username=current_user.username) }}">My Profile</a></li>
-                    <li>
-                        <a href="{{ url_for('main.notifications') }}">
-                            Notifications <span id="notification-count-badge" style="display: {% if unread_notification_count == 0 %}none{% else %}inline{% endif %}; background-color: red; color: white; border-radius: 0.75em; padding: 0.1em 0.4em; font-size: 0.8em;">{{ unread_notification_count }}</span>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('main.profile', username=current_user.username) }}">My Profile</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('main.notifications') }}">
+                            Notifications <span id="notification-count-badge" class="badge badge-danger" style="display: {% if unread_notification_count == 0 %}none{% else %}inline-block{% endif %}; vertical-align: baseline;">{{ unread_notification_count }}</span>
                         </a>
                     </li>
-                    <li><a href="{{ url_for('main.logout') }}">Logout</a></li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('main.logout') }}">Logout</a>
+                    </li>
                 {% else %}
-                    <li><a href="{{ url_for('main.login') }}">Login</a></li>
-                    <li><a href="{{ url_for('main.register') }}">Register</a></li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('main.login') }}">Login</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('main.register') }}">Register</a>
+                    </li>
                 {% endif %}
             </ul>
-            <!-- Search Form -->
-            <div class="navbar-search-form-container" style="padding: 8px; text-align: right;"> {# Basic styling for positioning #}
-                <form method="GET" action="{{ url_for('main.search') }}" class="form-inline my-2 my-lg-0" id="navbar-search-form" style="display: inline-block;">
-                    {{ search_form.hidden_tag() }} {# CSRF token - less critical for GET but good practice #}
-                    <div class="input-group">
-                        {{ search_form.query(class="form-control form-control-sm", placeholder="Search...", name="q") }} {# name="q" is crucial #}
-                        <div class="input-group-append">
-                            {{ search_form.submit(class="btn btn-sm btn-outline-secondary") }}
-                        </div>
-                    </div>
-                </form>
-            </div>
-        </nav>
-    </header>
-    <div class="container">
+            <form method="GET" action="{{ url_for('main.search') }}" class="form-inline my-2 my-lg-0" id="navbar-search-form">
+                {{ search_form.hidden_tag() }}
+                <input class="form-control mr-sm-2 form-control-sm" type="search" placeholder="Search..." aria-label="Search" name="q" value="{{ request.args.get('q', '') }}">
+                {{ search_form.submit(class="btn btn-sm btn-outline-success my-2 my-sm-0") }}
+            </form>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 {% for category, message in messages %}
-                    <div class="alert alert-{{ category }}">
+                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
                         {{ message }}
+                        <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
                     </div>
                 {% endfor %}
             {% endif %}
         {% endwith %}
         {% block content %}{% endblock %}
     </div>
-    <footer>
-        <p>&copy; My Flask App</p>
+
+    <footer class="text-center py-3 my-4 border-top">
+        <p class="text-muted">&copy; My Flask App</p>
     </footer>
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.3/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script src="{{ url_for('static', filename='js/notifications.js') }}"></script>
 </body>

@@ -1,39 +1,34 @@
 {# app/templates/_post.html #}
-<article class="post mb-3"> {# Added mb-3 for spacing between posts #}
-    <div class="post-avatar">
-        <img src="{{ url_for('static', filename='images/' + post.author.profile_picture_url) }}" alt="{{ post.author.username }}'s profile picture" class="rounded-circle" width="40" height="40">
+<article class="card mb-3 post">
+    <div class="card-header">
+        <div class="d-flex align-items-center">
+            <img src="{{ url_for('static', filename='images/' + post.author.profile_picture_url) }}" alt="{{ post.author.username }}'s profile picture" class="rounded-circle mr-2" width="40" height="40">
+            <div>
+                <a href="{{ url_for('main.profile', username=post.author.username) }}" class="font-weight-bold text-dark text-decoration-none">{{ post.author.username }}</a>
+                <small class="text-muted d-block">{{ post.timestamp.strftime('%Y-%m-%d %H:%M:%S') }} UTC</small>
+            </div>
+        </div>
     </div>
-    <div class="post-content">
-        <div class="post-author">
-            <a href="{{ url_for('main.profile', username=post.author.username) }}">{{ post.author.username }}</a>
-        </div>
-        <div class="post-timestamp">
-            <small>{{ post.timestamp.strftime('%Y-%m-%d %H:%M:%S') }} UTC</small>
-        </div>
-        <div class="post-body">
-            <p>{{ post.body }}</p>
-        </div>
+    <div class="card-body">
+        <p>{{ post.body }}</p>
 
         {# Display post image if it exists #}
         {% if post.image_filename %}
-            <div class="post-image-container my-2"> {# my-2 for vertical margin #}
+            <div class="post-image-container my-2">
                 <img src="{{ url_for('static', filename='post_images/' + post.image_filename) }}"
                      alt="{{ post.alt_text if post.alt_text else ('Image for post by ' + post.author.username) }}"
-                     style="max-width: 100%; height: auto; border-radius: 8px; display: block;">
+                     class="img-fluid rounded" style="display: block;">
             </div>
         {% endif %}
 
         {% if post.video_filename %}
             <div class="post-video-container mt-2 mb-2">
-                <video width="100%" controls {% if post.alt_text %}aria-describedby="video-alt-text-{{ post.id }}"{% endif %}>
+                <video width="100%" controls class="rounded" {% if post.alt_text %}aria-describedby="video-alt-text-{{ post.id }}"{% endif %}>
                     <source src="{{ url_for('static', filename='videos/' + post.video_filename) }}" type="video/mp4">
-                    <!-- Add more <source> tags for other video types if needed, e.g., mov, avi -->
                     Your browser does not support the video tag.
                 </video>
                 {% if post.alt_text %}
-                    <p id="video-alt-text-{{ post.id }}" class="visually-hidden">{{ post.alt_text }}</p>
-                    {# Consider adding a Bootstrap .sr-only class if Bootstrap 4, or .visually-hidden for Bootstrap 5 #}
-                    {# If neither, this class will need to be defined in CSS to hide it visually but keep for screen readers #}
+                    <p id="video-alt-text-{{ post.id }}" class="sr-only">{{ post.alt_text }}</p>
                 {% endif %}
             </div>
         {% endif %}
@@ -41,23 +36,23 @@
         {% if post.hashtags %}
             <div class="post-hashtags mt-2 mb-2">
                 {% for hashtag in post.hashtags %}
-                    <a href="{{ url_for('main.hashtag_feed', tag_text=hashtag.tag_text) }}" class="badge badge-info mr-1" style="text-decoration: none; color: white; background-color: #17a2b8;"> {# badge-info might need explicit styling for anchor #}
+                    <a href="{{ url_for('main.hashtag_feed', tag_text=hashtag.tag_text) }}" class="badge badge-info mr-1 text-decoration-none">
                         #{{ hashtag.tag_text }}
                     </a>
                 {% endfor %}
             </div>
         {% endif %}
 
-        <div class="post-actions mb-2"> {# Added mb-2 for spacing #}
-            <small>{{ post.like_count() }} like{% if post.like_count() != 1 %}s{% endif %}</small>
+        <div class="post-actions mb-2">
+            <small class="text-muted">{{ post.like_count() }} like{% if post.like_count() != 1 %}s{% endif %}</small>
             {% if current_user.is_authenticated %}
                 {% if post.is_liked_by(current_user) %}
-                    <form action="{{ url_for('main.unlike_post', post_id=post.id) }}" method="post" style="display: inline; margin-left: 10px;">
+                    <form action="{{ url_for('main.unlike_post', post_id=post.id) }}" method="post" class="d-inline ml-2">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token else '' }}"/>
                         <button type="submit" class="btn btn-link btn-sm p-0">Unlike</button>
                     </form>
                 {% else %}
-                    <form action="{{ url_for('main.like_post', post_id=post.id) }}" method="post" style="display: inline; margin-left: 10px;">
+                    <form action="{{ url_for('main.like_post', post_id=post.id) }}" method="post" class="d-inline ml-2">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token else '' }}"/>
                         <button type="submit" class="btn btn-link btn-sm p-0">Like</button>
                     </form>
@@ -66,55 +61,54 @@
 
             {# Edit and Delete buttons for post author #}
             {% if current_user.is_authenticated and current_user == post.author %}
-                <div style="display: inline-block; margin-left: 15px;"> {# Wrapper for spacing and inline layout #}
-                    <a href="{{ url_for('main.edit_post', post_id=post.id) }}" class="btn btn-sm btn-outline-secondary">Edit</a>
-                    <form action="{{ url_for('main.delete_post', post_id=post.id) }}" method="POST" style="display: inline; margin-left: 5px;">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token else '' }}"/>
-                        <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Are you sure you want to delete this post?');">Delete</button>
-                    </form>
-                </div>
-            {% endif %}
-        </div>
-
-        {# New section for comments #}
-        <div class="comments-section mt-2">
-            <h5>Comments</h5>
-            {# Display existing comments #}
-            {% if post.comments %}
-                {% for comment in post.comments %} {# Assumes post.comments is ordered by timestamp asc #}
-                    <div class="comment mb-2">
-                        <strong><a href="{{ url_for('main.profile', username=comment.author.username) }}">{{ comment.author.username }}</a></strong>
-                        <small class="text-muted">{{ comment.timestamp.strftime('%Y-%m-%d %H:%M') }}</small>
-                        <p style="margin-left: 10px; white-space: pre-wrap;">{{ comment.body }}</p>
-                    </div>
-                {% endfor %}
-            {% else %}
-                <p><small>No comments yet.</small></p>
-            {% endif %}
-
-            {# Display CommentForm for authenticated users #}
-            {% if current_user.is_authenticated %}
-                <div class="add-comment-form mt-2">
-                    {# Assumes 'comment_form' is passed to this template. #}
-                    {% if comment_form %}
-                        <form method="POST" action="{{ url_for('main.add_comment', post_id=post.id) }}">
-                            {{ comment_form.hidden_tag() }} {# Includes CSRF token #}
-                            <div class="form-group">
-                                {{ comment_form.body(class="form-control form-control-sm", rows="2", placeholder="Add a comment...") }}
-                                {% for error in comment_form.body.errors %}
-                                    <span class="text-danger"><small>{{ error }}</small></span><br>
-                                {% endfor %}
-                            </div>
-                            <div class="form-group mt-1">
-                                {{ comment_form.submit(class="btn btn-primary btn-sm") }}
-                            </div>
-                        </form>
-                    {% else %}
-                        <p><small>Error: Comment form not available.</small></p> {# Fallback if form not passed #}
-                    {% endif %}
-                </div>
+                <a href="{{ url_for('main.edit_post', post_id=post.id) }}" class="btn btn-sm btn-outline-secondary ml-3">Edit</a>
+                <form action="{{ url_for('main.delete_post', post_id=post.id) }}" method="POST" class="d-inline ml-1">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token else '' }}"/>
+                    <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Are you sure you want to delete this post?');">Delete</button>
+                </form>
             {% endif %}
         </div>
     </div>
+
+    {# New section for comments #}
+    <div class="card-footer comments-section">
+        <h5 class="mb-3">Comments</h5>
+        {# Display existing comments #}
+        {% if post.comments %}
+            {% for comment in post.comments %} {# Assumes post.comments is ordered by timestamp asc #}
+                <div class="comment mb-2 pb-2 border-bottom">
+                    <div>
+                        <img src="{{ url_for('static', filename='images/' + comment.author.profile_picture_url) }}" alt="{{ comment.author.username }}'s profile picture" class="rounded-circle mr-2 comment-avatar" style="float: left;">
+                        <strong><a href="{{ url_for('main.profile', username=comment.author.username) }}" class="text-dark text-decoration-none">{{ comment.author.username }}</a></strong>
+                        <small class="text-muted ml-2">{{ comment.timestamp.strftime('%Y-%m-%d %H:%M') }}</small>
+                    </div>
+                    <div style="margin-left: 40px; white-space: pre-wrap;">{{ comment.body }}</div>
+                </div>
+            {% endfor %}
+        {% else %}
+            <p class="text-muted"><small>No comments yet.</small></p>
+        {% endif %}
+
+        {# Display CommentForm for authenticated users #}
+        {% if current_user.is_authenticated %}
+            <div class="add-comment-form mt-3">
+                {% if comment_form %}
+                    <form method="POST" action="{{ url_for('main.add_comment', post_id=post.id) }}">
+                        {{ comment_form.hidden_tag() }} {# Includes CSRF token #}
+                        <div class="form-group">
+                            {{ comment_form.body(class="form-control form-control-sm", rows="2", placeholder="Add a comment...") }}
+                            {% for error in comment_form.body.errors %}
+                                <span class="text-danger d-block"><small>{{ error }}</small></span>
+                            {% endfor %}
+                        </div>
+                        <div class="form-group mt-2">
+                            {{ comment_form.submit(class="btn btn-primary btn-sm") }}
+                        </div>
+                    </form>
+                {% else %}
+                    <p class="text-danger"><small>Error: Comment form not available.</small></p> {# Fallback if form not passed #}
+                {% endif %}
+            </div>
+        {% endif %}
+    </div>
 </article>
-<hr>
