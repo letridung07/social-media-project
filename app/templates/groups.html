@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block app_content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>{{ title }}</h2>
+        {% if current_user.is_authenticated %}
+            <a href="{{ url_for('main.create_group') }}" class="btn btn-primary">Create New Group</a>
+        {% endif %}
+    </div>
+    <hr>
+    {% if groups %}
+        <div class="list-group">
+            {% for group in groups %}
+                <a href="{{ url_for('main.view_group', group_id=group.id) }}" class="list-group-item list-group-item-action flex-column align-items-start group-list-item">
+                    <div class="d-flex w-100 justify-content-between">
+                        <h5 class="mb-1">{{ group.name }}</h5>
+                        <small>Members: {{ group.memberships.count() }}</small>
+                    </div>
+                    <p class="mb-1">{{ group.description|truncate(150, True) if group.description else 'No description available.' }}</p>
+                    <small>Created by: {{ group.creator.username }}</small>
+                </a>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p>No groups found. {% if current_user.is_authenticated %}Why not <a href="{{ url_for('main.create_group') }}">create one</a>?{% endif %}</p>
+    {% endif %}
+</div>
+{% endblock %}

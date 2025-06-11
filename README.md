@@ -36,6 +36,17 @@ A social media platform built with Flask, featuring user authentication, profile
         *   New followers.
         *   New chat messages.
         *   **Like Milestones:** Automatic notifications when a user's post reaches specific like count milestones (e.g., 10, 50, 100, 250, 500, 1000 likes), celebrating its popularity.
+*   **User Groups/Communities:**
+    *   Users can create and join groups based on shared interests, hobbies, or any other criteria.
+    *   **Group Creation:** Create new groups with a unique name, description, and an optional group image. The creator automatically becomes an admin.
+    *   **Joining & Leaving:** Users can easily join public or discoverable groups and leave groups they are part of.
+    *   **Group-Specific Feeds:** Each group has its own dedicated page displaying posts made exclusively within that group.
+    *   **Group Membership Visibility:** View a list of members for each group.
+    *   **Group Management (for Admins):**
+        *   Edit group details (name, description, image).
+        *   Remove members from the group.
+        *   Delete the group entirely (posts within the group will be disassociated).
+    *   **Notifications:** Members receive notifications for new posts within their groups, and group admins are notified when new users join.
 *   **Real-time Chat:** (See dedicated section below for more details)
     *   One-on-one conversations.
     *   Real-time messaging with Socket.IO.
@@ -182,7 +193,8 @@ Follow these instructions to get a copy of the project up and running on your lo
 │   ├── test_posts.py     # Tests for creating and viewing posts
 │   ├── test_follow.py    # Tests for following/unfollowing users and feed generation
 │   ├── test_engagement.py # Tests for liking/unliking posts and adding/viewing comments
-│   └── test_chat.py      # Chat functionality tests
+│   ├── test_chat.py      # Chat functionality tests
+│   └── test_groups.py    # Tests for group functionality
 ├── venv/                 # Python virtual environment (if created with this name)
 ├── .gitignore            # Specifies intentionally untracked files that Git should ignore
 ├── config.py             # Configuration settings (e.g., SECRET_KEY, database URI)
@@ -214,3 +226,78 @@ We welcome contributions to the Flask Social Platform! Here are some ways you ca
     9.  Open a pull request against our `main` (or `develop`) branch.
 
 We'll do our best to review contributions in a timely manner.
+
+## Data Model for Groups Feature (Mermaid Diagram)
+
+```mermaid
+classDiagram
+    class User {
+        id
+        username
+        email
+        bio
+        profile_picture_url  // Corrected from profile_picture
+        +groups_created
+        +group_memberships
+    }
+    class Group {
+        id
+        name
+        description
+        image_file
+        creator_id
+        created_at
+        +creator
+        +posts
+        +memberships
+        +members (association_proxy)
+    }
+    class GroupMembership {
+        id         // Added for clarity, though often composite PK
+        user_id
+        group_id
+        joined_at
+        role       // e.g., 'admin', 'member'
+        +user
+        +group
+    }
+    class Post {
+        id
+        body       // Corrected from content
+        user_id
+        group_id   // Nullable
+        timestamp  // Corrected from created_at
+        +author
+        +group     // Relationship to Group
+    }
+    class Notification {
+        id
+        recipient_id
+        actor_id
+        type
+        related_post_id
+        related_group_id // Added
+        timestamp
+        is_read
+        +recipient
+        +actor
+        +related_post
+        +related_group   // Added
+    }
+
+    User "1" -- "*" Group : creates (via groups_created/creator)
+    User "*" -- "*" Group : member of (via GroupMembership)
+    GroupMembership "*" -- "1" User : belongs to
+    GroupMembership "*" -- "1" Group : belongs to
+
+    Group "1" -- "*" Post : contains posts (via posts/group)
+    User "1" -- "*" Post : authors (via author/posts)
+
+    Notification -- User : recipient
+    Notification -- User : actor
+    Notification -- Post : related_post (optional)
+    Notification -- Group : related_group (optional)
+
+    note for GroupMembership "Intermediary table defining user roles within groups."
+    note for Post "group_id is nullable, allowing posts outside groups."
+```

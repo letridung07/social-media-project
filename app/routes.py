@@ -4,9 +4,9 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request,
 from flask_login import login_user, current_user, logout_user, login_required
 from sqlalchemy import or_
 from app import db, socketio # Import socketio
-from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm # Import new forms
-from app.models import User, Post, Like, Comment, Notification, Conversation, ChatMessage, Hashtag # Import Hashtag
-from app.utils import save_picture, save_post_image, save_post_video
+from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm # Import new forms
+from app.models import User, Post, Like, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership # Import Hashtag
+from app.utils import save_picture, save_post_image, save_post_video, save_group_image
 from app.email_utils import send_password_reset_email # Import email utility
 
 main = Blueprint('main', __name__)
@@ -225,6 +225,22 @@ def edit_profile():
 @main.route('/create_post', methods=['GET', 'POST'])
 @login_required
 def create_post():
+    group_id_param = request.args.get('group_id', type=int)
+    target_group = None
+    group_name_for_template = None
+
+    if group_id_param:
+        target_group = Group.query.get(group_id_param)
+        if not target_group:
+            flash('Group not found.', 'warning')
+            return redirect(url_for('main.index'))
+
+        membership = GroupMembership.query.filter_by(user_id=current_user.id, group_id=target_group.id).first()
+        if not membership:
+            flash('You are not a member of this group and cannot post in it.', 'danger')
+            return redirect(url_for('main.view_group', group_id=target_group.id))
+        group_name_for_template = target_group.name
+
     form = PostForm()
     video_filename_to_save = None # Initialize
     if form.validate_on_submit():
@@ -251,15 +267,39 @@ def create_post():
             author=current_user,
             image_filename=image_filename_to_save, # If applicable
             video_filename=video_filename_to_save, # If applicable
-            alt_text=form.alt_text.data # <-- Add this line
+            alt_text=form.alt_text.data
         )
+        if target_group:
+            post.group_id = target_group.id
+
         db.session.add(post)
         # Process hashtags before committing the post
         process_hashtags(post.body, post)
+        # Commit post first to get post.id
         db.session.commit()
+
+        if target_group: # target_group is the Group object from earlier in the route
+            # Notify group members about the new post
+            for membership_assoc in target_group.memberships:
+                member_user = membership_assoc.user
+                if member_user.id != current_user.id: # Don't notify the post author
+                    notification = Notification(
+                        recipient_id=member_user.id,
+                        actor_id=current_user.id,
+                        type='new_group_post',
+                        related_post_id=post.id,
+                        related_group_id=target_group.id
+                    )
+                    db.session.add(notification)
+            db.session.commit() # Commit notifications
+
         flash('Your post is now live!', 'success')
-        return redirect(url_for('main.index'))
-    return render_template('create_post.html', title='Create Post', form=form)
+        if target_group:
+            return redirect(url_for('main.view_group', group_id=target_group.id))
+        else:
+            return redirect(url_for('main.index'))
+
+    return render_template('create_post.html', title='Create Post', form=form, group_id=group_id_param, group_name=group_name_for_template)
 
 
 @main.route('/edit_post/<int:post_id>', methods=['GET', 'POST'])
@@ -627,3 +667,247 @@ def start_or_get_conversation(user_id):
         return redirect(url_for('main.view_conversation', conversation_id=conversation.id))
     else:
         return redirect(url_for('main.view_conversation', conversation_id=existing_conversation.id))
+
+
+# -------------------- Group Routes --------------------
+
+@main.route('/group/create', methods=['GET', 'POST'])
+@login_required
+def create_group():
+    form = GroupCreationForm()
+    if form.validate_on_submit():
+        group_image_filename = None
+        if form.image_file.data:
+            try:
+                group_image_filename = save_group_image(form.image_file.data)
+            except Exception as e:
+                current_app.logger.error(f"Group image upload error: {e}")
+                flash('An error occurred while uploading the group image. Please try again.', 'danger')
+                return render_template('create_group.html', title='Create Group', form=form)
+
+        group = Group(
+            name=form.name.data,
+            description=form.description.data,
+            creator_id=current_user.id,
+            image_file=group_image_filename if group_image_filename else 'default_group_pic.png'
+        )
+        db.session.add(group)
+        db.session.flush() # Flush to get group.id for GroupMembership
+
+        # Add creator as admin member
+        membership = GroupMembership(
+            user_id=current_user.id,
+            group_id=group.id,
+            role='admin'
+        )
+        db.session.add(membership)
+        db.session.commit()
+        flash('Group created successfully!', 'success')
+        return redirect(url_for('main.view_group', group_id=group.id))
+    return render_template('create_group.html', title='Create Group', form=form)
+
+@main.route('/group/<int:group_id>')
+def view_group(group_id):
+    group = Group.query.get_or_404(group_id)
+    # Fetch posts associated with this group, newest first
+    # Assuming group.posts is the backref from Post model
+    posts = group.posts.order_by(Post.timestamp.desc()).all()
+
+    is_member = False
+    is_admin = False
+    if current_user.is_authenticated:
+        membership = GroupMembership.query.filter_by(user_id=current_user.id, group_id=group.id).first()
+        if membership:
+            is_member = True
+            if membership.role == 'admin':
+                is_admin = True
+
+    # TODO: Create app/templates/group.html in a later step
+    return render_template('group.html', title=group.name, group=group, posts=posts, is_member=is_member, is_admin=is_admin)
+
+@main.route('/group/<int:group_id>/join', methods=['POST'])
+@login_required
+def join_group(group_id):
+    group = Group.query.get_or_404(group_id)
+    existing_membership = GroupMembership.query.filter_by(user_id=current_user.id, group_id=group.id).first()
+    if existing_membership:
+        flash('You are already a member of this group.', 'info')
+    else:
+        membership = GroupMembership(user_id=current_user.id, group_id=group.id, role='member') # Default role
+        db.session.add(membership)
+        db.session.commit() # Commit membership first
+
+        # Notify group admins about the new member
+        admins = User.query.join(GroupMembership).filter(
+            GroupMembership.group_id == group.id,
+            GroupMembership.role == 'admin'
+        ).all()
+
+        for admin_user in admins:
+            if admin_user.id != current_user.id: # Don't notify admin if they are the one joining (should not happen for join)
+                notification = Notification(
+                    recipient_id=admin_user.id,
+                    actor_id=current_user.id,
+                    type='user_joined_group',
+                    related_group_id=group.id
+                )
+                db.session.add(notification)
+        db.session.commit() # Commit notifications
+
+        flash(f'You have successfully joined the group: {group.name}!', 'success')
+    return redirect(url_for('main.view_group', group_id=group.id))
+
+@main.route('/group/<int:group_id>/leave', methods=['POST'])
+@login_required
+def leave_group(group_id):
+    group = Group.query.get_or_404(group_id)
+    membership = GroupMembership.query.filter_by(user_id=current_user.id, group_id=group.id).first()
+    if not membership:
+        flash('You are not a member of this group.', 'info')
+    else:
+        # Consideration: Prevent creator from leaving if they are the only admin.
+        # For now, allowing leave. If they are an admin, their admin role is removed with membership.
+        # If group has no admins left, it might become unmanageable. This logic can be added later.
+        # Example check (can be more complex):
+        # if group.creator_id == current_user.id:
+        #     admins = GroupMembership.query.filter_by(group_id=group.id, role='admin').all()
+        #     if len(admins) == 1 and admins[0].user_id == current_user.id:
+        #         flash('As the creator and only admin, you cannot leave the group. Please designate another admin first.', 'warning')
+        #         return redirect(url_for('main.view_group', group_id=group.id))
+
+        db.session.delete(membership)
+        db.session.commit()
+        flash(f'You have left the group: {group.name}.', 'success')
+        # TODO: Notification for group admin/creator about member leaving (if not self)
+    return redirect(url_for('main.view_group', group_id=group.id)) # Could also redirect to a general groups listing page
+
+@main.route('/groups')
+@login_required # Or remove @login_required for public browsing
+def groups_list():
+    all_groups = Group.query.order_by(Group.name).all()
+    # The template groups.html will be created in a subsequent step
+    return render_template('groups.html', title='Browse Groups', groups=all_groups)
+
+
+# -------------------- Group Management Routes --------------------
+
+@main.route('/group/<int:group_id>/manage', methods=['GET', 'POST'])
+@login_required
+def manage_group(group_id):
+    group = Group.query.get_or_404(group_id)
+
+    # Authorization: Check if current_user is an admin of the group
+    membership = GroupMembership.query.filter_by(user_id=current_user.id, group_id=group.id).first()
+    if not membership or membership.role != 'admin':
+        flash('You are not authorized to manage this group.', 'danger')
+        return redirect(url_for('main.view_group', group_id=group.id))
+
+    form = GroupCreationForm(obj=group) # Reuse GroupCreationForm, pre-populate with group data for GET
+
+    if form.validate_on_submit(): # This handles POST request for updating group details
+        group.name = form.name.data
+        group.description = form.description.data
+
+        if form.image_file.data:
+            # Delete old group image if it's not the default
+            if group.image_file and group.image_file != 'default_group_pic.png':
+                try:
+                    old_image_path = os.path.join(current_app.root_path, current_app.config['UPLOAD_FOLDER_GROUP_IMAGES'], group.image_file)
+                    if os.path.exists(old_image_path):
+                        os.remove(old_image_path)
+                except Exception as e:
+                    current_app.logger.error(f"Error deleting old group image {group.image_file}: {e}")
+                    flash('Error removing old group image.', 'warning')
+            try:
+                group.image_file = save_group_image(form.image_file.data)
+            except Exception as e:
+                current_app.logger.error(f"Error saving new group image: {e}")
+                flash('An error occurred while uploading the new group image.', 'danger')
+                # Fall through to render template with existing data if image save fails
+
+        db.session.commit()
+        flash('Group details updated successfully!', 'success')
+        return redirect(url_for('main.manage_group', group_id=group.id))
+
+    # For GET request, form is already pre-populated by obj=group
+    # Fetch members for display
+    members = group.memberships.all() # This gives GroupMembership objects
+
+    # TODO: Create app/templates/manage_group.html in a later step
+    return render_template('manage_group.html', title=f'Manage {group.name}', form=form, group=group, members=members)
+
+@main.route('/group/<int:group_id>/remove_member/<int:user_id>', methods=['POST'])
+@login_required
+def remove_group_member(group_id, user_id):
+    group = Group.query.get_or_404(group_id)
+    user_to_remove = User.query.get_or_404(user_id)
+
+    # Authorization: Check if current_user is an admin of the group
+    current_user_membership = GroupMembership.query.filter_by(user_id=current_user.id, group_id=group.id).first()
+    if not current_user_membership or current_user_membership.role != 'admin':
+        flash('You are not authorized to manage this group.', 'danger')
+        return redirect(url_for('main.view_group', group_id=group.id))
+
+    membership_to_delete = GroupMembership.query.filter_by(user_id=user_to_remove.id, group_id=group.id).first()
+
+    if not membership_to_delete:
+        flash(f'{user_to_remove.username} is not a member of this group.', 'info')
+        return redirect(url_for('main.manage_group', group_id=group.id))
+
+    # Prevent removing the group creator if they are the only admin
+    if group.creator_id == user_to_remove.id:
+        admins = GroupMembership.query.filter_by(group_id=group.id, role='admin').all()
+        if len(admins) == 1 and admins[0].user_id == user_to_remove.id:
+            flash('You cannot remove the group creator as they are the only admin. Designate another admin first or delete the group.', 'warning')
+            return redirect(url_for('main.manage_group', group_id=group.id))
+
+    # Prevent admin from removing themselves if they are the only admin (even if not creator)
+    if current_user.id == user_to_remove.id and current_user_membership.role == 'admin':
+        admins = GroupMembership.query.filter_by(group_id=group.id, role='admin').all()
+        if len(admins) == 1:
+            flash('You cannot remove yourself as you are the only admin. Designate another admin or delete the group.', 'warning')
+            return redirect(url_for('main.manage_group', group_id=group.id))
+
+
+    db.session.delete(membership_to_delete)
+    db.session.commit()
+    flash(f'{user_to_remove.username} has been removed from the group.', 'success')
+    return redirect(url_for('main.manage_group', group_id=group.id))
+
+@main.route('/group/<int:group_id>/delete', methods=['POST'])
+@login_required
+def delete_group(group_id):
+    group = Group.query.get_or_404(group_id)
+
+    # Authorization: Check if current_user is an admin of the group
+    # For group deletion, often only the creator or a super-admin might be allowed.
+    # For now, any group admin can delete, but this could be restricted further (e.g., only creator).
+    membership = GroupMembership.query.filter_by(user_id=current_user.id, group_id=group.id).first()
+    if not membership or membership.role != 'admin': # or group.creator_id != current_user.id (if only creator can delete)
+        flash('You are not authorized to delete this group.', 'danger')
+        return redirect(url_for('main.view_group', group_id=group.id))
+
+    # Handle Posts: Nullify their group_id
+    # This needs to be done before deleting memberships if there are FK constraints or specific post handling logic.
+    # However, since Post.group_id is nullable, and GroupMembership deletion is handled by cascade on Group deletion,
+    # we can do this.
+    for post in group.posts:
+        post.group_id = None
+    db.session.flush() # Apply post changes before group deletion
+
+    # Delete Group Image (if not default)
+    if group.image_file and group.image_file != 'default_group_pic.png':
+        try:
+            image_path = os.path.join(current_app.root_path, current_app.config['UPLOAD_FOLDER_GROUP_IMAGES'], group.image_file)
+            if os.path.exists(image_path):
+                os.remove(image_path)
+        except Exception as e:
+            current_app.logger.error(f"Error deleting group image {group.image_file} during group deletion: {e}")
+            # Non-critical, log and continue with group deletion
+
+    # Delete the group. Associated GroupMemberships should be deleted by cascade.
+    db.session.delete(group)
+    db.session.commit()
+
+    flash(f'Group "{group.name}" has been deleted successfully.', 'success')
+    return redirect(url_for('main.index')) # Or a future groups listing page

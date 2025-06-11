@@ -225,3 +225,80 @@ footer p {
 #send-message-form .input-group {
     margin-top: 1rem; /* Add some space above the input form */
 }
+
+/* --- Group Specific Styles --- */
+
+/* group.html - Group Profile Page */
+.group-profile-image-container { /* Container for the image in col-md-3 */
+    text-align: center; /* Center image if col is wider */
+    margin-bottom: 1rem;
+}
+
+.group-profile-image {
+    width: 200px; /* Fixed width */
+    height: 200px; /* Fixed height for a square look */
+    object-fit: cover; /* Crop image to fit, maintaining aspect ratio */
+    border-radius: 0.5rem; /* Match card/button radius */
+    border: 3px solid #fff; /* Optional: white border like profile pics */
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1); /* Subtle shadow */
+}
+
+.group-header-details h2 {
+    margin-top: 0; /* Override default h2 margin if it's the first element */
+}
+
+.group-actions .btn {
+    margin-right: 0.5rem; /* Space out buttons */
+    margin-bottom: 0.5rem;
+}
+
+.group-member-list .list-group-item {
+    border-left: none;
+    border-right: none;
+    padding-left: 0;
+    padding-right: 0;
+}
+
+/* groups.html - Browse Groups Page */
+.group-list-item { /* Applied to the <a> tag which is a list-group-item */
+    transition: background-color 0.2s ease-in-out;
+    border-radius: 0.5rem; /* Match other rounded elements */
+    margin-bottom: 1rem; /* Space out items */
+    border: 1px solid #eee; /* Light border */
+}
+
+.group-list-item:hover {
+    background-color: #f8f9fa; /* Light hover effect */
+}
+
+.group-list-item h5 {
+    color: var(--theme-primary);
+}
+
+/* manage_group.html */
+.manage-group-section {
+    margin-bottom: 2.5rem;
+    padding: 1.5rem;
+    background-color: #fff;
+    border-radius: 0.5rem;
+    box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.075);
+}
+
+.manage-group-section h4 {
+    margin-top: 0;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #eee;
+    margin-bottom: 1rem;
+}
+
+.delete-group-section {
+    border: 1px solid #dc3545; /* Bootstrap danger color */
+    padding: 1.5rem;
+    border-radius: 0.5rem;
+    background-color: #f8d7da; /* Light danger background */
+}
+
+.delete-group-section h4 {
+    color: #721c24; /* Darker danger color for text */
+    border-bottom-color: #f5c6cb; /* Lighter border for heading */
+}

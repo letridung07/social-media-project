@@ -7,6 +7,7 @@ try:
 except ImportError:
     from itsdangerous import URLSafeTimedSerializer as Serializer
 from flask import current_app
+from sqlalchemy.ext.associationproxy import association_proxy
 
 # Define the association table for followers
 followers = db.Table('followers',
@@ -37,6 +38,11 @@ class User(db.Model, UserMixin):
 
     # Relationship to Post
     posts = db.relationship('Post', backref='author', lazy='dynamic')
+
+    # Groups created by the user
+    groups_created = db.relationship('Group', backref='creator', lazy='dynamic', foreign_keys='Group.creator_id')
+    # Memberships of the user in groups
+    group_memberships = db.relationship('GroupMembership', backref='user', lazy='dynamic', cascade='all, delete-orphan')
 
     # 'followed' is the list of users this user is following.
     # 'followers' is the list of users who are following this user.
@@ -123,6 +129,11 @@ class Post(db.Model):
         lazy='dynamic' # Allows querying on post.hashtags
     )
 
+    # Foreign key to Group (nullable, as posts can still be non-group posts)
+    group_id = db.Column(db.Integer, db.ForeignKey('group.id'), nullable=True)
+    # Relationship to Group
+    group = db.relationship('Group', backref=db.backref('posts', lazy='dynamic'))
+
     def __repr__(self):
         return f'<Post {self.body[:50]}...>'
 
@@ -184,6 +195,8 @@ class Notification(db.Model):
     actor = db.relationship('User', foreign_keys=[actor_id], backref=db.backref('notifications_sent', lazy='dynamic'))
     related_post = db.relationship('Post', foreign_keys=[related_post_id], backref=db.backref('related_notifications', lazy='dynamic'))
     related_conversation = db.relationship('Conversation', foreign_keys=[related_conversation_id], lazy='joined')
+    related_group_id = db.Column(db.Integer, db.ForeignKey('group.id'), nullable=True)
+    related_group = db.relationship('Group', foreign_keys=[related_group_id], backref=db.backref('related_notifications', lazy='dynamic'))
 
     def __repr__(self):
         return f'<Notification {self.type} for User ID {self.recipient_id} by User ID {self.actor_id}>'
@@ -216,3 +229,41 @@ class ChatMessage(db.Model):
 
     def __repr__(self):
         return f'<ChatMessage {self.id} from User {self.sender_id} in Conv {self.conversation_id}>'
+
+# Group Model
+class Group(db.Model):
+    __tablename__ = 'group'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False, index=True)
+    description = db.Column(db.String(255), nullable=True)
+    image_file = db.Column(db.String(100), nullable=True, default='default_group_pic.png')
+    creator_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+
+    # Relationship to GroupMembership (list of memberships)
+    memberships = db.relationship('GroupMembership', backref='group', lazy='dynamic', cascade='all, delete-orphan')
+
+    # Association proxy to easily get users in a group through GroupMembership
+    # 'members' attribute will list User objects who are members of this group.
+    # 'group_memberships' is the intermediary collection (Group.memberships).
+    # 'user' is the target attribute on the GroupMembership model.
+    members = association_proxy('memberships', 'user', creator=lambda user_obj: GroupMembership(user=user_obj, role='member'))
+
+
+    def __repr__(self):
+        return f'<Group {self.name}>'
+
+# GroupMembership Model
+class GroupMembership(db.Model):
+    __tablename__ = 'group_membership'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    group_id = db.Column(db.Integer, db.ForeignKey('group.id'), nullable=False)
+    joined_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+    role = db.Column(db.String(50), nullable=False, default='member')  # e.g., 'admin', 'member'
+
+    # Composite unique constraint to prevent duplicate memberships
+    __table_args__ = (db.UniqueConstraint('user_id', 'group_id', name='_user_group_uc'),)
+
+    def __repr__(self):
+        return f'<GroupMembership User {self.user_id} in Group {self.group_id} as {self.role}>'

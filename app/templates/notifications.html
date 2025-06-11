@@ -29,6 +29,18 @@
                             <a href="{{ url_for('main.profile', username=notification.actor.username) }}">{{ notification.actor.username }}</a>
                             helped your <a href="{{ url_for('main.profile', username=notification.related_post.author.username) }}#post-{{ notification.related_post.id }}">post</a>
                             reach {{ milestone_count }} likes!
+                        {% elif notification.type == 'new_group_post' %}
+                            <a href="{{ url_for('main.profile', username=notification.actor.username) }}">{{ notification.actor.username }}</a>
+                            posted
+                            {% if notification.related_post %}
+                                "<a href="{{ url_for('main.view_group', group_id=notification.related_group.id) }}#post-{{ notification.related_post.id }}">{{ notification.related_post.body[:30] }}{% if notification.related_post.body|length > 30 %}...{% endif %}</a>"
+                            {% else %}
+                                a new post
+                            {% endif %}
+                            in group <a href="{{ url_for('main.view_group', group_id=notification.related_group.id) }}">{{ notification.related_group.name }}</a>.
+                        {% elif notification.type == 'user_joined_group' %}
+                            <a href="{{ url_for('main.profile', username=notification.actor.username) }}">{{ notification.actor.username }}</a>
+                            joined your group <a href="{{ url_for('main.view_group', group_id=notification.related_group.id) }}">{{ notification.related_group.name }}</a>.
                         {% else %}
                             A new notification. <!-- Generic fallback -->
                         {% endif %}

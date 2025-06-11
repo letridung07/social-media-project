@@ -4,6 +4,7 @@ from flask_wtf.csrf import CSRFProtect
 from flask_login import LoginManager # Import LoginManager
 from flask_socketio import SocketIO
 from flask_mail import Mail # Import Mail
+from flask_migrate import Migrate # Import Migrate
 from config import Config
 
 db = SQLAlchemy()
@@ -11,6 +12,7 @@ csrf = CSRFProtect()
 login_manager = LoginManager() # Initialize LoginManager
 socketio = SocketIO()
 mail = Mail() # Create Mail instance
+migrate = Migrate() # Create Migrate instance
 login_manager.login_view = 'main.login' # Corrected login view
 login_manager.login_message_category = 'info'
 
@@ -24,6 +26,7 @@ def create_app(config_class=Config):
     login_manager.init_app(app) # Initialize LoginManager with the app
     socketio.init_app(app)
     mail.init_app(app) # Initialize Mail with the app
+    migrate.init_app(app, db) # Initialize Migrate with the app and db
 
     from app.routes import main as main_blueprint
     app.register_blueprint(main_blueprint)
