@@ -74,6 +74,9 @@ class Post(db.Model):
     timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
+    # New field for image filename
+    image_filename = db.Column(db.String(100), nullable=True)
+
     # likes received by this post
     likes = db.relationship('Like', backref='post', lazy='dynamic', cascade='all, delete-orphan')
     # To get comments in ascending order by timestamp by default when accessing post.comments

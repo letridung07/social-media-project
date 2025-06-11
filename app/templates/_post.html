@@ -13,6 +13,16 @@
         <div class="post-body">
             <p>{{ post.body }}</p>
         </div>
+
+        {# Display post image if it exists #}
+        {% if post.image_filename %}
+            <div class="post-image-container my-2"> {# my-2 for vertical margin #}
+                <img src="{{ url_for('static', filename='post_images/' + post.image_filename) }}"
+                     alt="Image for post by {{ post.author.username }}"
+                     style="max-width: 100%; height: auto; border-radius: 8px; display: block;">
+            </div>
+        {% endif %}
+
         <div class="post-actions mb-2"> {# Added mb-2 for spacing #}
             <small>{{ post.like_count() }} like{% if post.like_count() != 1 %}s{% endif %}</small>
             {% if current_user.is_authenticated %}
