@@ -1,20 +1,151 @@
 @import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700&display=swap');
 
+:root {
+    --theme-primary: #4A55A2; /* Deep blue-purple */
+    --theme-primary-rgb: 74, 85, 162; /* For use in rgba() */
+    --theme-secondary: #00B8A9; /* Vibrant teal */
+    --theme-light-bg: #F8F9FA;
+    --theme-dark-text: #343A40;
+}
+
 body {
     font-family: 'Lato', sans-serif;
+    background-color: var(--theme-light-bg);
+    color: var(--theme-dark-text);
+    line-height: 1.6;
 }
+
+/* Typographic Refinements */
+h1, h2, h3, h4, h5, h6 {
+    font-weight: 700;
+    margin-top: 1.5rem;
+    margin-bottom: 1rem;
+    color: var(--theme-dark-text);
+}
+
+h1 { font-size: 2.25rem; }
+h2 { font-size: 1.75rem; }
+
+p {
+    margin-bottom: 1.25rem;
+}
+
+/* General Bootstrap Component Customizations */
+
+.navbar {
+    padding-top: 0.75rem;
+    padding-bottom: 0.75rem;
+}
+
+/* Buttons */
+.btn {
+    border-radius: 0.5rem; /* Softer, more rounded corners */
+}
+
+.btn:focus {
+    box-shadow: 0 0 0 0.2rem rgba(var(--theme-primary-rgb), 0.5);
+}
+
+/* Cards */
+.card {
+    border-radius: 0.5rem; /* Softer corners for cards */
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075); /* Subtle shadow */
+    border: none; /* Remove default Bootstrap card border */
+}
+
+.card-header {
+    background-color: transparent; /* Cleaner look */
+    border-bottom: 1px solid #eee; /* Light separator */
+    font-weight: 700; /* Make card headers slightly bolder */
+    color: var(--theme-dark-text); /* Ensure header text uses dark color */
+}
+
+/* Form Inputs */
+.form-control {
+    border-radius: 0.5rem; /* Rounded corners for form inputs */
+    border: 1px solid #ddd; /* Softer default border */
+}
+
+.form-control:focus {
+    border-color: var(--theme-primary);
+    box-shadow: 0 0 0 0.2rem rgba(var(--theme-primary-rgb), 0.25);
+}
+
+
+/* Navbar specific overrides */
+/* Specific component overrides should come after general component styling */
+.navbar.bg-light { /* This selector is used in base.html */
+    background-color: var(--theme-primary) !important;
+}
+
+.navbar.bg-light .navbar-brand,
+.navbar.bg-light .nav-link {
+    color: white !important;
+}
+
+.navbar.bg-light .nav-link:hover {
+    color: var(--theme-secondary) !important;
+}
+
+.navbar.bg-light .navbar-toggler-icon {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba(255, 255, 255, 0.55)' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e") !important;
+}
+
+
+/* Button specific overrides (primary, secondary, etc.) */
+.btn-primary {
+    background-color: var(--theme-primary);
+    border-color: var(--theme-primary);
+}
+
+.btn-primary:hover {
+    background-color: #3A4482; /* Darker shade of --theme-primary */
+    border-color: #3A4482;
+}
+
+.btn-primary:focus {
+    box-shadow: 0 0 0 0.2rem rgba(var(--theme-primary-rgb), 0.5);
+}
+
+.btn-secondary {
+    background-color: var(--theme-secondary);
+    border-color: var(--theme-secondary);
+    color: white;
+}
+
+.btn-secondary:hover {
+    background-color: #00A899; /* Darker shade of --theme-secondary */
+    border-color: #00A899;
+    color: white;
+}
+
+.btn-secondary:focus {
+     box-shadow: 0 0 0 0.2rem rgba(0, 184, 169, 0.5); /* RGB for --theme-secondary */
+}
+
+/* Footer styling */
+footer {
+    background-color: var(--theme-dark-text);
+    color: var(--theme-light-bg);
+    padding-top: 2rem !important;
+    padding-bottom: 2rem !important;
+    border-top: 3px solid var(--theme-primary) !important;
+    /* text-align: center; is already on the element via class in base.html */
+}
+
+footer p {
+    margin-bottom: 0; /* Remove default paragraph margin */
+    color: var(--theme-light-bg); /* Ensure paragraph text is light */
+}
+
 
 /* Custom style for comment avatars in _post.html */
 .comment-avatar {
     width: 30px;
     height: 30px;
-    /* Ensure it is a circle if not already handled by Bootstrap's rounded-circle */
-    /* border-radius: 50%; */ /* This is already handled by .rounded-circle */
-    /* object-fit: cover; */ /* To prevent image distortion if aspect ratio isn't 1:1 */
 }
 
 /* Ensure visually-hidden / sr-only is available if not using Bootstrap's own */
-/* This is for BS4, BS5 uses .visually-hidden */
 .sr-only {
   position: absolute;
   width: 1px;
