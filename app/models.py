@@ -2,7 +2,10 @@ from app import db
 from flask_login import UserMixin
 from passlib.hash import sha256_crypt
 from datetime import datetime, timezone
-from itsdangerous import TimedJSONWebSignatureSerializer as Serializer
+try:
+    from itsdangerous import TimedJSONWebSignatureSerializer as Serializer
+except ImportError:
+    from itsdangerous import URLSafeTimedSerializer as Serializer
 from flask import current_app
 
 # Define the association table for followers
