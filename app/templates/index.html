@@ -1,20 +1,20 @@
 {% extends "base.html" %}
 
 {% block content %} {# Adjusted from app_content to content, and removed title block as per original example #}
-    <h1>Hi, {{ current_user.username if current_user.is_authenticated else "Guest" }}!</h1>
+    <h1 class="mb-4">Hi, {{ current_user.username if current_user.is_authenticated else "Guest" }}!</h1>
 
     {% if current_user.is_authenticated %}
-        <div>
-            <p><a href="{{ url_for('main.create_post') }}">Create a New Post</a></p>
-        </div>
+        <a href="{{ url_for('main.create_post') }}" class="btn btn-primary my-3">Create a New Post</a>
     {% endif %}
 
-    <h2>Recent Posts:</h2>
+    <h2 class="mt-4">Recent Posts:</h2>
     {% if posts %}
         {% for post in posts %}
             {% include '_post.html' %}
         {% endfor %}
     {% else %}
-        <p>No posts yet. Be the first one or follow some users!</p>
+        <div class="alert alert-info mt-3" role="alert">
+            No posts yet. Be the first one or follow some users!
+        </div>
     {% endif %}
 {% endblock %}
