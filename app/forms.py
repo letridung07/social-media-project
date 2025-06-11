@@ -64,3 +64,12 @@ class ResetPasswordForm(FlaskForm):
 class SearchForm(FlaskForm):
     query = StringField('Search', validators=[DataRequired()])
     submit = SubmitField('Go')
+
+class GroupCreationForm(FlaskForm):
+    name = StringField('Group Name', validators=[DataRequired(), Length(min=2, max=100)])
+    description = TextAreaField('Description', validators=[Optional(), Length(max=255)])
+    image_file = FileField('Group Image (Optional)', validators=[
+        Optional(),
+        FileAllowed(['jpg', 'png', 'jpeg', 'gif'], 'Images only!')
+    ])
+    submit = SubmitField('Create Group')

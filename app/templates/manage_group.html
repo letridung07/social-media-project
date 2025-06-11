@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% import "bootstrap/wtf.html" as wtf %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block app_content %}
+<div class="container mt-4">
+    <h2>{{ title }}</h2>
+    <hr>
+
+    <div class="row">
+        <div class="col-md-7 manage-group-section">
+            <h4>Edit Group Details</h4>
+            {{ wtf.quick_form(form, button_map={'submit': 'primary'}) }}
+        </div>
+        <div class="col-md-5 manage-group-section">
+            <h4>Manage Members ({{ group.memberships.count() }})</h4>
+            {% if group.memberships.count() > 0 %}
+                <ul class="list-group mb-3">
+                    {% for membership in memberships %} {# Assuming 'memberships' is passed from route, not group.memberships for potential filtering #}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <a href="{{ url_for('main.profile', username=membership.user.username) }}">{{ membership.user.username }}</a>
+                                <span class="badge {% if membership.role == 'admin' %}bg-info{% else %}bg-secondary{% endif %} ms-1">{{ membership.role }}</span>
+                            </div>
+                            <div>
+                                {# Prevent admin from removing themselves or the creator if only admin #}
+                                {% if current_user.id != membership.user.id %}
+                                    {% if not (group.creator_id == membership.user.id and group.memberships.filter_by(role='admin').count() == 1 and membership.role == 'admin') %}
+                                    <form action="{{ url_for('main.remove_group_member', group_id=group.id, user_id=membership.user.id) }}" method="POST" style="display: inline;">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Are you sure you want to remove {{ membership.user.username }} from the group?');">Remove</button>
+                                    </form>
+                                    {% else %}
+                                        <small class="text-muted">(Creator/Sole Admin)</small>
+                                    {% endif %}
+                                {% else %}
+                                     <small class="text-muted">(You)</small>
+                                {% endif %}
+                            </div>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p>This group has no members other than the creator (you).</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <hr class="my-4">
+
+    <div class="delete-group-section">
+        <h4>Delete Group</h4>
+        <p>Deleting a group will remove all its members and disassociate all its posts. This action cannot be undone.</p>
+        <form action="{{ url_for('main.delete_group', group_id=group.id) }}" method="POST" style="display: inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-danger" onclick="return confirm('Are you absolutely sure you want to delete this group? This will remove all members and disassociate all posts. This action cannot be undone.');">Delete Group Permanently</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

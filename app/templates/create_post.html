@@ -1,46 +1,70 @@
 {% extends "base.html" %}
+{% import "bootstrap/wtf.html" as wtf %} {# For easier form rendering if needed, or keep manual #}
 
-{% block content %}
-    <h1>Create a New Post</h1>
+{% block title %}{{ title if title else "Create Post" }}{% endblock %}
+
+{% block app_content %} {# Changed from content to app_content to match base.html #}
+<div class="container mt-4">
     <div class="row">
-        <div class="col-md-6">
-            <form method="POST" action="{{ url_for('main.create_post') }}" enctype="multipart/form-data">
+        <div class="col-md-8 offset-md-2 col-lg-6 offset-lg-3">
+            <h2>{{ title if title else "Create a New Post" }}</h2>
+            {% if group_id and group_name %}
+                <div class="alert alert-info" role="alert">
+                    You are posting in: <strong>{{ group_name }}</strong>
+                </div>
+                {# The group_id will be part of the action URL if it was in the GET request #}
+            {% endif %}
+            <hr>
+            {# Using wtf.quick_form for consistency if desired, or keep manual rendering #}
+            <form method="POST" action="{{ url_for('main.create_post', group_id=group_id if group_id else None) }}" enctype="multipart/form-data">
                 {{ form.hidden_tag() }} {# CSRF token #}
 
-                <div class="form-group">
-                    {{ form.body.label(class="form-control-label") }}
-                    {{ form.body(class="form-control", rows="3") }}
+                <div class="form-group mb-3">
+                    {{ form.body.label(class="form-label") }}
+                    {{ form.body(class="form-control form-control-lg", rows="5", placeholder="What's on your mind?") }}
                     {% if form.body.errors %}
-                        {% for error in form.body.errors %}
-                            <span class="text-danger">{{ error }}</span><br>
-                        {% endfor %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.body.errors %}{{ error }}{% endfor %}
+                        </div>
                     {% endif %}
                 </div>
 
-                <div class="form-group">
-                    {{ form.image_file.label(class="form-control-label") }}
-                    {{ form.image_file(class="form-control-file") }}
+                <div class="form-group mb-3">
+                    {{ form.image_file.label(class="form-label") }}
+                    {{ form.image_file(class="form-control") }}
                     {% if form.image_file.errors %}
-                        {% for error in form.image_file.errors %}
-                            <span class="text-danger">{{ error }}</span><br>
-                        {% endfor %}
+                         <div class="invalid-feedback d-block">
+                            {% for error in form.image_file.errors %}{{ error }}{% endfor %}
+                        </div>
                     {% endif %}
                 </div>
 
-                <div class="form-group">
-                    {{ form.video_file.label(class="form-control-label") }}
-                    {{ form.video_file(class="form-control-file") }}
+                <div class="form-group mb-3">
+                    {{ form.video_file.label(class="form-label") }}
+                    {{ form.video_file(class="form-control") }}
                     {% if form.video_file.errors %}
-                        {% for error in form.video_file.errors %}
-                            <span class="text-danger">{{ error }}</span><br>
-                        {% endfor %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.video_file.errors %}{{ error }}{% endfor %}
+                        </div>
                     {% endif %}
                 </div>
 
-                <div class="form-group">
-                    {{ form.submit(class="btn btn-primary") }}
+                <div class="form-group mb-3">
+                    {{ form.alt_text.label(class="form-label") }}
+                    {{ form.alt_text(class="form-control", rows="2", placeholder="Describe your image/video for accessibility...") }}
+                    <small class="form-text text-muted">{{ form.alt_text.description }}</small>
+                    {% if form.alt_text.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.alt_text.errors %}{{ error }}{% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+
+                <div class="form-group mt-4">
+                    {{ form.submit(class="btn btn-primary w-100") }}
                 </div>
             </form>
         </div>
     </div>
+</div>
 {% endblock %}

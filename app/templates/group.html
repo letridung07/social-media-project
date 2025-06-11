@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% import "bootstrap/wtf.html" as wtf %} {# If using WTForms for comments or other forms on this page #}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block app_content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-3 group-profile-image-container">
+            <img src="{{ url_for('static', filename='group_images/' + group.image_file if group.image_file else 'group_images/default_group_pic.png') }}"
+                 alt="{{ group.name }}'s image"
+                 class="group-profile-image img-fluid">
+        </div>
+        <div class="col-md-9 group-header-details">
+            <h2>{{ group.name }}</h2>
+            <p class="text-muted">{{ group.description }}</p>
+            <p>
+                Created by: <a href="{{ url_for('main.profile', username=group.creator.username) }}">{{ group.creator.username }}</a>
+                on {{ group.created_at.strftime('%Y-%m-%d') if group.created_at else 'N/A' }}.
+            </p>
+            <p>Members: {{ group.memberships.count() }}</p>
+
+            {% if current_user.is_authenticated %}
+                <div class="mb-3 group-actions">
+                    {% if is_admin %}
+                        <a href="{{ url_for('main.manage_group', group_id=group.id) }}" class="btn btn-secondary btn-sm">Manage Group</a>
+                    {% endif %}
+                    {% if is_member %}
+                        <form action="{{ url_for('main.leave_group', group_id=group.id) }}" method="POST" style="display: inline;">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Are you sure you want to leave this group?');">Leave Group</button>
+                        </form>
+                    {% else %}
+                        <form action="{{ url_for('main.join_group', group_id=group.id) }}" method="POST" style="display: inline;">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-success btn-sm">Join Group</button>
+                        </form>
+                    {% endif %}
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <hr>
+
+    <div class="row mt-4">
+        <div class="col-md-12">
+            <h3>Group Posts</h3>
+            {% if current_user.is_authenticated and is_member %}
+                <p><a href="{{ url_for('main.create_post', group_id=group.id) }}" class="btn btn-primary">Create Post in this Group</a></p>
+            {% elif not current_user.is_authenticated %}
+                 <p><a href="{{ url_for('main.login') }}">Login</a> to post in this group.</p>
+            {% elif not is_member %}
+                <p>Join this group to create a post.</p>
+            {% endif %}
+
+            {% if posts %}
+                {% for post in posts %}
+                    {% include '_post.html' %}
+                {% endfor %}
+            {% else %}
+                <p>No posts in this group yet.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if group.memberships.count() > 0 %}
+    <hr>
+    <div class="row mt-4">
+        <div class="col-md-12">
+            <h4>Members ({{ group.memberships.count() }})</h4>
+            <ul class="list-group list-group-flush group-member-list">
+                {% for membership in group.memberships %}
+                <li class="list-group-item">
+                    <a href="{{ url_for('main.profile', username=membership.user.username) }}">{{ membership.user.username }}</a>
+                    {% if membership.role == 'admin' %}<span class="badge bg-info ms-1">Admin</span>{% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}

@@ -8,6 +8,7 @@ class Config:
     UPLOAD_FOLDER = 'app/static/images' # For profile pictures
     POST_IMAGES_UPLOAD_FOLDER = 'app/static/post_images' # New config for post images
     VIDEO_UPLOAD_FOLDER = 'app/static/videos' # New config for post videos
+    UPLOAD_FOLDER_GROUP_IMAGES = 'app/static/group_images' # For group images
 
     # Flask-Mail configuration
     MAIL_SERVER = os.environ.get('MAIL_SERVER', 'smtp.googlemail.com')
@@ -23,4 +24,5 @@ class TestingConfig(Config):
     SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:' # Use in-memory SQLite for tests
     WTF_CSRF_ENABLED = False # Disable CSRF forms protection in testing
     VIDEO_UPLOAD_FOLDER = 'app/static/videos_test' # For test video uploads
+    UPLOAD_FOLDER_GROUP_IMAGES = 'app/static/group_images_test' # For test group images
     # LOGIN_DISABLED = True # Useful if you want to bypass login in some tests

@@ -6,6 +6,11 @@
             <div>
                 <a href="{{ url_for('main.profile', username=post.author.username) }}" class="font-weight-bold text-dark text-decoration-none">{{ post.author.username }}</a>
                 <small class="text-muted d-block">{{ post.timestamp.strftime('%Y-%m-%d %H:%M:%S') }} UTC</small>
+                {% if post.group %}
+                <small class="text-muted d-block">
+                    Posted in: <a href="{{ url_for('main.view_group', group_id=post.group.id) }}">{{ post.group.name }}</a>
+                </small>
+                {% endif %}
             </div>
         </div>
     </div>

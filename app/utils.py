@@ -62,6 +62,34 @@ def save_post_video(form_video_file):
     form_video_file.save(video_full_path)
     return video_fn
 
+def save_group_image(form_image_field):
+    random_hex = secrets.token_hex(10) # Using 10 hex characters
+    _, f_ext = os.path.splitext(form_image_field.filename)
+    image_fn = random_hex + f_ext
+
+    upload_path_from_config = current_app.config.get('UPLOAD_FOLDER_GROUP_IMAGES', 'app/static/group_images_default')
+    picture_path = os.path.join(current_app.root_path, upload_path_from_config, image_fn)
+
+    os.makedirs(os.path.dirname(picture_path), exist_ok=True)
+
+    # Define output size for group images. Let's use 400x400.
+    # Resize while maintaining aspect ratio and cropping if necessary, or just resize to fit.
+    # For simplicity, let's resize to fit within 400x400, similar to profile pics but larger.
+    output_size = (400, 400)
+    img = Image.open(form_image_field)
+
+    # To maintain aspect ratio and fit within the bounds, we can use thumbnail.
+    # If we want a fixed size, we might need to crop.
+    # Let's use thumbnail to keep it simple and preserve aspect ratio.
+    img.thumbnail(output_size, Image.Resampling.LANCZOS)
+
+    # If image is smaller than output_size, thumbnail won't enlarge it.
+    # If we want a consistent size, and potentially crop, a different approach is needed.
+    # For now, thumbnail is acceptable (it scales down if larger, keeps if smaller).
+
+    img.save(picture_path)
+    return image_fn
+
 from flask_login import current_user
 from app.models import Notification
 from app.forms import SearchForm # Import SearchForm
