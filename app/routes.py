@@ -244,7 +244,13 @@ def create_post():
                 return render_template('create_post.html', title='Create Post', form=form) # Re-render form
 
         # Create Post object, including the image_filename if one was saved
-        post = Post(body=form.body.data, author=current_user, image_filename=image_filename_to_save, video_filename=video_filename_to_save)
+        post = Post(
+            body=form.body.data,
+            author=current_user,
+            image_filename=image_filename_to_save, # If applicable
+            video_filename=video_filename_to_save, # If applicable
+            alt_text=form.alt_text.data # <-- Add this line
+        )
         db.session.add(post)
         # Process hashtags before committing the post
         process_hashtags(post.body, post)
@@ -303,6 +309,7 @@ def edit_post(post_id):
                 return render_template('edit_post.html', title='Edit Post', form=form, post=post)
 
         # Process hashtags before committing the post changes
+        post.alt_text = form.alt_text.data # <-- Add this line
         process_hashtags(post.body, post)
         db.session.commit()
         flash('Your post has been updated!', 'success')
@@ -418,7 +425,12 @@ def like_post(post_id): # Renamed function to avoid conflict with Like model
             db.session.add(notification)
             db.session.commit()
             socketio.emit('new_notification',
-                          {'message': f'{current_user.username} liked your post.', 'type': 'like', 'actor_username': current_user.username, 'post_id': post.id},
+                          {'message': f'{current_user.username} liked your post.',
+                           'type': 'like',
+                           'actor_username': current_user.username,
+                           'post_id': post.id,
+                           'post_author_username': post.author.username
+                           },
                           room=str(post.author.id))
 
     # Consider redirecting to request.referrer if available and safe, otherwise index or post permalink
@@ -460,7 +472,13 @@ def add_comment(post_id):
             db.session.add(notification)
             db.session.commit()
             socketio.emit('new_notification',
-                          {'message': f'{current_user.username} commented on your post.', 'type': 'comment', 'actor_username': current_user.username, 'post_id': post.id, 'comment_body': comment.body},
+                          {'message': f'{current_user.username} commented on your post.',
+                           'type': 'comment',
+                           'actor_username': current_user.username,
+                           'post_id': post.id,
+                           'post_author_username': post.author.username,
+                           'comment_body': comment.body[:50] + "..." if len(comment.body) > 50 else comment.body
+                           },
                           room=str(post.author.id))
     else:
         # Handle form errors, e.g., if comment is empty or too long.
@@ -490,6 +508,7 @@ def notifications():
     for notification in user_notifications:
         notification.is_read = True
     db.session.commit()
+    socketio.emit('notifications_cleared', {'message': 'All notifications marked as read.'}, room=str(current_user.id))
     return render_template('notifications.html', title='Your Notifications', notifications=user_notifications)
 
 

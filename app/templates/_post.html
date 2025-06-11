@@ -18,18 +18,23 @@
         {% if post.image_filename %}
             <div class="post-image-container my-2"> {# my-2 for vertical margin #}
                 <img src="{{ url_for('static', filename='post_images/' + post.image_filename) }}"
-                     alt="Image for post by {{ post.author.username }}"
+                     alt="{{ post.alt_text if post.alt_text else ('Image for post by ' + post.author.username) }}"
                      style="max-width: 100%; height: auto; border-radius: 8px; display: block;">
             </div>
         {% endif %}
 
         {% if post.video_filename %}
             <div class="post-video-container mt-2 mb-2">
-                <video width="100%" controls>
+                <video width="100%" controls {% if post.alt_text %}aria-describedby="video-alt-text-{{ post.id }}"{% endif %}>
                     <source src="{{ url_for('static', filename='videos/' + post.video_filename) }}" type="video/mp4">
                     <!-- Add more <source> tags for other video types if needed, e.g., mov, avi -->
                     Your browser does not support the video tag.
                 </video>
+                {% if post.alt_text %}
+                    <p id="video-alt-text-{{ post.id }}" class="visually-hidden">{{ post.alt_text }}</p>
+                    {# Consider adding a Bootstrap .sr-only class if Bootstrap 4, or .visually-hidden for Bootstrap 5 #}
+                    {# If neither, this class will need to be defined in CSS to hide it visually but keep for screen readers #}
+                {% endif %}
             </div>
         {% endif %}
 

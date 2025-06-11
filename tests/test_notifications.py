@@ -160,9 +160,12 @@ class NotificationTests(unittest.TestCase):
         received = self.socketio_test_client.get_received(namespace='/')
         new_notifs = [r for r in received if r['name'] == 'new_notification']
         self.assertGreater(len(new_notifs), 0, "No 'new_notification' event received after like.")
-        if len(new_notifs) > 0: # Added to prevent index error if new_notifs is empty
-            self.assertEqual(new_notifs[0]['args'][0]['type'], 'like')
-            self.assertEqual(new_notifs[0]['args'][0]['actor_username'], self.user2.username)
+        if len(new_notifs) > 0:
+            payload = new_notifs[0]['args'][0]
+            self.assertEqual(payload['type'], 'like')
+            self.assertEqual(payload['actor_username'], self.user2.username) # user2 is the liker
+            self.assertEqual(payload['post_author_username'], self.user1.username) # user1 is the post author
+            self.assertEqual(payload['post_id'], post_by_user1.id)
         self._logout()
 
     def test_socketio_event_on_comment(self):
@@ -184,10 +187,15 @@ class NotificationTests(unittest.TestCase):
         received = self.socketio_test_client.get_received(namespace='/')
         self.assertGreater(len(received), 0)
         new_notifs = [r for r in received if r['name'] == 'new_notification']
-        self.assertGreater(len(new_notifs), 0)
-        self.assertEqual(new_notifs[0]['args'][0]['type'], 'comment')
-        self.assertEqual(new_notifs[0]['args'][0]['actor_username'], self.user2.username)
-        self.assertEqual(new_notifs[0]['args'][0]['comment_body'], 'Socket test comment')
+        self.assertGreater(len(new_notifs), 0, "No 'new_notification' event received after comment.")
+        if len(new_notifs) > 0:
+            payload = new_notifs[0]['args'][0]
+            self.assertEqual(payload['type'], 'comment')
+            self.assertEqual(payload['actor_username'], self.user2.username) # user2 is the commenter
+            self.assertEqual(payload['post_author_username'], self.user1.username) # user1 is the post author
+            self.assertEqual(payload['post_id'], post_by_user1.id)
+            # The test comment "Socket test comment" is short, so it won't be truncated.
+            self.assertEqual(payload['comment_body'], 'Socket test comment')
         self._logout()
 
     def test_socketio_event_on_follow(self):
@@ -209,6 +217,63 @@ class NotificationTests(unittest.TestCase):
         self.assertEqual(new_notifs[0]['args'][0]['type'], 'follow')
         self.assertEqual(new_notifs[0]['args'][0]['actor_username'], self.user2.username)
         self._logout()
+
+    def test_socketio_notifications_cleared_on_visit(self):
+        # a. Create a post by self.user1
+        post_by_user1 = Post(body="User1's Post for Notification Cleared Test", author=self.user1)
+        db.session.add(post_by_user1)
+        db.session.commit()
+
+        # b. Log in self.user2 using the HTTP client
+        self._login(self.user2.email, 'password')
+
+        # c. self.user2 likes self.user1's post (generates a notification for self.user1)
+        self.client.post(f'/like/{post_by_user1.id}', follow_redirects=True)
+        # Ensure notification exists for user1
+        notification = Notification.query.filter_by(recipient_id=self.user1.id, type='like').first()
+        self.assertIsNotNone(notification, "Notification was not created for user1 after like.")
+        self.assertFalse(notification.is_read, "Notification should be unread initially.")
+
+        # d. Log out self.user2
+        self._logout()
+
+        # e. Log in self.user1 using the HTTP client
+        self._login(self.user1.email, 'password')
+
+        # f. Connect self.user1's self.socketio_test_client and have them join their notification room
+        self.socketio_test_client.connect(namespace='/')
+        self.socketio_test_client.emit('join_notification_room', namespace='/')
+        self.socketio_test_client.get_received(namespace='/') # Clear initial messages
+
+        # g. self.user1 (HTTP client) makes a GET request to /notifications
+        response = self.client.get('/notifications')
+        self.assertEqual(response.status_code, 200)
+
+        # h. Get received Socket.IO events for self.user1's client
+        received_events = self.socketio_test_client.get_received(namespace='/')
+
+        # i. Assert that one of the received events has name == 'notifications_cleared'
+        cleared_event = None
+        for event in received_events:
+            if event['name'] == 'notifications_cleared':
+                cleared_event = event
+                break
+
+        self.assertIsNotNone(cleared_event, "'notifications_cleared' event not found in received Socket.IO events.")
+
+        # j. Assert that the message payload for this event is {'message': 'All notifications marked as read.'}
+        if cleared_event: # Check to avoid error if not found
+            self.assertIn('args', cleared_event, "Event 'notifications_cleared' has no arguments.")
+            self.assertGreater(len(cleared_event['args']), 0, "Event 'notifications_cleared' arguments list is empty.")
+            self.assertEqual(cleared_event['args'][0], {'message': 'All notifications marked as read.'})
+
+        # Verify the notification in DB is marked as read
+        db.session.refresh(notification) # Refresh from DB
+        self.assertTrue(notification.is_read, "Notification in DB was not marked as read.")
+
+        # k. Ensure proper logout for self.user1 at the end
+        self._logout()
+
 
 if __name__ == '__main__':
     unittest.main()
