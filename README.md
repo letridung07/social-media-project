@@ -15,16 +15,27 @@ A social media platform built with Flask, featuring user authentication, profile
     *   Modern, responsive UI built with Bootstrap 4.5.2 and a custom theme.
     *   Improved visual styling for enhanced readability and aesthetics.
     *   Intuitive navigation and user flows.
-*   **Content Posting:**
-    *   Users can create and share text-based posts.
+*   **Content Posting & Organization:**
+    *   Users can create and share text-based posts, optionally including images and videos.
+    *   **Hashtag Support:**
+        *   Posts can be tagged with hashtags (e.g., `#Flask`, `#PythonTips`) to improve content discoverability.
+        *   Hashtags are automatically parsed from the post body.
+        *   Clicking on a hashtag displays a feed of all posts associated with that tag.
 *   **Following System:**
     *   Users can follow and unfollow other users.
     *   Personalized feed on the homepage displaying posts from followed users and own posts.
-*   **Post Engagement:**
-    *   Users can like and unlike posts.
-    *   Like counts are displayed for each post.
-    *   Users can add comments to posts.
-    *   Comments are displayed chronologically under each post, showing the author and timestamp.
+*   **Post Engagement & Notifications:**
+    *   **Likes & Comments:**
+        *   Users can like and unlike posts.
+        *   Like counts are displayed for each post.
+        *   Users can add comments to posts.
+        *   Comments are displayed chronologically under each post, showing the author and timestamp.
+    *   **Notification System:** Users receive real-time notifications for:
+        *   New likes on their posts.
+        *   New comments on their posts.
+        *   New followers.
+        *   New chat messages.
+        *   **Like Milestones:** Automatic notifications when a user's post reaches specific like count milestones (e.g., 10, 50, 100, 250, 500, 1000 likes), celebrating its popularity.
 *   **Real-time Chat:** (See dedicated section below for more details)
     *   One-on-one conversations.
     *   Real-time messaging with Socket.IO.

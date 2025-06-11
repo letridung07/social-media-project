@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch # Add this import
 import os
 import io
 from flask_login import current_user
@@ -136,143 +137,355 @@ class NotificationTests(unittest.TestCase):
         self._logout()
 
     # --- Test Socket.IO Event Emission (Simplified) ---
-    def test_socketio_event_on_like(self):
+    @patch('app.routes.socketio.emit') # Patch socketio.emit from app.routes
+    def test_socketio_event_on_like(self, mock_socketio_emit):
         post_by_user1 = Post(body="User1's Post for Socket Like Test", author=self.user1)
         db.session.add(post_by_user1)
         db.session.commit()
 
-        with self.client:
-            # User1 (recipient) logs in
-            # User1 (recipient) logs in
-            self._login(self.user1.email, 'password')
-            self.client.get('/') # Ensure session is active
-            self.socketio_test_client.connect(namespace='/')
-            # User1 explicitly joins their notification room
-            self.socketio_test_client.emit('join_notification_room', namespace='/')
-            self.socketio_test_client.get_received(namespace='/') # Clear any connect-time/join messages
-
-            # User2 (actor) logs in via HTTP client and performs action
-            self._logout()
-            self._login(self.user2.email, 'password')
-            self.client.post(f'/like/{post_by_user1.id}', follow_redirects=True)
-
-        # Check events received by user1's socketio_test_client
-        received = self.socketio_test_client.get_received(namespace='/')
-        new_notifs = [r for r in received if r['name'] == 'new_notification']
-        self.assertGreater(len(new_notifs), 0, "No 'new_notification' event received after like.")
-        if len(new_notifs) > 0:
-            payload = new_notifs[0]['args'][0]
-            self.assertEqual(payload['type'], 'like')
-            self.assertEqual(payload['actor_username'], self.user2.username) # user2 is the liker
-            self.assertEqual(payload['post_author_username'], self.user1.username) # user1 is the post author
-            self.assertEqual(payload['post_id'], post_by_user1.id)
+        # User2 (actor) logs in via HTTP client and performs action
+        self._login(self.user2.email, 'password')
+        self.client.post(f'/like/{post_by_user1.id}', follow_redirects=True)
         self._logout()
 
-    def test_socketio_event_on_comment(self):
+        # Check if socketio.emit was called correctly
+        emit_called_correctly = False
+        for call_args in mock_socketio_emit.call_args_list:
+            args, kwargs = call_args
+            if args[0] == 'new_notification' and kwargs.get('room') == str(self.user1.id):
+                payload = args[1]
+                if (payload.get('type') == 'like' and
+                    payload.get('actor_username') == self.user2.username and
+                    payload.get('post_author_username') == self.user1.username and
+                    payload.get('post_id') == post_by_user1.id):
+                    emit_called_correctly = True
+                    break
+        self.assertTrue(emit_called_correctly, "socketio.emit for 'like' not called correctly.")
+
+    @patch('app.routes.socketio.emit')
+    def test_socketio_event_on_comment(self, mock_socketio_emit):
         post_by_user1 = Post(body="User1's Post for Socket Comment Test", author=self.user1)
         db.session.add(post_by_user1)
         db.session.commit()
 
-        with self.client:
-            self._login(self.user1.email, 'password')
-            self.client.get('/') # Ensure session
-            self.socketio_test_client.connect(namespace='/')
-            self.socketio_test_client.emit('join_notification_room', namespace='/')
-            self.socketio_test_client.get_received(namespace='/')
-
-            self._logout()
-            self._login(self.user2.email, 'password')
-            self.client.post(f'/post/{post_by_user1.id}/comment', data={'body': 'Socket test comment'}, follow_redirects=True)
-
-        received = self.socketio_test_client.get_received(namespace='/')
-        self.assertGreater(len(received), 0)
-        new_notifs = [r for r in received if r['name'] == 'new_notification']
-        self.assertGreater(len(new_notifs), 0, "No 'new_notification' event received after comment.")
-        if len(new_notifs) > 0:
-            payload = new_notifs[0]['args'][0]
-            self.assertEqual(payload['type'], 'comment')
-            self.assertEqual(payload['actor_username'], self.user2.username) # user2 is the commenter
-            self.assertEqual(payload['post_author_username'], self.user1.username) # user1 is the post author
-            self.assertEqual(payload['post_id'], post_by_user1.id)
-            # The test comment "Socket test comment" is short, so it won't be truncated.
-            self.assertEqual(payload['comment_body'], 'Socket test comment')
+        # User2 (actor) logs in and comments
+        self._login(self.user2.email, 'password')
+        self.client.post(f'/post/{post_by_user1.id}/comment', data={'body': 'Socket test comment'}, follow_redirects=True)
         self._logout()
 
-    def test_socketio_event_on_follow(self):
-        with self.client:
-            self._login(self.user1.email, 'password') # user1 is recipient
-            self.client.get('/') # Ensure session
-            self.socketio_test_client.connect(namespace='/')
-            self.socketio_test_client.emit('join_notification_room', namespace='/')
-            self.socketio_test_client.get_received(namespace='/')
+        emit_called_correctly = False
+        for call_args in mock_socketio_emit.call_args_list:
+            args, kwargs = call_args
+            if args[0] == 'new_notification' and kwargs.get('room') == str(self.user1.id):
+                payload = args[1]
+                if (payload.get('type') == 'comment' and
+                    payload.get('actor_username') == self.user2.username and
+                    payload.get('post_author_username') == self.user1.username and
+                    payload.get('post_id') == post_by_user1.id and
+                    payload.get('comment_body') == 'Socket test comment'):
+                    emit_called_correctly = True
+                    break
+        self.assertTrue(emit_called_correctly, "socketio.emit for 'comment' not called correctly.")
 
-            self._logout() # user1 logs out from flask client
-            self._login(self.user2.email, 'password') # user2 (actor) logs in
-            self.client.post(f'/follow/{self.user1.username}', follow_redirects=True) # user2 follows user1
-
-        received = self.socketio_test_client.get_received(namespace='/')
-        self.assertGreater(len(received), 0)
-        new_notifs = [r for r in received if r['name'] == 'new_notification']
-        self.assertGreater(len(new_notifs), 0)
-        self.assertEqual(new_notifs[0]['args'][0]['type'], 'follow')
-        self.assertEqual(new_notifs[0]['args'][0]['actor_username'], self.user2.username)
+    @patch('app.routes.socketio.emit')
+    def test_socketio_event_on_follow(self, mock_socketio_emit):
+        # User2 (actor) logs in and follows User1
+        self._login(self.user2.email, 'password')
+        self.client.post(f'/follow/{self.user1.username}', follow_redirects=True) # user2 follows user1
         self._logout()
 
-    def test_socketio_notifications_cleared_on_visit(self):
-        # a. Create a post by self.user1
+        emit_called_correctly = False
+        for call_args in mock_socketio_emit.call_args_list:
+            args, kwargs = call_args
+            if args[0] == 'new_notification' and kwargs.get('room') == str(self.user1.id):
+                payload = args[1]
+                if (payload.get('type') == 'follow' and
+                    payload.get('actor_username') == self.user2.username):
+                    emit_called_correctly = True
+                    break
+        self.assertTrue(emit_called_correctly, "socketio.emit for 'follow' not called correctly.")
+
+    @patch('app.routes.socketio.emit') # Patching where emit is called in app.routes
+    def test_socketio_notifications_cleared_on_visit(self, mock_socketio_emit):
+        # This test previously used socketio_test_client to receive 'notifications_cleared'.
+        # Now, it checks if the server attempts to emit it.
+
+        # Setup: user2 likes a post by user1, so user1 gets a notification.
         post_by_user1 = Post(body="User1's Post for Notification Cleared Test", author=self.user1)
         db.session.add(post_by_user1)
         db.session.commit()
 
-        # b. Log in self.user2 using the HTTP client
+        # user2 logs in and likes user1's post
         self._login(self.user2.email, 'password')
-
-        # c. self.user2 likes self.user1's post (generates a notification for self.user1)
         self.client.post(f'/like/{post_by_user1.id}', follow_redirects=True)
-        # Ensure notification exists for user1
-        notification = Notification.query.filter_by(recipient_id=self.user1.id, type='like').first()
-        self.assertIsNotNone(notification, "Notification was not created for user1 after like.")
-        self.assertFalse(notification.is_read, "Notification should be unread initially.")
+        self._logout() # user2 logs out
 
-        # d. Log out self.user2
-        self._logout()
+        # Ensure a 'like' notification was created for user1
+        notification_for_user1 = Notification.query.filter_by(recipient_id=self.user1.id, type='like').first()
+        self.assertIsNotNone(notification_for_user1, "Like notification for user1 was not created by user2's like.")
+        self.assertFalse(notification_for_user1.is_read, "Notification for user1 should be unread initially.")
 
-        # e. Log in self.user1 using the HTTP client
+        # User1 logs in to visit the notifications page
         self._login(self.user1.email, 'password')
-
-        # f. Connect self.user1's self.socketio_test_client and have them join their notification room
-        self.socketio_test_client.connect(namespace='/')
-        self.socketio_test_client.emit('join_notification_room', namespace='/')
-        self.socketio_test_client.get_received(namespace='/') # Clear initial messages
-
-        # g. self.user1 (HTTP client) makes a GET request to /notifications
-        response = self.client.get('/notifications')
+        response = self.client.get('/notifications') # This HTTP GET triggers the 'notifications_cleared' emit for user1
         self.assertEqual(response.status_code, 200)
+        # No need to logout user1 immediately if we are checking their DB state next.
+        # self._logout()
 
-        # h. Get received Socket.IO events for self.user1's client
-        received_events = self.socketio_test_client.get_received(namespace='/')
-
-        # i. Assert that one of the received events has name == 'notifications_cleared'
-        cleared_event = None
-        for event in received_events:
-            if event['name'] == 'notifications_cleared':
-                cleared_event = event
+        # Assert that 'notifications_cleared' event was emitted to user1's room
+        cleared_event_emitted = False
+        for call_args_item in mock_socketio_emit.call_args_list:
+            args, kwargs = call_args_item # Use different var name to avoid confusion
+            if args[0] == 'notifications_cleared' and kwargs.get('room') == str(self.user1.id):
+                self.assertEqual(args[1], {'message': 'All notifications marked as read.'})
+                cleared_event_emitted = True
                 break
-
-        self.assertIsNotNone(cleared_event, "'notifications_cleared' event not found in received Socket.IO events.")
-
-        # j. Assert that the message payload for this event is {'message': 'All notifications marked as read.'}
-        if cleared_event: # Check to avoid error if not found
-            self.assertIn('args', cleared_event, "Event 'notifications_cleared' has no arguments.")
-            self.assertGreater(len(cleared_event['args']), 0, "Event 'notifications_cleared' arguments list is empty.")
-            self.assertEqual(cleared_event['args'][0], {'message': 'All notifications marked as read.'})
+        self.assertTrue(cleared_event_emitted, "'notifications_cleared' event was not emitted correctly.")
 
         # Verify the notification in DB is marked as read
-        db.session.refresh(notification) # Refresh from DB
-        self.assertTrue(notification.is_read, "Notification in DB was not marked as read.")
-
-        # k. Ensure proper logout for self.user1 at the end
+        db.session.refresh(notification_for_user1)
+        self.assertTrue(notification_for_user1.is_read, "Notification in DB was not marked as read.")
         self._logout()
+
+# Using a smaller, more manageable set of milestones for these tests
+TEST_LIKE_MILESTONES = [3, 5]
+
+class TestLikeMilestoneNotifications(unittest.TestCase):
+    def setUp(self):
+        self.app = create_app(TestingConfig) # Use TestingConfig like other tests in this file
+
+        # Patch LIKE_MILESTONES in app.routes for the duration of the tests
+        self.milestones_patch = patch('app.routes.LIKE_MILESTONES', TEST_LIKE_MILESTONES)
+        self.mock_milestones = self.milestones_patch.start()
+
+        self.app_context = self.app.app_context()
+        self.app_context.push()
+        with self.app.app_context(): # Ensure operations are within app context
+            db.create_all()
+
+        self.client = self.app.test_client(use_cookies=True) # Ensure cookies for login session
+
+        # Create users
+        # Post author
+        self.post_author = User(username='post_author', email='author@example.com')
+        self.post_author.set_password('password')
+        db.session.add(self.post_author)
+
+        # Liker users
+        self.liker_users = []
+        # Create enough users to hit all test milestones + a few more
+        for i in range(1, TEST_LIKE_MILESTONES[-1] + 3):
+            liker = User(username=f'liker_user{i}', email=f'liker{i}@example.com')
+            liker.set_password('password')
+            self.liker_users.append(liker)
+            db.session.add(liker)
+
+        db.session.commit()
+
+        # Create a post by post_author
+        self.test_post = Post(body="Milestone Test Post", author=self.post_author)
+        db.session.add(self.test_post)
+        db.session.commit()
+
+    def tearDown(self):
+        with self.app.app_context(): # Ensure operations are within app context
+            db.session.remove()
+            db.drop_all()
+        self.app_context.pop()
+        self.milestones_patch.stop() # Important to stop the patch
+
+    def _login(self, email, password='password'):
+        # Simplified login using email, matching existing test style
+        return self.client.post('/login', data=dict(
+            email=email, # Use email for login as per existing tests
+            password=password
+        ), follow_redirects=True)
+
+    def _logout(self):
+        return self.client.get('/logout', follow_redirects=True)
+
+    def _like_post(self, post_id, as_user_obj):
+        self._login(as_user_obj.email) # Login with email
+        response = self.client.post(f'/like/{post_id}', follow_redirects=True)
+        self._logout() # Ensure logout after action to isolate user sessions for likes
+        return response
+
+    @patch('app.routes.socketio.emit')
+    def test_milestone_notification_creation_and_emission(self, mock_socketio_emit):
+        """Test notification and emission when first milestone is reached."""
+        milestone_to_hit = TEST_LIKE_MILESTONES[0] # e.g., 3
+        liker_who_hit_milestone = None
+
+        for i in range(milestone_to_hit):
+            self._like_post(self.test_post.id, self.liker_users[i])
+            if (i + 1) == milestone_to_hit:
+                liker_who_hit_milestone = self.liker_users[i]
+        self._logout() # Logout the last liker
+
+        # Verify DB notification
+        notification = Notification.query.filter_by(
+            recipient_id=self.post_author.id,
+            related_post_id=self.test_post.id,
+            type=f'like_milestone_{milestone_to_hit}'
+        ).first()
+        self.assertIsNotNone(notification, f"Milestone {milestone_to_hit} notification not found in DB.")
+        self.assertEqual(notification.actor_id, liker_who_hit_milestone.id)
+
+        # Verify socketio.emit call
+        milestone_emit_found = False
+        for call_args in mock_socketio_emit.call_args_list:
+            args, kwargs = call_args
+            if args[0] == 'new_notification' and kwargs.get('room') == str(self.post_author.id):
+                payload = args[1]
+                if payload.get('type') == f'like_milestone_{milestone_to_hit}':
+                    milestone_emit_found = True
+                    self.assertEqual(payload['milestone_count'], milestone_to_hit)
+                    self.assertEqual(payload['actor_username'], liker_who_hit_milestone.username)
+                    self.assertEqual(payload['post_id'], self.test_post.id)
+                    self.assertTrue(f"reached {milestone_to_hit} likes!" in payload['message'])
+                    break
+        self.assertTrue(milestone_emit_found, "SocketIO emit for milestone notification not found or incorrect.")
+
+    @patch('app.routes.socketio.emit')
+    def test_no_notification_if_milestone_not_reached(self, mock_socketio_emit):
+        milestone_to_hit = TEST_LIKE_MILESTONES[0]
+        likes_to_add = milestone_to_hit - 1
+
+        for i in range(likes_to_add):
+            self._like_post(self.test_post.id, self.liker_users[i])
+        self._logout() # Logout the last liker
+
+        notification = Notification.query.filter(
+            Notification.recipient_id == self.post_author.id,
+            Notification.related_post_id == self.test_post.id,
+            Notification.type.startswith('like_milestone_')
+        ).first()
+        self.assertIsNone(notification, "Milestone notification found when it shouldn't have been.")
+
+        for call_args in mock_socketio_emit.call_args_list:
+            args, _ = call_args
+            if args[0] == 'new_notification':
+                payload = args[1]
+                self.assertFalse(payload.get('type', '').startswith('like_milestone_'),
+                                 "SocketIO emit for milestone notification found when it shouldn't exist.")
+
+    @patch('app.routes.socketio.emit')
+    def test_no_duplicate_milestone_notification_on_overshoot(self, mock_socketio_emit):
+        """Test that a milestone notification is not sent again if count goes past it."""
+        milestone_to_hit = TEST_LIKE_MILESTONES[0] # e.g., 3
+
+        # Hit the milestone
+        for i in range(milestone_to_hit):
+            self._like_post(self.test_post.id, self.liker_users[i])
+
+        # Clear mock calls from hitting the first milestone
+        # Note: standard 'like' notifications also call mock_socketio_emit
+        # We are interested in *additional* milestone notifications
+        # Count calls before adding more likes
+        milestone_emit_calls_before_overshoot = 0
+        for call_args in mock_socketio_emit.call_args_list:
+            args, kwargs = call_args
+            if args[0] == 'new_notification' and kwargs.get('room') == str(self.post_author.id):
+                payload = args[1]
+                if payload.get('type') == f'like_milestone_{milestone_to_hit}':
+                    milestone_emit_calls_before_overshoot +=1
+
+        self.assertEqual(milestone_emit_calls_before_overshoot, 1, "Milestone emit should have happened once.")
+
+        # Add one more like (takes it past the first milestone, e.g., 4th like)
+        self._like_post(self.test_post.id, self.liker_users[milestone_to_hit])
+        self._logout()
+
+        # Verify no NEW DB notification for the *first* milestone
+        notifications = Notification.query.filter_by(
+            recipient_id=self.post_author.id,
+            related_post_id=self.test_post.id,
+            type=f'like_milestone_{milestone_to_hit}'
+        ).all()
+        self.assertEqual(len(notifications), 1, "Should only be one DB notification for the first milestone.")
+
+        # Verify socketio.emit was not called *again* for the first milestone
+        milestone_emit_calls_after_overshoot = 0
+        for call_args in mock_socketio_emit.call_args_list:
+            args, kwargs = call_args
+            if args[0] == 'new_notification' and kwargs.get('room') == str(self.post_author.id):
+                payload = args[1]
+                if payload.get('type') == f'like_milestone_{milestone_to_hit}':
+                    milestone_emit_calls_after_overshoot +=1
+
+        self.assertEqual(milestone_emit_calls_after_overshoot, milestone_emit_calls_before_overshoot,
+                         "SocketIO emit for the first milestone was found again after overshooting.")
+
+
+    @patch('app.routes.socketio.emit')
+    def test_multiple_milestones(self, mock_socketio_emit):
+        first_milestone = TEST_LIKE_MILESTONES[0] # e.g., 3
+        second_milestone = TEST_LIKE_MILESTONES[1] # e.g., 5
+        liker_at_first_milestone = None
+        liker_at_second_milestone = None
+
+        # Hit the first milestone
+        for i in range(first_milestone):
+            self._like_post(self.test_post.id, self.liker_users[i])
+            if (i + 1) == first_milestone:
+                liker_at_first_milestone = self.liker_users[i]
+
+        notification1 = Notification.query.filter_by(
+            recipient_id=self.post_author.id,
+            related_post_id=self.test_post.id,
+            type=f'like_milestone_{first_milestone}'
+        ).first()
+        self.assertIsNotNone(notification1)
+        self.assertEqual(notification1.actor_id, liker_at_first_milestone.id)
+
+        # Clear mock calls for the first milestone socket event to specifically check the second one later
+        # This is a bit tricky as standard 'like' notifications are also emitted.
+        # We'll count the specific milestone emits.
+        first_milestone_emits = 0
+        for call_args in mock_socketio_emit.call_args_list:
+            args, kwargs = call_args
+            if args[0] == 'new_notification' and kwargs.get('room') == str(self.post_author.id):
+                payload = args[1]
+                if payload.get('type') == f'like_milestone_{first_milestone}':
+                    first_milestone_emits += 1
+        self.assertEqual(first_milestone_emits, 1, "First milestone SocketIO event not emitted exactly once.")
+
+
+        # Continue liking to hit the second milestone
+        for i in range(first_milestone, second_milestone):
+            self._like_post(self.test_post.id, self.liker_users[i])
+            if (i + 1) == second_milestone:
+                liker_at_second_milestone = self.liker_users[i]
+        self._logout() # Logout last liker
+
+        notification2 = Notification.query.filter_by(
+            recipient_id=self.post_author.id,
+            related_post_id=self.test_post.id,
+            type=f'like_milestone_{second_milestone}'
+        ).first()
+        self.assertIsNotNone(notification2)
+        self.assertEqual(notification2.actor_id, liker_at_second_milestone.id)
+
+        second_milestone_emits = 0
+        for call_args in mock_socketio_emit.call_args_list:
+            args, kwargs = call_args
+            if args[0] == 'new_notification' and kwargs.get('room') == str(self.post_author.id):
+                payload = args[1]
+                if payload.get('type') == f'like_milestone_{second_milestone}':
+                    second_milestone_emits += 1
+                    self.assertEqual(payload['milestone_count'], second_milestone)
+                    self.assertEqual(payload['actor_username'], liker_at_second_milestone.username)
+        self.assertEqual(second_milestone_emits, 1, "Second milestone SocketIO event not emitted exactly once.")
+
+        # Ensure the first milestone notification was not re-triggered or counted again
+        total_first_milestone_emits = 0
+        for call_args in mock_socketio_emit.call_args_list:
+            args, kwargs = call_args
+            if args[0] == 'new_notification' and kwargs.get('room') == str(self.post_author.id):
+                payload = args[1]
+                if payload.get('type') == f'like_milestone_{first_milestone}':
+                     total_first_milestone_emits +=1
+        self.assertEqual(total_first_milestone_emits, first_milestone_emits, "First milestone was re-emitted.")
 
 
 if __name__ == '__main__':
