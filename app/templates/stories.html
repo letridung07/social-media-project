@@ -21,15 +21,15 @@
             <div class="story-item"> {# Applied .story-item #}
                 <div class="story-author"> {# Applied .story-author #}
                     <a href="{{ url_for('main.profile', username=story.author.username) }}" class="d-flex align-items-center text-decoration-none">
-                        <img src="{{ url_for('static', filename='images/' + (story.author.profile_picture_url or 'default_profile_pic.png')) }}" alt="{{ story.author.username }}'s Profile Picture"> {# img tag directly inside story-author for CSS to apply #}
+                        <img src="{{ url_for('static', filename='images/' + (story.author.profile_picture_url or 'default_profile_pic.png')) }}" loading="lazy" alt="{{ story.author.username }}'s Profile Picture"> {# img tag directly inside story-author for CSS to apply #}
                         <span class="username ms-2">{{ story.author.username }}</span> {# Applied .username #}
                     </a>
                 </div>
 
                 {% if story.image_filename %}
-                    <img src="{{ url_for('static', filename='story_media/' + story.image_filename) }}" class="story-media" alt="Story by {{ story.author.username }}"> {# Applied .story-media #}
+                    <img src="{{ url_for('static', filename='story_media/' + story.image_filename) }}" loading="lazy" class="story-media" alt="Story by {{ story.author.username }}"> {# Applied .story-media #}
                 {% elif story.video_filename %}
-                    <video controls src="{{ url_for('static', filename='story_media/' + story.video_filename) }}" class="story-media"></video> {# Applied .story-media #}
+                    <video controls src="{{ url_for('static', filename='story_media/' + story.video_filename) }}" class="story-media" preload="metadata"></video> {# Applied .story-media #}
                 {% endif %}
 
                 {% if story.caption %}

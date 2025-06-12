@@ -92,6 +92,33 @@ A social media platform built with Flask, featuring user authentication, profile
 *   **Visualizations:**
     *   Charts are used to visually represent data, such as a bar chart for likes per post (top 5) and a simple bar chart for the current follower count. (Note: Follower growth over time is a placeholder for future data collection).
 
+## Performance Optimizations
+
+To enhance the user experience and ensure the platform runs efficiently, several performance optimization techniques have been implemented:
+
+*   **Caching:**
+    *   **Flask-Caching** is utilized for server-side caching.
+    *   An **in-memory cache (`SimpleCache`)** is primarily used, suitable for single-instance deployments. For multi-instance deployments, a distributed cache like Redis or Memcached would be recommended.
+    *   **Cached Components:**
+        *   **Routes:** Several frequently accessed routes, such as the main index page (`/`), user profiles (`/user/<username>`), and group view pages (`/group/<group_id>`), are cached to reduce database load and response times. Timeouts are configured based on the expected rate of change for the content (e.g., 5 minutes for general feeds, 1 hour for user profiles).
+        *   **Database Queries:** Specific database query results, like the `followed_posts()` method in the `User` model, are cached to avoid redundant database hits for common data retrievals.
+        *   Cache invalidation is implemented where necessary, for example, a user's profile cache is cleared when their profile information is updated.
+
+*   **Database Optimization:**
+    *   **Indexes:** Strategic database indexes have been added to frequently queried columns in models like `Post` (e.g., `user_id`), `Notification` (e.g., `recipient_id`, `actor_id`), and `ChatMessage` (e.g., `conversation_id`, `sender_id`). This significantly speeds up data retrieval operations.
+    *   **Query Optimization:** The `followed_posts()` method, which generates the main feed for authenticated users, has been optimized to use efficient SQL joins and now supports pagination to load data in manageable chunks.
+    *   **User Analytics Table:** A dedicated `UserAnalytics` table has been introduced to store pre-calculated aggregates like total likes and comments received by each user. This avoids expensive on-the-fly calculations on high-traffic pages like user profiles or analytics dashboards. These analytics are updated periodically (currently via a manual trigger, but designed for a scheduled task).
+
+*   **Image and Media Handling:**
+    *   **Image Compression:** The **Pillow** library is used to compress uploaded images.
+        *   Profile pictures are resized to 256x256 pixels.
+        *   Post images are resized if they exceed a maximum width (currently 800px), maintaining aspect ratio.
+        *   All processed images are saved with optimization flags and a quality setting of 85% to balance file size and visual quality.
+    *   **Lazy Loading:** `<img>` tags across various templates (posts, profiles, group pages, stories, search results) now use the `loading="lazy"` attribute. This native browser feature defers the loading of off-screen images until the user scrolls near them, improving initial page load times and reducing bandwidth consumption.
+    *   **Video Preloading:** For videos in stories, the `preload="metadata"` attribute is used on `<video>` tags, which instructs the browser to load only the video's metadata (like dimensions and duration) initially, rather than the entire video file.
+
+These optimizations contribute to a faster, more responsive, and scalable platform.
+
 ## Real-time Chat
 
 The platform includes a real-time chat feature allowing users to engage in one-on-one conversations.

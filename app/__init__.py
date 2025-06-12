@@ -5,9 +5,11 @@ from flask_login import LoginManager # Import LoginManager
 from flask_socketio import SocketIO
 from flask_mail import Mail # Import Mail
 from flask_migrate import Migrate # Import Migrate
+from flask_caching import Cache # Import Cache
 from config import Config
 
 db = SQLAlchemy()
+cache = Cache() # Initialize Cache
 csrf = CSRFProtect()
 login_manager = LoginManager() # Initialize LoginManager
 socketio = SocketIO()
@@ -27,6 +29,7 @@ def create_app(config_class=Config):
     socketio.init_app(app)
     mail.init_app(app) # Initialize Mail with the app
     migrate.init_app(app, db) # Initialize Migrate with the app and db
+    cache.init_app(app, config={'CACHE_TYPE': 'SimpleCache'}) # Initialize Cache with the app
 
     from app.routes import main as main_blueprint
     app.register_blueprint(main_blueprint)

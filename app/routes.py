@@ -3,10 +3,10 @@ import re # For hashtag parsing
 from datetime import datetime, timezone
 from flask import Blueprint, render_template, redirect, url_for, flash, request, abort, current_app, jsonify # Import jsonify
 from flask_login import login_user, current_user, logout_user, login_required
-from sqlalchemy import or_
-from app import db, socketio
+from sqlalchemy import or_, func # Import func
+from app import db, socketio, cache # Import cache
 from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm
-from app.models import User, Post, Like, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event # Import PollVote and Event
+from app.models import User, Post, Like, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics # Import UserAnalytics
 from app.utils import save_picture, save_post_image, save_post_video, save_group_image, save_story_media
 from app.email_utils import send_password_reset_email # Import email utility
 
@@ -36,30 +36,25 @@ def process_hashtags(post_body, post_object):
 
 @main.route('/')
 @main.route('/index')
+@cache.cached(timeout=300)
 def index():
-    page = request.args.get('page', 1, type=int) # Optional: for pagination later
+    page = request.args.get('page', 1, type=int)
+    per_page = current_app.config.get('POSTS_PER_PAGE', 10)
+    posts_pagination = None # Initialize to None
+
     if current_user.is_authenticated:
         # Personalized feed for logged-in users
-        # followed_posts() returns a query, so we can paginate it if needed
-        # For now, just get all:
-        posts = current_user.followed_posts().all()
-        # If pagination was desired:
-        # posts_query = current_user.followed_posts()
-        # posts_pagination = posts_query.paginate(page=page, per_page=current_app.config.get('POSTS_PER_PAGE', 10), error_out=False)
-        # posts = posts_pagination.items
-        # render_template('index.html', ..., pagination=posts_pagination)
+        posts_pagination = current_user.followed_posts(page=page, per_page=per_page)
+        posts = posts_pagination.items
     else:
         # Public feed for guests (e.g., most recent posts from all users)
-        posts = Post.query.order_by(Post.timestamp.desc()).all()
-        # If pagination was desired:
-        # posts_query = Post.query.order_by(Post.timestamp.desc())
-        # posts_pagination = posts_query.paginate(page=page, per_page=current_app.config.get('POSTS_PER_PAGE', 10), error_out=False)
-        # posts = posts_pagination.items
-        # render_template('index.html', ..., pagination=posts_pagination)
+        # For guests, let's also paginate all posts
+        posts_query = Post.query.order_by(Post.timestamp.desc())
+        posts_pagination = db.paginate(posts_query, page=page, per_page=per_page, error_out=False)
+        posts = posts_pagination.items
 
-    # The template 'index.html' already iterates through 'posts'
     comment_form = CommentForm() # Instantiate the form
-    return render_template('index.html', title='Home', posts=posts, comment_form=comment_form) # Pass to template
+    return render_template('index.html', title='Home', posts=posts, comment_form=comment_form, pagination=posts_pagination)
 
 
 @main.route('/search')
@@ -196,6 +191,7 @@ def reset_password(token):
 
 
 @main.route('/user/<username>')
+@cache.cached(timeout=3600)
 def profile(username):
     user = User.query.filter_by(username=username).first_or_404()
     # Query posts for this specific user, newest first
@@ -225,6 +221,7 @@ def edit_profile():
             current_user.profile_picture_url = picture_file
         current_user.bio = form.bio.data
         db.session.commit()
+        cache.delete_memoized(profile, current_user.username) # Invalidate cache
         flash('Your profile has been updated!', 'success')
         return redirect(url_for('main.profile', username=current_user.username))
     elif request.method == 'GET':
@@ -720,16 +717,45 @@ def analytics():
             for post in top_5_posts
         ])
 
+    user_analytics = UserAnalytics.query.filter_by(user_id=current_user.id).first()
+
 
     return render_template('analytics.html', title='User Analytics',
                            user=current_user,
                            total_posts=total_posts_count,
-                           total_likes_received=total_likes_received,
-                           total_comments_received=total_comments_received,
+                           total_likes_received=user_analytics.total_likes_received if user_analytics else 0,
+                           total_comments_received=user_analytics.total_comments_received if user_analytics else 0,
                            follower_count=follower_count,
                            following_count=following_count,
                            top_posts=top_5_posts,
-                           top_posts_chart_data=top_posts_chart_data)
+                           top_posts_chart_data=top_posts_chart_data,
+                           user_analytics=user_analytics)
+
+
+@main.route('/update_analytics', methods=['POST'])
+@login_required
+def update_analytics_route():
+    # This is a simplified manual trigger. In a real app, this would be a scheduled task.
+    # And likely restricted to admins or system processes.
+
+    users = User.query.all()
+    for user in users:
+        total_likes = db.session.query(func.count(Like.id)).join(Post).filter(Post.user_id == user.id).scalar()
+        total_comments = db.session.query(func.count(Comment.id)).join(Post).filter(Post.user_id == user.id).scalar()
+
+        analytics_entry = UserAnalytics.query.filter_by(user_id=user.id).first()
+        if not analytics_entry:
+            analytics_entry = UserAnalytics(user_id=user.id)
+            db.session.add(analytics_entry)
+
+        analytics_entry.total_likes_received = total_likes
+        analytics_entry.total_comments_received = total_comments
+        # last_updated is handled by onupdate in the model
+
+    db.session.commit()
+    flash('User analytics have been updated.', 'success')
+    return redirect(url_for('main.analytics'))
+
 
 # -------------------- Event Routes --------------------
 
@@ -935,6 +961,7 @@ def create_group():
     return render_template('create_group.html', title='Create Group', form=form)
 
 @main.route('/group/<int:group_id>')
+@cache.cached(timeout=300)
 def view_group(group_id):
     group = Group.query.get_or_404(group_id)
     # Fetch posts associated with this group, newest first

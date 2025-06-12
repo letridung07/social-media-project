@@ -7,7 +7,7 @@
         <div class="col-md-4">
             <div class="card">
                 <div class="card-body text-center">
-                    <img src="{{ url_for('static', filename='images/' + user.profile_picture_url) }}" alt="{{ user.username }}'s profile picture" class="img-fluid rounded-circle mb-3" style="width: 150px; height: 150px;">
+                    <img src="{{ url_for('static', filename='images/' + user.profile_picture_url) }}" loading="lazy" alt="{{ user.username }}'s profile picture" class="img-fluid rounded-circle mb-3" style="width: 150px; height: 150px;">
                     <h2 class="card-title mt-2">{{ user.username }}</h2>
                     {% if user.bio %}
                         <p class="card-text text-muted mb-3">{{ user.bio }}</p>

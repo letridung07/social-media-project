@@ -10,10 +10,14 @@ def save_picture(form_picture_field):
     picture_path = os.path.join(current_app.root_path, 'static/images', picture_fn)
 
     # Output size for resizing
-    output_size = (150, 150) # Thumbnail size
+    output_size = (256, 256) # Profile picture size
     i = Image.open(form_picture_field)
     i.thumbnail(output_size)
-    i.save(picture_path)
+    # Convert to RGB if it's a P or RGBA mode image (common for PNGs)
+    # to ensure JPEG saving doesn't fail and to remove alpha channel if not needed.
+    if i.mode in ("P", "RGBA"):
+        i = i.convert("RGB")
+    i.save(picture_path, optimize=True, quality=85)
 
     return picture_fn
 
@@ -44,7 +48,10 @@ def save_post_image(form_image_field):
         new_height = int(output_max_width * aspect_ratio)
         img = img.resize((output_max_width, new_height), Image.Resampling.LANCZOS) # Use LANCZOS for quality
 
-    img.save(picture_path)
+    # Convert to RGB if it's a P or RGBA mode image
+    if img.mode in ("P", "RGBA"):
+        img = img.convert("RGB")
+    img.save(picture_path, optimize=True, quality=85)
     return image_fn
 
 def save_post_video(form_video_file):

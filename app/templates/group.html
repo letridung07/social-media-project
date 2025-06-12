@@ -8,7 +8,7 @@
     <div class="row">
         <div class="col-md-3 group-profile-image-container">
             <img src="{{ url_for('static', filename='group_images/' + group.image_file if group.image_file else 'group_images/default_group_pic.png') }}"
-                 alt="{{ group.name }}'s image"
+                 loading="lazy" alt="{{ group.name }}'s image"
                  class="group-profile-image img-fluid">
         </div>
         <div class="col-md-9 group-header-details">
