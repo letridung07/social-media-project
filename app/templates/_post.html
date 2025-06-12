@@ -31,6 +31,12 @@
                     In group: <a href="{{ url_for('main.view_group', group_id=post.group.id) }}">{{ post.group.name }}</a>
                 </small>
                 {% endif %}
+                <small class="text-muted d-block">
+                    Visibility: {{ post.privacy_level }}
+                    {% if post.privacy_level == 'CUSTOM_LIST' and post.custom_friend_list_id and post.custom_friend_list %}
+                        (List: {{ post.custom_friend_list.name }})
+                    {% endif %}
+                </small>
             </div>
         </div>
     </div>

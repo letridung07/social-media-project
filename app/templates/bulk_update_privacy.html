@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <h2>Bulk Update Post Privacy</h2>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <form method="POST" action="{{ url_for('main.bulk_update_privacy') }}">
+        {{ csrf_token() if csrf_token else '' }} {# Ensure CSRF token if forms are configured globally, or add to a FlaskForm #}
+        <div class="form-group mb-3"> {# Added mb-3 for spacing #}
+            <label for="new_privacy_level">Set selected posts to:</label>
+            <select name="new_privacy_level" id="new_privacy_level" class="form-control" style="max-width: 300px;">
+                {% for value, label in privacy_options %}
+                    <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="my-3">
+            <button type="submit" class="btn btn-primary">Update Selected Posts</button>
+        </div>
+
+        <h4>Your Posts:</h4>
+        {% if posts %}
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th><input type="checkbox" id="select_all_posts"> Select All</th> {# Enhanced Select All #}
+                        <th>Post Content</th>
+                        <th>Current Privacy</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for post in posts %}
+                    <tr>
+                        <td><input type="checkbox" name="post_ids" value="{{ post.id }}" class="post-checkbox"></td>
+                        <td>{{ post.body[:100] }}{% if post.body|length > 100 %}...{% endif %}</td>
+                        <td>
+                            {{ post.privacy_level }}
+                            {% if post.privacy_level == 'CUSTOM_LIST' and post.custom_friend_list_id and post.custom_friend_list %}
+                                (List: {{ post.custom_friend_list.name }})
+                            {% endif %}
+                        </td>
+                        <td>{{ post.timestamp.strftime('%Y-%m-%d %H:%M') }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p>You have no posts to update.</p>
+        {% endif %}
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+    document.getElementById('select_all_posts').addEventListener('change', function(event) {
+        var checkboxes = document.querySelectorAll('.post-checkbox');
+        for (var checkbox of checkboxes) {
+            checkbox.checked = event.target.checked;
+        }
+    });
+</script>
+{% endblock %}

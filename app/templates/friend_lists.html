@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <div class="row mb-3">
+        <div class="col-md-6">
+            <h2>Your Friend Lists</h2>
+        </div>
+        <div class="col-md-6 text-right">
+            <a href="{{ url_for('main.create_friend_list') }}" class="btn btn-primary">Create New List</a>
+        </div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    {% if lists %}
+        <ul class="list-group">
+            {% for list_item in lists %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    {{ list_item.name }}
+                    <span>
+                        <a href="{{ url_for('main.manage_friend_list_members', list_id=list_item.id) }}" class="btn btn-sm btn-info mr-2">Manage Members</a>
+                        <a href="{{ url_for('main.edit_friend_list', list_id=list_item.id) }}" class="btn btn-sm btn-secondary mr-2">Rename</a>
+                        <form action="{{ url_for('main.delete_friend_list', list_id=list_item.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this list? Posts using this list will become private.');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token else '' }}"/>
+                            <input type="submit" value="Delete" class="btn btn-sm btn-danger">
+                        </form>
+                    </span>
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p>You haven't created any friend lists yet.</p>
+    {% endif %}
+</div>
+{% endblock %}

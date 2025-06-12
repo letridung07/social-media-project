@@ -31,32 +31,39 @@
             </div>
         </div>
         <div class="col-md-8">
-            <h3 class="mt-3 mt-md-0">{{ user.username }}'s Posts:</h3>
-            {% if posts %}
-                {% for post in posts %}
-                    {% set item_wrapper = {'type': 'post', 'item': post, 'timestamp': post.timestamp, 'sharer': None} %}
-                    {% include '_post.html' %}
-                {% endfor %}
+            {% if profile_is_private %}
+                <div class="alert alert-info mt-3">This profile is private.</div>
+            {% elif profile_is_limited %}
+                <div class="alert alert-info mt-3">This profile is visible only to followers. Follow to see their posts and other activity.</div>
             {% else %}
-                <div class="alert alert-secondary mt-3" role="alert">
-                    {{ user.username }} has not posted anything yet.
-                </div>
-            {% endif %}
-
-            <hr class="my-4"> {# Visual separator #}
-
-            <h3 class="mt-3">Groups {{ user.username }} is a member of:</h3>
-            {% if user.group_memberships and user.group_memberships.count() > 0 %}
-                <div class="list-group">
-                    {% for membership in user.group_memberships %}
-                        <a href="{{ url_for('main.view_group', group_id=membership.group.id) }}" class="list-group-item list-group-item-action">
-                            {{ membership.group.name }}
-                            {% if membership.role == 'admin' %}<span class="badge bg-info float-right mt-1">Admin</span>{% endif %}
-                        </a>
+                {# Render profile content and posts as normal (posts list will be filtered by route) #}
+                <h3 class="mt-3 mt-md-0">{{ user.username }}'s Posts:</h3>
+                {% if posts %}
+                    {% for post in posts %}
+                        {% set item_wrapper = {'type': 'post', 'item': post, 'timestamp': post.timestamp, 'sharer': None} %}
+                        {% include '_post.html' %}
                     {% endfor %}
-                </div>
-            {% else %}
-                <p>{{ user.username }} is not a member of any groups yet.</p>
+                {% else %}
+                    <div class="alert alert-secondary mt-3" role="alert">
+                        {{ user.username }} has not posted anything yet, or their posts are not visible to you.
+                    </div>
+                {% endif %}
+
+                <hr class="my-4"> {# Visual separator #}
+
+                <h3 class="mt-3">Groups {{ user.username }} is a member of:</h3>
+                {% if user.group_memberships and user.group_memberships.count() > 0 %}
+                    <div class="list-group">
+                        {% for membership in user.group_memberships %}
+                            <a href="{{ url_for('main.view_group', group_id=membership.group.id) }}" class="list-group-item list-group-item-action">
+                                {{ membership.group.name }}
+                                {% if membership.role == 'admin' %}<span class="badge bg-info float-right mt-1">Admin</span>{% endif %}
+                            </a>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p>{{ user.username }} is not a member of any groups yet.</p>
+                {% endif %}
             {% endif %}
         </div>
     </div>

@@ -1,3 +1,9 @@
+# Privacy Level Constants
+PRIVACY_PUBLIC = "PUBLIC"
+PRIVACY_FOLLOWERS = "FOLLOWERS"
+PRIVACY_CUSTOM_LIST = "CUSTOM_LIST"
+PRIVACY_PRIVATE = "PRIVATE"
+
 from app import db, cache # Import cache
 from flask_login import UserMixin
 from passlib.hash import sha256_crypt
@@ -73,6 +79,25 @@ post_hashtags = db.Table('post_hashtags',
     db.Column('hashtag_id', db.Integer, db.ForeignKey('hashtag.id'), primary_key=True)
 )
 
+# Association table for FriendList members
+friend_list_members = db.Table('friend_list_members',
+    db.Column('friend_list_id', db.Integer, db.ForeignKey('friend_list.id'), primary_key=True),
+    db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True)
+)
+
+class FriendList(db.Model):
+    __tablename__ = 'friend_list'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False) # The user who owns this list
+    name = db.Column(db.String(100), nullable=False)
+
+    # Relationship to users who are members of this list
+    members = db.relationship('User', secondary=friend_list_members, lazy='dynamic',
+                              backref=db.backref('member_of_friend_lists', lazy='dynamic'))
+
+    def __repr__(self):
+        return f'<FriendList {self.name} owned by User ID {self.user_id}>'
+
 class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(64), index=True, unique=True, nullable=False)
@@ -88,6 +113,12 @@ class User(db.Model, UserMixin):
 
     # User Theme Preference
     theme_preference = db.Column(db.String(50), nullable=True, default='default')
+
+    profile_visibility = db.Column(db.String(50), nullable=False, default=PRIVACY_PUBLIC)
+    default_post_privacy = db.Column(db.String(50), nullable=False, default=PRIVACY_PUBLIC)
+    default_story_privacy = db.Column(db.String(50), nullable=False, default=PRIVACY_PUBLIC)
+    # Relationship to FriendList
+    friend_lists = db.relationship('FriendList', backref='owner', lazy='dynamic', cascade='all, delete-orphan')
 
     # Relationship to Post
     posts = db.relationship('Post', backref='author', lazy='dynamic')
@@ -237,6 +268,11 @@ class Post(db.Model):
 
     # Polls associated with this post
     polls = db.relationship('Poll', backref='post', lazy='dynamic')
+
+    privacy_level = db.Column(db.String(50), nullable=False, default=PRIVACY_PUBLIC)
+    custom_friend_list_id = db.Column(db.Integer, db.ForeignKey('friend_list.id'), nullable=True)
+    # Relationship to a specific FriendList (if privacy_level is CUSTOM_LIST)
+    custom_friend_list = db.relationship('FriendList', foreign_keys=[custom_friend_list_id])
 
     def __repr__(self):
         return f'<Post {self.body[:50]}...>'
@@ -426,6 +462,11 @@ class Story(db.Model):
     caption = db.Column(db.Text, nullable=True)
     timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
     expires_at = db.Column(db.DateTime, index=True)
+
+    privacy_level = db.Column(db.String(50), nullable=False, default=PRIVACY_PUBLIC)
+    custom_friend_list_id = db.Column(db.Integer, db.ForeignKey('friend_list.id'), nullable=True)
+    # Relationship to a specific FriendList
+    custom_friend_list = db.relationship('FriendList', foreign_keys=[custom_friend_list_id])
 
     def __init__(self, **kwargs):
         super(Story, self).__init__(**kwargs)

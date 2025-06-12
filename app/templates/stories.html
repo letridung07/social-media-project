@@ -40,6 +40,10 @@
                     <br>
                     Expires: {{ story.expires_at.strftime('%Y-%m-%d %H:%M') if story.expires_at else 'N/A' }}
                 </p>
+                <p><small class="text-muted">Visibility: {{ story.privacy_level }}</small></p>
+                {% if story.privacy_level == 'CUSTOM_LIST' and story.custom_friend_list_id and story.custom_friend_list %}
+                    <p><small class="text-muted">(List: {{ story.custom_friend_list.name }})</small></p>
+                {% endif %}
             </div>
             {% endfor %}
         </div>

@@ -35,6 +35,32 @@
                     {% endif %}
                 </div>
 
+                <div class="form-group mb-3">
+                    {{ form.privacy_level.label(class="form-control-label") }}
+                    {{ form.privacy_level(class="form-control form-control-lg") }}
+                    {% if form.privacy_level.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.privacy_level.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <small class="form-text text-muted">Choose who can see this story.</small>
+                    {% endif %}
+                </div>
+
+                <div class="form-group" id="custom_list_select_div_story" style="display: none;"> {# Initially hidden, unique ID #}
+                    {{ form.custom_friend_list_id.label(class="form-control-label") }}
+                    {{ form.custom_friend_list_id(class="form-control form-control-lg") }}
+                    {% if form.custom_friend_list_id.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.custom_friend_list_id.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+
                 <div class="form-group mt-4">
                     {{ form.submit(class="btn btn-primary") }}
                     <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary ms-2">Cancel</a>
@@ -43,4 +69,35 @@
         </div>
     </div>
 </div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Use a more specific selector if privacy_level field ID might not be unique globally
+        var storyPrivacyLevelSelect = document.querySelector('form [name="privacy_level"]');
+        if (!storyPrivacyLevelSelect && document.getElementById('privacy_level')) { // Fallback for simple ID
+             storyPrivacyLevelSelect = document.getElementById('privacy_level');
+        } else if (!storyPrivacyLevelSelect) { // General fallback by name if ID is not 'privacy_level'
+             storyPrivacyLevelSelect = document.getElementsByName('privacy_level')[0];
+        }
+
+        var storyCustomListDiv = document.getElementById('custom_list_select_div_story');
+
+        function toggleStoryCustomListDiv() {
+            if (storyPrivacyLevelSelect && storyCustomListDiv) { // Check if elements exist
+                if (storyPrivacyLevelSelect.value === 'CUSTOM_LIST') { // Use actual string value
+                    storyCustomListDiv.style.display = 'block';
+                } else {
+                    storyCustomListDiv.style.display = 'none';
+                }
+            }
+        }
+
+        if (storyPrivacyLevelSelect && storyCustomListDiv) {
+            storyPrivacyLevelSelect.addEventListener('change', toggleStoryCustomListDiv);
+            toggleStoryCustomListDiv(); // Call on page load
+        } else {
+            // console.warn("Story privacy script: Could not find privacy_level select or custom_list_select_div_story.");
+        }
+    });
+</script>
 {% endblock %}

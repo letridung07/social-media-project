@@ -3,7 +3,28 @@ from wtforms import StringField, PasswordField, SubmitField, BooleanField, TextA
 from wtforms.fields import FileField # Correct import for FileField
 from flask_wtf.file import FileAllowed # For validation
 from wtforms.validators import DataRequired, Length, Email, EqualTo, ValidationError, Optional, InputRequired
-from app.models import User
+from app.models import User, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE
+
+PRIVACY_CHOICES = [
+    (PRIVACY_PUBLIC, 'Public (visible to everyone)'),
+    (PRIVACY_FOLLOWERS, 'Followers Only (visible to your followers)'),
+    (PRIVACY_CUSTOM_LIST, 'Custom List (visible to a specific list of friends)'), # Placeholder for now
+    (PRIVACY_PRIVATE, 'Private (visible only to you)')
+]
+
+PROFILE_VISIBILITY_CHOICES = [
+    (PRIVACY_PUBLIC, 'Public Profile'),
+    (PRIVACY_FOLLOWERS, 'Followers Only Profile'),
+    (PRIVACY_PRIVATE, 'Private Profile (Only you)')
+]
+
+DEFAULT_CONTENT_PRIVACY_CHOICES = [
+    (PRIVACY_PUBLIC, 'Public'),
+    (PRIVACY_FOLLOWERS, 'Followers Only'),
+    (PRIVACY_PRIVATE, 'Private')
+    # Not including CUSTOM_LIST as a default for all new posts/stories initially.
+    # Users can select it per post/story.
+]
 
 class RegistrationForm(FlaskForm):
     username = StringField('Username', validators=[DataRequired(), Length(min=2, max=20)])
@@ -36,6 +57,11 @@ class EditProfileForm(FlaskForm):
         ('dark', 'Dark Theme'),
         ('blue', 'Blue Lagoon Theme')
     ], default='default', validators=[InputRequired()])
+
+    profile_visibility = SelectField('Profile Visibility', choices=PROFILE_VISIBILITY_CHOICES, default=PRIVACY_PUBLIC, validators=[DataRequired()])
+    default_post_privacy = SelectField('Default Post Visibility', choices=DEFAULT_CONTENT_PRIVACY_CHOICES, default=PRIVACY_PUBLIC, validators=[DataRequired()])
+    default_story_privacy = SelectField('Default Story Visibility', choices=DEFAULT_CONTENT_PRIVACY_CHOICES, default=PRIVACY_PUBLIC, validators=[DataRequired()])
+
     submit = SubmitField('Submit Changes')
 
 class PostForm(FlaskForm):
@@ -49,6 +75,9 @@ class PostForm(FlaskForm):
         description='Describe your image or video for users who cannot see it. This is optional but highly recommended.',
         validators=[Length(max=500), Optional()] # Added Optional() validator
     )
+    privacy_level = SelectField('Visibility', choices=PRIVACY_CHOICES, default=PRIVACY_PUBLIC, validators=[DataRequired()])
+    # custom_friend_list_id = HiddenField('Custom Friend List ID', validators=[Optional()]) # Consider adding later if needed directly in this form
+    custom_friend_list_id = SelectField('Select Friend List', choices=[], coerce=int, validators=[Optional()]) # Added coerce=int and Optional
     submit = SubmitField('Post')
 
 class CommentForm(FlaskForm):
@@ -85,6 +114,8 @@ class StoryForm(FlaskForm):
         FileAllowed(['jpg', 'png', 'jpeg', 'gif', 'mp4', 'mov', 'avi'], 'Image or video files only (jpg, png, jpeg, gif, mp4, mov, avi)!')
     ])
     caption = TextAreaField('Caption (Optional)', validators=[Optional(), Length(max=280)])
+    privacy_level = SelectField('Visibility', choices=PRIVACY_CHOICES, default=PRIVACY_PUBLIC, validators=[DataRequired()])
+    custom_friend_list_id = SelectField('Select Friend List', choices=[], coerce=int, validators=[Optional()]) # Added
     submit = SubmitField('Post Story')
 
 # Auxiliary form for individual poll options
@@ -148,3 +179,16 @@ class StreamSetupForm(FlaskForm):
     go_live = BooleanField('Go Live Now / Update Live Status')
     enable_recording = BooleanField('Enable Recording')
     submit = SubmitField('Update Stream Settings')
+
+class FriendListForm(FlaskForm):
+    name = StringField('List Name', validators=[DataRequired(), Length(min=1, max=100)])
+    submit = SubmitField('Save List')
+
+class AddUserToFriendListForm(FlaskForm):
+    username = StringField('Username to Add', validators=[DataRequired()])
+    submit = SubmitField('Add User')
+
+    def validate_username(self, username):
+        user = User.query.filter_by(username=username.data).first()
+        if not user:
+            raise ValidationError('User with that username does not exist.')
