@@ -23,6 +23,9 @@ class TestingConfig(Config):
     TESTING = True
     SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:' # Use in-memory SQLite for tests
     WTF_CSRF_ENABLED = False # Disable CSRF forms protection in testing
+    SERVER_NAME = 'localhost.test' # Added for url_for to work in tests
+    APPLICATION_ROOT = '/'
+    PREFERRED_URL_SCHEME = 'http'
     VIDEO_UPLOAD_FOLDER = 'app/static/videos_test' # For test video uploads
     UPLOAD_FOLDER_GROUP_IMAGES = 'app/static/group_images_test' # For test group images
     # LOGIN_DISABLED = True # Useful if you want to bypass login in some tests

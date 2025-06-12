@@ -5,7 +5,7 @@ from flask_login import login_user, current_user, logout_user, login_required
 from sqlalchemy import or_
 from app import db, socketio # Import socketio
 from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm # Import new forms
-from app.models import User, Post, Like, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership # Import Hashtag
+from app.models import User, Post, Like, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership # Import Hashtag # Group is already here
 from app.utils import save_picture, save_post_image, save_post_video, save_group_image
 from app.email_utils import send_password_reset_email # Import email utility
 
@@ -66,6 +66,7 @@ def search():
     query = request.args.get('q', '').strip()
     users_found = []
     posts_found = []
+    groups_found = []
 
     if query:
         # Search Users by username or email (case-insensitive)
@@ -81,11 +82,20 @@ def search():
             Post.body.ilike(f'%{query}%')
         ).order_by(Post.timestamp.desc()).all()
 
+        # Search Groups by name or description (case-insensitive)
+        groups_found = Group.query.filter(
+            or_(
+                Group.name.ilike(f'%{query}%'),
+                Group.description.ilike(f'%{query}%')
+            )
+        ).all()
+
     return render_template('search_results.html',
                            title=f'Search Results for "{query}"' if query else 'Search',
                            query=query,
                            users=users_found,
-                           posts=posts_found)
+                           posts=posts_found,
+                           groups=groups_found)
 
 
 @main.route('/hashtag/<string:tag_text>')
