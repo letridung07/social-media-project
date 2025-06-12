@@ -108,17 +108,19 @@ These recommendations are generated based on your activity on the platform and a
     *   Event organizers have the ability to edit or delete the events they've created.
     *   Attendees and organizers receive notifications for important event updates, cancellations, and when new users join an event.
 
-### Analytics Dashboard
-*   **Purpose:** Provides users with a personal dashboard to view insights into their activity and engagement on the platform.
-*   **Key Statistics Displayed:**
-    *   Total number of posts created by the user.
-    *   Total number of likes received across all their posts.
-    *   Total number of comments received on all their posts.
-    *   Current count of users following them (Followers).
-    *   Current count of users they are following (Following).
-    *   A list of their top 5 most liked posts.
-*   **Visualizations:**
-    *   Charts are used to visually represent data, such as a bar chart for likes per post (top 5) and a simple bar chart for the current follower count. (Note: Follower growth over time is a placeholder for future data collection).
+## Advanced Analytics Dashboard
+
+The application now features an enhanced analytics dashboard, providing users with deeper insights into their content performance and audience engagement over time.
+
+Key features include:
+
+*   **Historical Engagement Trends**: Track your likes, comments, and follower counts over various time periods (last 7 days, 30 days, 90 days, or all time). These trends are visualized using interactive line charts.
+*   **Content Performance by Context**:
+    *   **Top Hashtags**: Identify which hashtags associated with your posts drive the most engagement (likes and comments).
+    *   **Top Groups**: Analyze the performance of your posts within different groups to see which communities are most interactive with your content.
+*   **Data Export**: Download your analytics data, including summary statistics, historical trends, and top-performing content contexts, in CSV format for offline analysis or record-keeping.
+
+The dashboard utilizes Chart.js for dynamic data visualizations and employs a daily scheduled task (via APScheduler) to collect and update historical analytics data.
 
 ## Performance Optimizations
 

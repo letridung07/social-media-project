@@ -7,7 +7,8 @@ import re # For mention processing
 # Imports for recommendation functions
 from sqlalchemy import func, desc, not_, and_, or_, distinct
 from app import db # Assuming db instance is available in app package
-from app.models import User, Post, Like, Comment, Hashtag, Group, GroupMembership, followers, Mention # Added Mention
+from app.models import User, Post, Like, Comment, Hashtag, Group, GroupMembership, followers, Mention, HistoricalAnalytics, post_hashtags # Added Mention, HistoricalAnalytics, post_hashtags
+from datetime import datetime, timedelta, timezone # Added datetime, timedelta, timezone
 
 
 def save_picture(form_picture_field):
@@ -411,3 +412,137 @@ def recommend_groups(user, limit=5):
     sorted_suggestions = sorted(sorted_suggestions, key=lambda x: x['score'], reverse=True)
 
     return [item['group'] for item in sorted_suggestions[:limit]]
+
+
+# Analytics Utility Functions
+
+def get_historical_engagement(user_id, time_period_str='7days', custom_start_date=None, custom_end_date=None):
+    """
+    Fetches historical engagement data for a user over a specified time period.
+    `time_period_str` can be "7days", "30days", "90days", "all", "custom".
+    For "custom", `custom_start_date` and optionally `custom_end_date` should be provided.
+    """
+    now = datetime.now(timezone.utc)
+
+    # Determine end_date
+    if custom_end_date:
+        end_date = custom_end_date
+    else:
+        end_date = now
+
+    # Determine start_date
+    if time_period_str == 'all':
+        start_date = None # No start date filter means from the beginning
+    elif time_period_str == 'custom':
+        if custom_start_date:
+            start_date = custom_start_date
+        else:
+            # Default to 'all' if 'custom' is specified but no custom_start_date
+            start_date = None
+            current_app.logger.warning("get_historical_engagement: 'custom' period without custom_start_date, defaulting to 'all'.")
+    else:
+        days_map = {
+            '7days': 7,
+            '30days': 30,
+            '90days': 90
+        }
+        days = days_map.get(time_period_str)
+        if days is None: # Default to 7 days if string is invalid and not 'all' or 'custom'
+            current_app.logger.warning(f"get_historical_engagement: Invalid time_period_str '{time_period_str}', defaulting to 7 days.")
+            days = 7
+        start_date = end_date - timedelta(days=days)
+
+    query = HistoricalAnalytics.query.filter_by(user_id=user_id)
+
+    if start_date:
+        query = query.filter(HistoricalAnalytics.timestamp >= start_date)
+
+    # Apply end_date filter unless 'all' is chosen AND no custom_end_date is set
+    # (meaning 'all' truly means up to now, or up to custom_end_date if specified)
+    if not (time_period_str == 'all' and not custom_end_date):
+         query = query.filter(HistoricalAnalytics.timestamp <= end_date)
+
+    return query.order_by(HistoricalAnalytics.timestamp.asc()).all()
+
+def get_top_performing_hashtags(user_id, limit=5):
+    """
+    Identifies top performing hashtags for a user based on likes and comments on their posts.
+    Returns a list of dicts: [{'tag_text': ..., 'engagement': ..., 'likes': ..., 'comments': ...}]
+    """
+    # Subquery for likes per post-hashtag combination for the user's posts
+    likes_subquery = db.session.query(
+        post_hashtags.c.hashtag_id.label('hashtag_id'),
+        func.count(distinct(Like.id)).label('likes_count')
+    ).select_from(post_hashtags)\
+    .join(Post, Post.id == post_hashtags.c.post_id)\
+    .outerjoin(Like, Like.post_id == Post.id)\
+    .filter(Post.user_id == user_id)\
+    .group_by(post_hashtags.c.hashtag_id).subquery()
+
+    # Subquery for comments per post-hashtag combination for the user's posts
+    comments_subquery = db.session.query(
+        post_hashtags.c.hashtag_id.label('hashtag_id'),
+        func.count(distinct(Comment.id)).label('comments_count')
+    ).select_from(post_hashtags)\
+    .join(Post, Post.id == post_hashtags.c.post_id)\
+    .outerjoin(Comment, Comment.post_id == Post.id)\
+    .filter(Post.user_id == user_id)\
+    .group_by(post_hashtags.c.hashtag_id).subquery()
+
+    # Main query to combine results from Hashtag table with subqueries
+    results = db.session.query(
+        Hashtag.tag_text,
+        Hashtag.id, # Keep for potential direct linking or further queries
+        func.coalesce(likes_subquery.c.likes_count, 0).label('total_likes'),
+        func.coalesce(comments_subquery.c.comments_count, 0).label('total_comments'),
+        (func.coalesce(likes_subquery.c.likes_count, 0) + func.coalesce(comments_subquery.c.comments_count, 0)).label('total_engagement')
+    ).select_from(Hashtag)\
+    .outerjoin(likes_subquery, Hashtag.id == likes_subquery.c.hashtag_id)\
+    .outerjoin(comments_subquery, Hashtag.id == comments_subquery.c.hashtag_id)\
+    .filter(or_(likes_subquery.c.hashtag_id.isnot(None), comments_subquery.c.hashtag_id.isnot(None))) # Ensures only hashtags used by the user are considered
+    .order_by(desc('total_engagement'), Hashtag.tag_text)\
+    .limit(limit).all()
+
+    return [{'tag_text': r.tag_text, 'hashtag_id': r.id, 'engagement': r.total_engagement, 'likes': r.total_likes, 'comments': r.total_comments} for r in results]
+
+
+def get_top_performing_groups(user_id, limit=5):
+    """
+    Identifies top performing groups for a user based on likes and comments on their posts within those groups.
+    Returns a list of dicts: [{'group_name': ..., 'group_id': ..., 'engagement': ..., 'likes': ..., 'comments': ...}]
+    """
+    # Subquery for likes on user's posts, aggregated by group_id
+    likes_per_group_sq = db.session.query(
+        Post.group_id,
+        func.count(distinct(Like.id)).label('likes_count')
+    ).join(Like, Like.post_id == Post.id)\
+    .filter(Post.user_id == user_id)\
+    .filter(Post.group_id.isnot(None))\
+    .group_by(Post.group_id)\
+    .subquery()
+
+    # Subquery for comments on user's posts, aggregated by group_id
+    comments_per_group_sq = db.session.query(
+        Post.group_id,
+        func.count(distinct(Comment.id)).label('comments_count')
+    ).join(Comment, Comment.post_id == Post.id)\
+    .filter(Post.user_id == user_id)\
+    .filter(Post.group_id.isnot(None))\
+    .group_by(Post.group_id)\
+    .subquery()
+
+    # Main query joining Group with aggregated likes and comments
+    results = db.session.query(
+        Group.id.label('group_id'),
+        Group.name.label('group_name'),
+        func.coalesce(likes_per_group_sq.c.likes_count, 0).label('total_likes'),
+        func.coalesce(comments_per_group_sq.c.comments_count, 0).label('total_comments'),
+        (func.coalesce(likes_per_group_sq.c.likes_count, 0) + func.coalesce(comments_per_group_sq.c.comments_count, 0)).label('total_engagement')
+    ).select_from(Group)\
+    .outerjoin(likes_per_group_sq, Group.id == likes_per_group_sq.c.group_id)\
+    .outerjoin(comments_per_group_sq, Group.id == comments_per_group_sq.c.group_id)\
+    .filter(or_(likes_per_group_sq.c.group_id.isnot(None), comments_per_group_sq.c.group_id.isnot(None))) # Ensures only groups the user posted in (and got engagement) are considered
+    .order_by(desc('total_engagement'), Group.name)\
+    .limit(limit).all()
+
+    return [{'group_id': r.group_id, 'group_name': r.group_name, 'engagement': r.total_engagement, 'likes': r.total_likes, 'comments': r.total_comments} for r in results]

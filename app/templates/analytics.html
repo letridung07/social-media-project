@@ -15,7 +15,7 @@
             <div class="card text-white bg-primary mb-3">
                 <div class="card-header">Total Posts</div>
                 <div class="card-body">
-                    <h4 class="card-title">{{ total_posts if total_posts is not none else 'N/A' }}</h4>
+                    <h4 class="card-title">{{ total_posts if total_posts is not none else (user_analytics_summary.total_posts if user_analytics_summary and user_analytics_summary.total_posts is not none else 'N/A') }}</h4>
                 </div>
             </div>
         </div>
@@ -23,7 +23,7 @@
             <div class="card text-white bg-success mb-3">
                 <div class="card-header">Total Likes Received</div>
                 <div class="card-body">
-                    <h4 class="card-title">{{ total_likes_received if total_likes_received is not none else 'N/A' }}</h4>
+                    <h4 class="card-title">{{ total_likes_received if total_likes_received is not none else (user_analytics_summary.total_likes_received if user_analytics_summary and user_analytics_summary.total_likes_received is not none else 'N/A') }}</h4>
                 </div>
             </div>
         </div>
@@ -31,7 +31,7 @@
             <div class="card text-white bg-info mb-3">
                 <div class="card-header">Total Comments Received</div>
                 <div class="card-body">
-                    <h4 class="card-title">{{ total_comments_received if total_comments_received is not none else 'N/A' }}</h4>
+                    <h4 class="card-title">{{ total_comments_received if total_comments_received is not none else (user_analytics_summary.total_comments_received if user_analytics_summary and user_analytics_summary.total_comments_received is not none else 'N/A') }}</h4>
                 </div>
             </div>
         </div>
@@ -39,17 +39,17 @@
     <div class="row mb-4">
         <div class="col-md-6">
             <div class="card bg-light mb-3">
-                <div class="card-header">Followers</div>
+                <div class="card-header">Current Followers</div>
                 <div class="card-body">
-                    <h4 class="card-title">{{ follower_count if follower_count is not none else 'N/A' }}</h4>
+                    <h4 class="card-title">{{ current_follower_count if current_follower_count is not none else 'N/A' }}</h4>
                 </div>
             </div>
         </div>
         <div class="col-md-6">
             <div class="card bg-light mb-3">
-                <div class="card-header">Following</div>
+                <div class="card-header">Currently Following</div>
                 <div class="card-body">
-                    <h4 class="card-title">{{ following_count if following_count is not none else 'N/A' }}</h4>
+                    <h4 class="card-title">{{ current_following_count if current_following_count is not none else 'N/A' }}</h4>
                 </div>
             </div>
         </div>
@@ -57,48 +57,115 @@
 
     <hr>
 
-    <h2>Your Most Liked Posts</h2>
-    {% if top_posts %}
-        <div class="list-group mb-4">
-            {% for post in top_posts %}
-                <a href="{{ url_for('main.profile', username=post.author.username) }}#post-{{ post.id }}" class="list-group-item list-group-item-action flex-column align-items-start">
-                    <div class="d-flex w-100 justify-content-between">
-                        <h5 class="mb-1">"{{ post.body[:80] }}{% if post.body|length > 80 %}...{% endif %}"</h5>
-                        <small>{{ post.timestamp.strftime('%Y-%m-%d') }}</small>
-                    </div>
-                    <p class="mb-1">Likes: <span class="badge badge-danger">{{ post.likes.count() }}</span></p>
-                </a>
-            {% endfor %}
+    <h2>Historical Engagement Trends</h2>
+    <form method="GET" action="{{ url_for('main.analytics') }}" class="form-inline mb-4">
+        <div class="form-group mr-2">
+            <label for="periodSelect" class="mr-2">Select Period:</label>
+            <select name="period" id="periodSelect" class="form-control">
+                <option value="7days" {% if selected_period == '7days' %}selected{% endif %}>Last 7 Days</option>
+                <option value="30days" {% if selected_period == '30days' %}selected{% endif %}>Last 30 Days</option>
+                <option value="90days" {% if selected_period == '90days' %}selected{% endif %}>Last 90 Days</option>
+                <option value="all" {% if selected_period == 'all' %}selected{% endif %}>All Time</option>
+            </select>
         </div>
-    {% else %}
-        <p>You don't have any posts with likes yet, or no posts at all!</p>
-    {% endif %}
+        <button type="submit" class="btn btn-primary">View</button>
+    </form>
+
+    <div class="row">
+        <div class="col-md-12 mb-4">
+            <div class="card">
+                <div class="card-header">Likes Over Time</div>
+                <div class="card-body">
+                    <canvas id="historicalLikesChart" width="400" height="150"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-12 mb-4">
+            <div class="card">
+                <div class="card-header">Comments Over Time</div>
+                <div class="card-body">
+                    <canvas id="historicalCommentsChart" width="400" height="150"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-12 mb-4">
+            <div class="card">
+                <div class="card-header">Followers Over Time</div>
+                <div class="card-body">
+                    <canvas id="historicalFollowersChart" width="400" height="150"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <hr>
 
-    <h2>Charts (Visualizations Coming Soon!)</h2>
+    <h2>Top Performing Content</h2>
+
     <div class="row">
-        <div class="col-md-6">
-            <div class="card">
-                <div class="card-header">
-                    Likes Per Post (Top 5)
+        <div class="col-md-6 mb-4">
+            <h3>Top Posts by Engagement</h3>
+            {% if top_posts_list %}
+                <div class="list-group mb-3">
+                    {% for post_item in top_posts_list %}
+                        <a href="{{ url_for('main.profile', username=post_item.author.username) }}#post-{{ post_item.id }}" class="list-group-item list-group-item-action">
+                            "{{ post_item.body[:60] }}{% if post_item.body|length > 60 %}...{% endif %}"
+                            <span class="badge badge-primary ml-2">Likes: {{ post_item.likes.count() }}</span>
+                            <span class="badge badge-secondary ml-1">Comments: {{ post_item.comments.count() }}</span>
+                        </a>
+                    {% endfor %}
                 </div>
-                <div class="card-body">
-                    <canvas id="likesPerPostChart" width="400" height="200"></canvas>
-                    <p class="text-muted text-center small mt-2">Chart will be displayed here.</p>
+                <div class="card">
+                    <div class="card-header">Top Posts Engagement Chart</div>
+                    <div class="card-body">
+                        <canvas id="topPostsEngagementChart" width="400" height="200"></canvas>
+                    </div>
                 </div>
-            </div>
+            {% else %}
+                <p>No post data available.</p>
+            {% endif %}
         </div>
-        <div class="col-md-6">
-            <div class="card">
-                <div class="card-header">
-                    Follower Growth (Placeholder)
-                </div>
-                <div class="card-body">
-                    <canvas id="followerGrowthChart" width="400" height="200"></canvas>
-                    <p class="text-muted text-center small mt-2">Chart will be displayed here once follower history is tracked.</p>
-                </div>
-            </div>
+
+        <div class="col-md-6 mb-4">
+            <h3>Top Performing Hashtags</h3>
+            {% if top_hashtags_data %}
+                <ul class="list-group">
+                    {% for hashtag in top_hashtags_data %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <a href="{{ url_for('main.hashtag_feed', tag_text=hashtag.tag_text) }}">#{{ hashtag.tag_text }}</a>
+                            <div>
+                                <span class="badge badge-info mr-1">Engagement: {{ hashtag.engagement }}</span>
+                                <span class="badge badge-primary mr-1">Likes: {{ hashtag.likes }}</span>
+                                <span class="badge badge-secondary">Comments: {{ hashtag.comments }}</span>
+                            </div>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p>No hashtag performance data available.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="row mt-3">
+         <div class="col-md-12 mb-4">
+            <h3>Top Performing Groups</h3>
+            {% if top_groups_data %}
+                <ul class="list-group">
+                    {% for group in top_groups_data %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <a href="{{ url_for('main.view_group', group_id=group.group_id) }}">{{ group.group_name }}</a>
+                             <div>
+                                <span class="badge badge-info mr-1">Engagement: {{ group.engagement }}</span>
+                                <span class="badge badge-primary mr-1">Likes: {{ group.likes }}</span>
+                                <span class="badge badge-secondary">Comments: {{ group.comments }}</span>
+                            </div>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p>No group performance data available.</p>
+            {% endif %}
         </div>
     </div>
 
@@ -108,104 +175,112 @@
 {% block scripts %}
 {{ super() }}
 <script>
-    document.addEventListener('DOMContentLoaded', function () {
-        // Data for Likes per Post Chart (Top 5)
-        var topPostsDataRaw = {{ top_posts_chart_data | safe if top_posts_chart_data else '[]' }};
-
-        if (topPostsDataRaw && topPostsDataRaw.length > 0) {
-            var postLabels = topPostsDataRaw.map(function(item) { return item.label; });
-            var postLikes = topPostsDataRaw.map(function(item) { return item.value; });
-
-            var ctxLikes = document.getElementById('likesPerPostChart').getContext('2d');
-            if (ctxLikes) {
-                new Chart(ctxLikes, {
-                    type: 'bar',
-                    data: {
-                        labels: postLabels,
-                        datasets: [{
-                            label: 'Likes per Post',
-                            data: postLikes,
-                            backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                            borderColor: 'rgba(75, 192, 192, 1)',
-                            borderWidth: 1
-                        }]
+document.addEventListener('DOMContentLoaded', function () {
+    // Helper function to create a line chart
+    function createLineChart(canvasId, labels, data, label, borderColor, backgroundColor) {
+        var ctx = document.getElementById(canvasId).getContext('2d');
+        if (ctx) {
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: label,
+                        data: data,
+                        borderColor: borderColor,
+                        backgroundColor: backgroundColor,
+                        fill: false,
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true, // Allow chart height to be respected
+                    scales: {
+                        y: { beginAtZero: true }
                     },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        scales: {
-                            y: { // For Chart.js v3.x and later
-                                beginAtZero: true,
-                                ticks: {
-                                    stepSize: 1 // Ensure y-axis has integer steps if like counts are integers
-                                }
-                            }
-                        },
-                        plugins: {
-                            legend: {
-                                display: true,
-                                position: 'top',
-                            },
-                            title: {
-                                display: true,
-                                text: 'Top 5 Liked Posts'
-                            }
-                        }
+                    plugins: {
+                        legend: { display: true, position: 'top' },
+                        title: { display: true, text: label + ' Over Time' }
                     }
-                });
-                // Remove the placeholder paragraph
-                var placeholderLikes = document.querySelector('#likesPerPostChart + p');
-                if(placeholderLikes) placeholderLikes.style.display = 'none';
-            }
+                }
+            });
         } else {
-            var likesChartContainer = document.getElementById('likesPerPostChart');
-            if(likesChartContainer && likesChartContainer.parentElement) {
-                 likesChartContainer.parentElement.innerHTML = '<p class="text-muted text-center">No posts with likes to display in chart.</p>';
-            }
+            console.error('Canvas element not found:', canvasId);
         }
+    }
 
-        // Follower "Chart" - Displaying current count as a simple bar
-        var followerCount = {{ follower_count if follower_count is not none else 0 }};
-        var ctxFollowers = document.getElementById('followerGrowthChart').getContext('2d');
-        if (ctxFollowers) {
-            new Chart(ctxFollowers, {
+    // Historical Engagement Charts
+    var historicalLabels = {{ historical_chart_labels_json | safe if historical_chart_labels_json else '[]' }};
+
+    if (historicalLabels.length > 0) {
+        var likesData = {{ historical_likes_json | safe if historical_likes_json else '[]' }};
+        createLineChart('historicalLikesChart', historicalLabels, likesData, 'Likes Received', 'rgba(75, 192, 192, 1)', 'rgba(75, 192, 192, 0.2)');
+
+        var commentsData = {{ historical_comments_json | safe if historical_comments_json else '[]' }};
+        createLineChart('historicalCommentsChart', historicalLabels, commentsData, 'Comments Received', 'rgba(54, 162, 235, 1)', 'rgba(54, 162, 235, 0.2)');
+
+        var followersData = {{ historical_followers_json | safe if historical_followers_json else '[]' }};
+        createLineChart('historicalFollowersChart', historicalLabels, followersData, 'Followers Count', 'rgba(255, 99, 132, 1)', 'rgba(255, 99, 132, 0.2)');
+    } else {
+        // Optionally, display messages if no historical data for the selected period
+        ['historicalLikesChart', 'historicalCommentsChart', 'historicalFollowersChart'].forEach(function(id) {
+            var chartContainer = document.getElementById(id);
+            if(chartContainer && chartContainer.parentElement) {
+                 chartContainer.parentElement.innerHTML = '<p class="text-muted text-center">No historical data available for this period.</p>';
+            }
+        });
+    }
+
+    // Top Posts Engagement Chart (Grouped Bar Chart)
+    var topPostsDataRaw = {{ top_posts_chart_data_json | safe if top_posts_chart_data_json else '[]' }};
+    if (topPostsDataRaw && topPostsDataRaw.length > 0) {
+        var postLabels = topPostsDataRaw.map(function(item) { return item.label; });
+        var postLikes = topPostsDataRaw.map(function(item) { return item.likes; });
+        var postComments = topPostsDataRaw.map(function(item) { return item.comments; });
+
+        var ctxTopPosts = document.getElementById('topPostsEngagementChart').getContext('2d');
+        if (ctxTopPosts) {
+            new Chart(ctxTopPosts, {
                 type: 'bar',
                 data: {
-                    labels: ['Current Followers'],
-                    datasets: [{
-                        label: 'Followers',
-                        data: [followerCount],
-                        backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                        borderColor: 'rgba(54, 162, 235, 1)',
-                        borderWidth: 1
-                    }]
+                    labels: postLabels,
+                    datasets: [
+                        {
+                            label: 'Likes',
+                            data: postLikes,
+                            backgroundColor: 'rgba(75, 192, 192, 0.5)',
+                            borderColor: 'rgba(75, 192, 192, 1)',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'Comments',
+                            data: postComments,
+                            backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1
+                        }
+                    ]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
                     scales: {
-                         y: {
-                            beginAtZero: true,
-                            ticks: {
-                                stepSize: 1
-                            }
-                        }
+                        y: { beginAtZero: true, ticks: { stepSize: 1 } }
                     },
                     plugins: {
-                        legend: {
-                            display: false // No need for legend for a single bar
-                        },
-                        title: {
-                            display: true,
-                            text: 'Current Follower Count'
-                        }
+                        legend: { display: true, position: 'top' },
+                        title: { display: true, text: 'Top 5 Posts by Engagement' }
                     }
                 }
             });
-            // Remove the placeholder paragraph
-            var placeholderFollowers = document.querySelector('#followerGrowthChart + p');
-            if(placeholderFollowers) placeholderFollowers.style.display = 'none';
         }
-    });
+    } else {
+        var topPostsChartContainer = document.getElementById('topPostsEngagementChart');
+        if(topPostsChartContainer && topPostsChartContainer.parentElement) {
+             topPostsChartContainer.parentElement.innerHTML = '<p class="text-muted text-center">No top post data to display in chart.</p>';
+        }
+    }
+});
 </script>
 {% endblock %}
