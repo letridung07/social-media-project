@@ -28,7 +28,14 @@ document.addEventListener('DOMContentLoaded', function() {
                     // Update count display
                     const optionCountElement = pollContainer.querySelector(`.poll-option-count[data-option-id="${optionId}"]`);
                     if (optionCountElement) {
-                        optionCountElement.textContent = count;
+                        // Check if the count actually changed to avoid unnecessary animation
+                        if (optionCountElement.textContent !== String(count)) {
+                            optionCountElement.textContent = count;
+                            optionCountElement.classList.add('vote-updated-animation');
+                            setTimeout(() => {
+                                optionCountElement.classList.remove('vote-updated-animation');
+                            }, 700); // Duration matches typical short animation
+                        }
                     }
 
                     // Update progress bar

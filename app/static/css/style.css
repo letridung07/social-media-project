@@ -302,3 +302,25 @@ footer p {
     color: #721c24; /* Darker danger color for text */
     border-bottom-color: #f5c6cb; /* Lighter border for heading */
 }
+
+/* Animation for Poll Vote Updates */
+@keyframes vote-bg-flash {
+  0% {
+    background-color: transparent;
+  }
+  50% {
+    background-color: #e0f7fa; /* A light, noticeable cyan/blue */
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.vote-updated-animation {
+  animation: vote-bg-flash 0.7s ease-out;
+  /* Ensures the background color transition is smooth within the span's bounds */
+  display: inline-block;
+  padding: 0.1em 0.2em; /* Add slight padding for visual effect */
+  margin: -0.1em -0.2em; /* Counteract padding to maintain layout flow */
+  border-radius: 3px; /* Optional: slightly rounded corners for the flash */
+}
