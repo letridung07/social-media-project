@@ -523,3 +523,44 @@ def stop_stream_recording_sfu(data):
     else:
         print(f"No stream record found for user {stream_username} to stop recording.")
         socketio.emit('recording_status_update', {'status': 'error', 'message': 'Stream record not found.'}, room=str(current_user.id))
+
+# -------------------- Poll Room Events --------------------
+
+@socketio.on('join_poll_room')
+def handle_join_poll_room(data):
+    if not isinstance(data, dict) or 'poll_id' not in data:
+        current_app.logger.warning(f"Invalid data received for join_poll_room from SID {request.sid}: {data}")
+        # emit('poll_room_error', {'message': 'Invalid poll_id provided.'}, room=request.sid) # Optional error to client
+        return
+
+    poll_id = data.get('poll_id')
+    # Basic validation for poll_id format could be added here if necessary
+    # For example, if poll_id is expected to be an integer or a specific string pattern.
+
+    room_name = f'poll_{poll_id}'
+    join_room(room_name)
+
+    user_info = f"SID {request.sid}"
+    if current_user.is_authenticated:
+        user_info = f"User {current_user.username} (SID {request.sid})"
+
+    current_app.logger.info(f"{user_info} joined poll room: {room_name}")
+    # emit('joined_poll_room_ack', {'room': room_name, 'status': 'success'}, room=request.sid) # Optional ack
+
+@socketio.on('leave_poll_room')
+def handle_leave_poll_room(data):
+    if not isinstance(data, dict) or 'poll_id' not in data:
+        current_app.logger.warning(f"Invalid data received for leave_poll_room from SID {request.sid}: {data}")
+        # emit('poll_room_error', {'message': 'Invalid poll_id provided.'}, room=request.sid) # Optional error to client
+        return
+
+    poll_id = data.get('poll_id')
+    room_name = f'poll_{poll_id}'
+    leave_room(room_name)
+
+    user_info = f"SID {request.sid}"
+    if current_user.is_authenticated:
+        user_info = f"User {current_user.username} (SID {request.sid})"
+
+    current_app.logger.info(f"{user_info} left poll room: {room_name}")
+    # emit('left_poll_room_ack', {'room': room_name, 'status': 'success'}, room=request.sid) # Optional ack

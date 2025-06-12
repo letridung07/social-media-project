@@ -1939,6 +1939,15 @@ def vote_on_poll(poll_id):
             db.session.commit()
             message = 'Your vote has been updated.'
             status_changed = True
+
+            # Calculate updated vote counts and emit SocketIO event
+            vote_counts = {option.id: option.vote_count() for option in poll.options}
+            total_votes = poll.total_votes()
+            socketio.emit('poll_update', {
+                'poll_id': poll.id,
+                'vote_counts': vote_counts,
+                'total_votes': total_votes
+            }, room=f'poll_{poll.id}')
     else:
         new_vote = PollVote(user_id=current_user.id, option_id=chosen_option.id, poll_id=poll.id)
         db.session.add(new_vote)
@@ -1950,6 +1959,15 @@ def vote_on_poll(poll_id):
         if poll.author.id != current_user.id:
             # Notification logic (as before, currently placeholder/skipped)
             pass
+
+        # Calculate updated vote counts and emit SocketIO event
+        vote_counts = {option.id: option.vote_count() for option in poll.options}
+        total_votes = poll.total_votes()
+        socketio.emit('poll_update', {
+            'poll_id': poll.id,
+            'vote_counts': vote_counts,
+            'total_votes': total_votes
+        }, room=f'poll_{poll.id}')
 
     return jsonify({'success': True, 'message': message, 'status_changed': status_changed})
 
