@@ -37,73 +37,121 @@
         </div>
     </form>
 
-    {% if not query and not (users or posts or groups or hashtags) %}
-        <p class="text-muted">Enter a term above and click "Go" to search.</p>
-    {% endif %}
+    {% if not query and recommendations and (recommendations.posts or recommendations.users or recommendations.groups) %}
+    <div class="recommendations-section mb-5">
+        {# The main page H1 uses the title "Recommended for You" set in the route #}
 
-    {% if users and (selected_category == 'all' or selected_category == 'users') %}
-        <h2>Users Found ({{ users|length }})</h2>
-        <ul class="list-group mb-3">
-            {% for user in users %}
+        {% if recommendations.posts %}
+            <h3 class="mt-4">Recommended Posts</h3>
+            {% for post_item in recommendations.posts %}
+                {# Ensure post_item is the actual Post object as expected by _post.html #}
+                {# The recommendations from get_recommendations are list of model objects #}
+                {% set item_wrapper = {'type': 'post', 'item': post_item, 'timestamp': post_item.timestamp, 'sharer': None} %}
+                {% include "_post.html" %}
+            {% endfor %}
+        {% endif %}
+
+        {% if recommendations.users %}
+            <h3 class="mt-4">Suggested Users</h3>
+            <ul class="list-group mb-3">
+                {% for user in recommendations.users %}
                 <li class="list-group-item">
                     <a href="{{ url_for('main.profile', username=user.username) }}">
-                        <img src="{{ url_for('static', filename='images/' + user.profile_picture_url) }}" loading="lazy" alt="{{ user.username }}'s profile picture" class="rounded-circle mr-2" width="30" height="30" style="margin-right: 5px;">
+                        <img src="{{ url_for('static', filename='images/' + (user.profile_picture_url if user.profile_picture_url else 'default_profile_pic.png')) }}" loading="lazy" alt="{{ user.username }}'s profile picture" class="rounded-circle mr-2" width="30" height="30" style="margin-right: 5px;">
                         {{ user.username }}
                     </a>
-                    {% if user.bio %}
-                        <small class="text-muted d-block mt-1">{{ user.bio[:100] }}{% if user.bio|length > 100 %}...{% endif %}</small>
-                    {% endif %}
+                    {% if user.bio %}<small class="text-muted d-block mt-1">{{ user.bio[:100] }}{% if user.bio|length > 100 %}...{% endif %}</small>{% endif %}
                 </li>
-            {% endfor %}
-        </ul>
-    {% endif %}
+                {% endfor %}
+            </ul>
+        {% endif %}
 
-    {% if posts and (selected_category == 'all' or selected_category == 'posts') %}
-        <h2>Posts Found ({{ posts|length }})</h2>
-        {% for post in posts %}
-            {% set item_wrapper = {'type': 'post', 'item': post, 'timestamp': post.timestamp, 'sharer': None} %}
-            {% include "_post.html" %}
-        {% endfor %}
-    {% endif %}
-
-    {% if groups and (selected_category == 'all' or selected_category == 'groups') %}
-        <h2>Groups Found ({{ groups|length }})</h2>
-        <ul class="list-group mb-3">
-            {% for group in groups %}
+        {% if recommendations.groups %}
+            <h3 class="mt-4">Groups You Might Like</h3>
+            <ul class="list-group mb-3">
+                {% for group in recommendations.groups %}
                 <li class="list-group-item">
                     <a href="{{ url_for('main.view_group', group_id=group.id) }}">
-                        <img src="{{ url_for('static', filename='group_images/' + group.image_file) if group.image_file else url_for('static', filename='group_images/default_group_pic.png') }}" loading="lazy" alt="{{ group.name }}'s image" class="rounded-circle mr-2" width="30" height="30" style="margin-right: 5px;">
+                        <img src="{{ url_for('static', filename='group_images/' + (group.image_file if group.image_file else 'default_group_pic.png')) }}" loading="lazy" alt="{{ group.name }}'s image" class="rounded-circle mr-2" width="30" height="30" style="margin-right: 5px;">
                         {{ group.name }}
                     </a>
-                    {% if group.description %}
-                        <small class="text-muted d-block mt-1">{{ group.description[:100] }}{% if group.description|length > 100 %}...{% endif %}</small>
-                    {% endif %}
+                    {% if group.description %}<small class="text-muted d-block mt-1">{{ group.description[:100] }}{% if group.description|length > 100 %}...{% endif %}</small>{% endif %}
                 </li>
-            {% endfor %}
-        </ul>
+                {% endfor %}
+            </ul>
+        {% endif %}
+    </div>
     {% endif %}
 
-    {% if hashtags and (selected_category == 'all' or selected_category == 'hashtags') %}
-        <h2>Hashtags Found ({{ hashtags|length }})</h2>
-        <ul class="list-group mb-3">
-            {% for hashtag in hashtags %}
-                <li class="list-group-item">
-                    <a href="{{ url_for('main.hashtag_feed', tag_text=hashtag.tag_text) }}">#{{ hashtag.tag_text }}</a>
-                    {# Optionally, display popularity (number of posts) if available from route #}
-                    {# Example: <span class="badge badge-secondary float-right">{{ hashtag.post_count }} posts</span> #}
-                </li>
+    {# Display search results if a query was made #}
+    {% if query %}
+        {% if users and (selected_category == 'all' or selected_category == 'users') %}
+            <h2>Users Found ({{ users|length }})</h2>
+            <ul class="list-group mb-3">
+                {% for user in users %}
+                    <li class="list-group-item">
+                        <a href="{{ url_for('main.profile', username=user.username) }}">
+                            <img src="{{ url_for('static', filename='images/' + user.profile_picture_url) }}" loading="lazy" alt="{{ user.username }}'s profile picture" class="rounded-circle mr-2" width="30" height="30" style="margin-right: 5px;">
+                            {{ user.username }}
+                        </a>
+                        {% if user.bio %}
+                            <small class="text-muted d-block mt-1">{{ user.bio[:100] }}{% if user.bio|length > 100 %}...{% endif %}</small>
+                        {% endif %}
+                    </li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+
+        {% if posts and (selected_category == 'all' or selected_category == 'posts') %}
+            <h2>Posts Found ({{ posts|length }})</h2>
+            {% for post in posts %}
+                {% set item_wrapper = {'type': 'post', 'item': post, 'timestamp': post.timestamp, 'sharer': None} %}
+                {% include "_post.html" %}
             {% endfor %}
-        </ul>
+        {% endif %}
+
+        {% if groups and (selected_category == 'all' or selected_category == 'groups') %}
+            <h2>Groups Found ({{ groups|length }})</h2>
+            <ul class="list-group mb-3">
+                {% for group in groups %}
+                    <li class="list-group-item">
+                        <a href="{{ url_for('main.view_group', group_id=group.id) }}">
+                            <img src="{{ url_for('static', filename='group_images/' + group.image_file) if group.image_file else url_for('static', filename='group_images/default_group_pic.png') }}" loading="lazy" alt="{{ group.name }}'s image" class="rounded-circle mr-2" width="30" height="30" style="margin-right: 5px;">
+                            {{ group.name }}
+                        </a>
+                        {% if group.description %}
+                            <small class="text-muted d-block mt-1">{{ group.description[:100] }}{% if group.description|length > 100 %}...{% endif %}</small>
+                        {% endif %}
+                    </li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+
+        {% if hashtags and (selected_category == 'all' or selected_category == 'hashtags') %}
+            <h2>Hashtags Found ({{ hashtags|length }})</h2>
+            <ul class="list-group mb-3">
+                {% for hashtag in hashtags %}
+                    <li class="list-group-item">
+                        <a href="{{ url_for('main.hashtag_feed', tag_text=hashtag.tag_text) }}">#{{ hashtag.tag_text }}</a>
+                        {# Optionally, display popularity (number of posts) if available from route #}
+                        {# Example: <span class="badge badge-secondary float-right">{{ hashtag.post_count }} posts</span> #}
+                    </li>
+                {% endfor %}
+            </ul>
+        {% endif %}
     {% endif %}
 
+
+    {# Message display logic #}
     {% if query and not (users or posts or groups or hashtags) %}
          <p class="mt-4">No results found matching your query "{{ query }}"
             {% if selected_category != 'all' %} in category "{{ selected_category.capitalize() }}"{% endif %}.
         </p>
-    {% elif not query and (selected_category != 'all' or selected_sort_by != 'relevance') %}
-        {# Case where filters are applied but no query term is entered #}
-        <p class="text-muted">Please enter a search term to see results with the selected filters.</p>
+    {% elif not query and not (recommendations and (recommendations.posts or recommendations.users or recommendations.groups)) %}
+        {# This is when no query was entered AND no recommendations were available/shown. #}
+        <p class="text-muted mt-4">Enter a term above to search. Personalized recommendations may appear here if you have interacted with content on the platform.</p>
     {% endif %}
+
 </div>
 
 <script>
@@ -120,12 +168,12 @@
           event.preventDefault();
           event.stopPropagation();
         }
-        if (form.elements.q.value.trim() === '') { // Check if query is empty
+        // Custom check for empty query, even if spaces are entered
+        if (form.elements.q && form.elements.q.value.trim() === '') {
             event.preventDefault();
             event.stopPropagation();
-            form.elements.q.classList.add('is-invalid'); // Show error on query input
-            // Optionally focus the input: form.elements.q.focus();
-        } else {
+            form.elements.q.classList.add('is-invalid');
+        } else if (form.elements.q) {
             form.elements.q.classList.remove('is-invalid');
         }
         form.classList.add('was-validated');

@@ -7,9 +7,12 @@ from sqlalchemy import or_, func # Import func
 from sqlalchemy.orm import joinedload # Import joinedload
 from app import db, socketio, cache # Import cache
 from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm
-from app.models import User, Post, Like, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share # Import UserAnalytics
+from app.models import User, Post, Like, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus # Import UserAnalytics, MessageReadStatus
 from app.utils import save_picture, save_post_image, save_post_video, save_group_image, save_story_media
 from app.email_utils import send_password_reset_email # Import email utility
+
+# Import for recommendations
+from app.utils import get_recommendations
 
 main = Blueprint('main', __name__)
 
@@ -35,9 +38,17 @@ def process_hashtags(post_body, post_object):
         if hashtag not in post_object.hashtags: # Ensure not to add duplicates
              post_object.hashtags.append(hashtag)
 
+# Cache key generation function for user-specific caching
+def make_user_specific_cache_key(*args, **kwargs):
+    path = request.path
+    user_id_part = str(current_user.id) if current_user.is_authenticated and not current_user.is_anonymous else 'anonymous'
+    # Include query arguments for routes that might use them and need to be cached differently
+    query_args_part = str(hash(frozenset(request.args.items())))
+    return (path + '_' + user_id_part + '_' + query_args_part).encode('utf-8')
+
 @main.route('/')
 @main.route('/index')
-@cache.cached(timeout=300)
+@cache.cached(timeout=300, make_cache_key=make_user_specific_cache_key, unless=lambda: current_user.is_authenticated) # Cache for anonymous users
 def index():
     page = request.args.get('page', 1, type=int)
     per_page = current_app.config.get('POSTS_PER_PAGE', 10)
@@ -61,39 +72,32 @@ def index():
 from app.models import post_hashtags # For hashtag popularity sort
 
 @main.route('/search')
+# Apply user-specific caching to search results if query_term is present OR if recommendations are shown
+@cache.cached(timeout=120, make_cache_key=make_user_specific_cache_key,
+              unless=lambda: not request.args.get('q', '').strip() and not (current_user.is_authenticated and not request.args.get('q', '').strip()))
 def search():
     query_term = request.args.get('q', '').strip()
     category = request.args.get('category', 'all').lower()
     sort_by = request.args.get('sort_by', 'relevance').lower()
 
+    recommendations = None
+    if not query_term and current_user.is_authenticated:
+        recommendations = get_recommendations(current_user.id)
+
     users_found, posts_found, groups_found, hashtags_found = [], [], [], []
-
-    title_parts = []
-    if query_term:
-        title_parts.append(f'Results for "{query_term}"')
-    if category != 'all':
-        title_parts.append(f'in {category.capitalize()}')
-    if sort_by != 'relevance':
-        title_parts.append(f'sorted by {sort_by.capitalize()}')
-
-    title = " ".join(title_parts) if title_parts else 'Search'
-    if not query_term: # If no query, show empty results, but keep filters in title
-        title = f'Search {category.capitalize() if category != "all" else "All"} by {sort_by.capitalize() if sort_by != "relevance" else "Relevance"}'
-
 
     if query_term:
         # Users Search
         if category == 'all' or category == 'users':
             user_q = User.query.filter(or_(User.username.ilike(f'%{query_term}%'), User.email.ilike(f'%{query_term}%')))
             if sort_by == 'popularity':
-                # Sorting by follower count. Join with followers table, group by user, order by count.
                 user_q = user_q.outerjoin(followers, User.id == followers.c.followed_id)\
                                .group_by(User.id)\
                                .order_by(func.count(followers.c.follower_id).desc(), User.username.asc())
-            elif sort_by == 'date': # User model does not have a created_at, fallback to ID or username
-                user_q = user_q.order_by(User.id.desc()) # Arbitrary date-like sort
-            else: # relevance (default)
-                user_q = user_q.order_by(User.username.asc()) # Default relevance sort
+            elif sort_by == 'date':
+                user_q = user_q.order_by(User.id.desc())
+            else:
+                user_q = user_q.order_by(User.username.asc())
             users_found = user_q.all()
 
         # Posts Search
@@ -102,12 +106,11 @@ def search():
             if sort_by == 'date':
                 post_q = post_q.order_by(Post.timestamp.desc())
             elif sort_by == 'popularity':
-                # Sort by sum of likes and comments. Coalesce ensures NULL counts are treated as 0.
                 post_q = post_q.outerjoin(Post.likes).outerjoin(Post.comments)\
                                .group_by(Post.id)\
                                .order_by((func.coalesce(func.count(Like.id), 0) + func.coalesce(func.count(Comment.id), 0)).desc(), Post.timestamp.desc())
-            else: # relevance
-                post_q = post_q.order_by(Post.timestamp.desc()) # Default relevance for posts by date
+            else:
+                post_q = post_q.order_by(Post.timestamp.desc())
             posts_found = post_q.all()
 
         # Groups Search
@@ -116,37 +119,123 @@ def search():
             if sort_by == 'date':
                 group_q = group_q.order_by(Group.created_at.desc())
             elif sort_by == 'popularity':
-                # Sort by member count. Join with GroupMembership, group by group, order by count.
                 group_q = group_q.outerjoin(GroupMembership)\
                                  .group_by(Group.id)\
                                  .order_by(func.count(GroupMembership.id).desc(), Group.name.asc())
-            else: # relevance
-                group_q = group_q.order_by(Group.name.asc()) # Default relevance for groups by name
+            else:
+                group_q = group_q.order_by(Group.name.asc())
             groups_found = group_q.all()
 
         # Hashtags Search
         if category == 'all' or category == 'hashtags':
             hashtag_q = Hashtag.query.filter(Hashtag.tag_text.ilike(f'%{query_term}%'))
             if sort_by == 'popularity':
-                 # Sort by number of posts associated. Join with post_hashtags table.
                 hashtag_q = hashtag_q.outerjoin(post_hashtags, Hashtag.id == post_hashtags.c.hashtag_id)\
                                      .group_by(Hashtag.id)\
                                      .order_by(func.count(post_hashtags.c.post_id).desc(), Hashtag.tag_text.asc())
-            elif sort_by == 'date': # Hashtags don't have a creation date, sort by text
+            elif sort_by == 'date':
                 hashtag_q = hashtag_q.order_by(Hashtag.tag_text.asc())
-            else: # relevance
-                hashtag_q = hashtag_q.order_by(Hashtag.tag_text.asc()) # Default relevance for hashtags by text
+            else:
+                hashtag_q = hashtag_q.order_by(Hashtag.tag_text.asc())
             hashtags_found = hashtag_q.all()
 
+    # Title Logic
+    final_title = ""
+    if not query_term and recommendations and \
+       (recommendations.get('posts') or recommendations.get('users') or recommendations.get('groups')):
+        final_title = 'Recommended for You'
+    else:
+        temp_title_parts = []
+        if query_term:
+            temp_title_parts.append(f'Results for "{query_term}"')
+            if category != 'all':
+                temp_title_parts.append(f'in {category.capitalize()}')
+            if sort_by != 'relevance':
+                temp_title_parts.append(f'sorted by {sort_by.capitalize()}')
+
+        if temp_title_parts:
+            final_title = " ".join(temp_title_parts)
+        else:
+            final_title = 'Search'
+
+    comment_form = CommentForm()
+
     return render_template('search_results.html',
-                           title=title,
+                           title=final_title,
                            query=query_term,
                            users=users_found,
                            posts=posts_found,
                            groups=groups_found,
                            hashtags=hashtags_found,
                            selected_category=category,
-                           selected_sort_by=sort_by)
+                           selected_sort_by=sort_by,
+                           recommendations=recommendations,
+                           comment_form=comment_form)
+
+
+@main.route('/search/recommendations')
+@login_required
+@cache.cached(timeout=600, make_cache_key=make_user_specific_cache_key, unless=lambda: current_user.is_anonymous)
+def search_recommendations():
+    """
+    Provides personalized recommendations for the current user.
+    Returns data in JSON format.
+    """
+    if current_user.is_anonymous: # Should be caught by @login_required but good for safety with cache
+        return jsonify({'error': 'Authentication required.'}), 401
+
+    recommendations = get_recommendations(current_user.id)
+
+    # Serialize recommendations
+    rec_posts = []
+    for post in recommendations.get('posts', []):
+        rec_posts.append({
+            'id': post.id,
+            'body': post.body,
+            'author_username': post.author.username if post.author else 'Unknown',
+            'author_profile_pic': post.author.profile_picture_url if post.author else url_for('static', filename='images/default_profile_pic.png'),
+            'image_filename': post.image_filename,
+            'video_filename': post.video_filename,
+            'alt_text': post.alt_text,
+            'timestamp': post.timestamp.isoformat() if post.timestamp else None,
+            'group_id': post.group_id,
+            'group_name': post.group.name if post.group else None, # Add group name
+            'user_id': post.user_id,
+            'like_count': post.like_count(), # Add like count
+            'comment_count': post.comment_count(), # Add comment count
+            'url': url_for('main.view_post_page', post_id=post.id) if hasattr(main, 'view_post_page') else '#' # Placeholder for post view URL
+        })
+
+    rec_users = []
+    for user_obj in recommendations.get('users', []):
+        rec_users.append({
+            'id': user_obj.id,
+            'username': user_obj.username,
+            'bio': user_obj.bio,
+            'profile_picture_url': user_obj.profile_picture_url or url_for('static', filename='images/default_profile_pic.png'),
+            'follower_count': user_obj.followers.count(), # Add follower count
+            'is_following': current_user.is_following(user_obj) if current_user.is_authenticated else False, # Check if current user is following
+            'profile_url': url_for('main.profile', username=user_obj.username)
+        })
+
+    rec_groups = []
+    for group_obj in recommendations.get('groups', []):
+        rec_groups.append({
+            'id': group_obj.id,
+            'name': group_obj.name,
+            'description': group_obj.description,
+            'image_file': group_obj.image_file or url_for('static', filename='images/default_group_pic.png'),
+            'member_count': group_obj.memberships.count(), # Add member count
+            'is_member': current_user.is_member_of(group_obj.id) if current_user.is_authenticated else False, # Check if current user is a member
+            'group_url': url_for('main.view_group', group_id=group_obj.id)
+        })
+
+    serialized_recommendations = {
+        'posts': rec_posts,
+        'users': rec_users,
+        'groups': rec_groups
+    }
+    return jsonify(serialized_recommendations)
 
 
 @main.route('/hashtag/<string:tag_text>')
@@ -246,7 +335,7 @@ def reset_password(token):
 
 
 @main.route('/user/<username>')
-@cache.cached(timeout=3600)
+@cache.cached(timeout=3600, make_cache_key=make_user_specific_cache_key)
 def profile(username):
     user = User.query.filter_by(username=username).first_or_404()
     # Query posts for this specific user, newest first
@@ -279,7 +368,8 @@ def edit_profile():
         current_user.theme_preference = form.theme.data # Save theme preference
 
         db.session.commit()
-        cache.delete_memoized(profile, current_user.username) # Invalidate cache
+        # Invalidate cache for the profile page of the current user
+        cache.delete_key(make_user_specific_cache_key(request_path=url_for('main.profile', username=current_user.username)))
         flash('Your profile has been updated!', 'success')
         return redirect(url_for('main.profile', username=current_user.username))
     elif request.method == 'GET':
@@ -1045,7 +1135,7 @@ def create_group():
     return render_template('create_group.html', title='Create Group', form=form)
 
 @main.route('/group/<int:group_id>')
-@cache.cached(timeout=300)
+@cache.cached(timeout=300, make_cache_key=make_user_specific_cache_key)
 def view_group(group_id):
     group = Group.query.get_or_404(group_id)
 
@@ -1090,9 +1180,8 @@ def view_group(group_id):
             if membership.role == 'admin':
                 is_admin = True
 
-    # TODO: Create app/templates/group.html in a later step
-    # Pass feed_items to the template instead of posts
-    return render_template('group.html', title=group.name, group=group, feed_items=feed_items, is_member=is_member, is_admin=is_admin)
+    comment_form = CommentForm() # Added for posts within group view
+    return render_template('group.html', title=group.name, group=group, feed_items=feed_items, is_member=is_member, is_admin=is_admin, comment_form=comment_form)
 
 @main.route('/group/<int:group_id>/join', methods=['POST'])
 @login_required
@@ -1770,3 +1859,11 @@ def view_stream(username):
                            title=f"Live Stream by {user.username}",
                            stream=active_stream,
                            user=user)
+
+# Placeholder for a potential view_post_page route if it's different from index or profile views
+# This is just for the URL generation in recommendations, actual route can be defined elsewhere or may already exist
+# @main.route('/post_page/<int:post_id>')
+# def view_post_page(post_id):
+#     post = Post.query.get_or_404(post_id)
+#     return render_template('view_post_standalone.html', post=post) # Assuming a template for single post view
+# If no dedicated page, links can point to where posts are usually viewed (e.g., profile or index with anchor)
