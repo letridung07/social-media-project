@@ -16,7 +16,7 @@
                 {% for user in users %}
                     <li class="list-group-item">
                         <a href="{{ url_for('main.profile', username=user.username) }}">
-                            <img src="{{ url_for('static', filename='images/' + user.profile_picture_url) }}" alt="{{ user.username }}'s profile picture" class="rounded-circle mr-2" width="30" height="30" style="margin-right: 5px;"> {# Added inline style for margin #}
+                            <img src="{{ url_for('static', filename='images/' + user.profile_picture_url) }}" loading="lazy" alt="{{ user.username }}'s profile picture" class="rounded-circle mr-2" width="30" height="30" style="margin-right: 5px;"> {# Added inline style for margin #}
                             {{ user.username }}
                         </a>
                         {% if user.bio %}
@@ -43,7 +43,7 @@
                 {% for group in groups %}
                     <li class="list-group-item">
                         <a href="{{ url_for('main.view_group', group_id=group.id) }}">
-                            <img src="{{ url_for('static', filename='group_images/' + group.image_file) if group.image_file else url_for('static', filename='group_images/default_group_pic.png') }}" alt="{{ group.name }}'s image" class="rounded-circle mr-2" width="30" height="30" style="margin-right: 5px;">
+                            <img src="{{ url_for('static', filename='group_images/' + group.image_file) if group.image_file else url_for('static', filename='group_images/default_group_pic.png') }}" loading="lazy" alt="{{ group.name }}'s image" class="rounded-circle mr-2" width="30" height="30" style="margin-right: 5px;">
                             {{ group.name }}
                         </a>
                         {% if group.description %}

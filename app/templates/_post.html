@@ -2,7 +2,7 @@
 <article class="card mb-3 post">
     <div class="card-header">
         <div class="d-flex align-items-center">
-            <img src="{{ url_for('static', filename='images/' + post.author.profile_picture_url) }}" alt="{{ post.author.username }}'s profile picture" class="rounded-circle mr-2" width="40" height="40">
+            <img src="{{ url_for('static', filename='images/' + post.author.profile_picture_url) }}" loading="lazy" alt="{{ post.author.username }}'s profile picture" class="rounded-circle mr-2" width="40" height="40">
             <div>
                 <a href="{{ url_for('main.profile', username=post.author.username) }}" class="font-weight-bold text-dark text-decoration-none">{{ post.author.username }}</a>
                 <small class="text-muted d-block">{{ post.timestamp.strftime('%Y-%m-%d %H:%M:%S') }} UTC</small>
@@ -20,7 +20,7 @@
         {# Display post image if it exists #}
         {% if post.image_filename %}
             <div class="post-image-container my-2">
-                <img src="{{ url_for('static', filename='post_images/' + post.image_filename) }}"
+                <img src="{{ url_for('static', filename='post_images/' + post.image_filename) }}" loading="lazy"
                      alt="{{ post.alt_text if post.alt_text else ('Image for post by ' + post.author.username) }}"
                      class="img-fluid rounded" style="display: block;">
             </div>
@@ -135,7 +135,7 @@
             {% for comment in post.comments %} {# Assumes post.comments is ordered by timestamp asc #}
                 <div class="comment mb-2 pb-2 border-bottom">
                     <div>
-                        <img src="{{ url_for('static', filename='images/' + comment.author.profile_picture_url) }}" alt="{{ comment.author.username }}'s profile picture" class="rounded-circle mr-2 comment-avatar" style="float: left;">
+                        <img src="{{ url_for('static', filename='images/' + comment.author.profile_picture_url) }}" loading="lazy" alt="{{ comment.author.username }}'s profile picture" class="rounded-circle mr-2 comment-avatar" style="float: left;">
                         <strong><a href="{{ url_for('main.profile', username=comment.author.username) }}" class="text-dark text-decoration-none">{{ comment.author.username }}</a></strong>
                         <small class="text-muted ml-2">{{ comment.timestamp.strftime('%Y-%m-%d %H:%M') }}</small>
                     </div>

@@ -1,4 +1,4 @@
-from app import db
+from app import db, cache # Import cache
 from flask_login import UserMixin
 from passlib.hash import sha256_crypt
 from datetime import datetime, timezone, timedelta
@@ -87,12 +87,28 @@ class User(db.Model, UserMixin):
             followers.c.followed_id == user.id).count() > 0
 
     # Method to get posts from followed users (for the feed)
-    def followed_posts(self):
-        followed_posts_query = Post.query.join(
-            followers, (followers.c.followed_id == Post.user_id)).filter(
-                followers.c.follower_id == self.id)
-        own_posts_query = Post.query.filter_by(user_id=self.id)
-        return followed_posts_query.union(own_posts_query).order_by(Post.timestamp.desc())
+    @cache.cached(timeout=300)
+    def followed_posts(self, page=1, per_page=10):
+        # Posts from users the current user is following
+        followed_join = db.join(Post, followers, (Post.user_id == followers.c.followed_id))
+        followed_posts_query = db.select(Post).select_from(followed_join).filter(followers.c.follower_id == self.id)
+
+        # Current user's own posts
+        own_posts_query = db.select(Post).filter_by(user_id=self.id)
+
+        # Combine queries using union and order by timestamp
+        # Note: For union with pagination, it's often better to paginate the final combined query.
+        # However, SQLAlchemy's paginate function works directly on a Select object.
+        # We might need to execute the union and then paginate, or use a subquery if performance becomes an issue.
+        # For now, let's construct the union and then paginate.
+        # The `cache.cached` decorator might need to be aware of page and per_page args.
+        # This can be achieved by ensuring the generated cache key includes these args.
+        # Flask-Caching does this by default for function arguments.
+
+        combined_query = followed_posts_query.union(own_posts_query).order_by(Post.timestamp.desc())
+
+        # Execute the query with pagination
+        return db.paginate(combined_query, page=page, per_page=per_page, error_out=False)
 
     def get_reset_password_token(self, expires_sec=1800):
         s = Serializer(current_app.config['SECRET_KEY'], expires_in=expires_sec)
@@ -113,7 +129,7 @@ class Post(db.Model):
     body = db.Column(db.Text, nullable=False)
     # Use lambda for default to ensure it's called at insertion time
     timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
 
     # New field for image filename
     image_filename = db.Column(db.String(100), nullable=True)
@@ -188,7 +204,7 @@ class Notification(db.Model):
     __tablename__ = 'notifications'
     id = db.Column(db.Integer, primary_key=True)
     recipient_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True) # User receiving the notification
-    actor_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False) # User who triggered the notification
+    actor_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True) # User who triggered the notification
     type = db.Column(db.String(50), nullable=False)  # e.g., 'like', 'comment', 'follow'
     related_post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=True)
     related_conversation_id = db.Column(db.Integer, db.ForeignKey('conversations.id'), nullable=True)
@@ -227,7 +243,7 @@ class ChatMessage(db.Model):
     __tablename__ = 'chat_messages'
     id = db.Column(db.Integer, primary_key=True)
     conversation_id = db.Column(db.Integer, db.ForeignKey('conversations.id'), nullable=False, index=True)
-    sender_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    sender_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True) # Added index here as well, good for finding user's messages
     body = db.Column(db.Text, nullable=False)
     timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
     is_read = db.Column(db.Boolean, default=False, nullable=False) # Can be used to track if a message is read by recipient(s)
@@ -376,3 +392,15 @@ class Event(db.Model):
 
     def __repr__(self):
         return f'<Event {self.name}>'
+
+class UserAnalytics(db.Model):
+    __tablename__ = 'user_analytics'
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), primary_key=True)
+    total_likes_received = db.Column(db.Integer, default=0)
+    total_comments_received = db.Column(db.Integer, default=0)
+    last_updated = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow(), onupdate=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+
+    user = db.relationship('User', backref=db.backref('analytics', uselist=False))
+
+    def __repr__(self):
+        return f'<UserAnalytics for User ID {self.user_id}>'
