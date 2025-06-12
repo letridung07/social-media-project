@@ -27,6 +27,9 @@
                         <a class="nav-link" href="{{ url_for('main.groups_list') }}">Groups</a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('main.events_list') }}">Events</a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('main.notifications') }}">
                             Notifications <span id="notification-count-badge" class="badge badge-danger" style="display: {% if unread_notification_count == 0 %}none{% else %}inline-block{% endif %}; vertical-align: baseline;">{{ unread_notification_count }}</span>
                         </a>
@@ -76,6 +79,7 @@
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script src="{{ url_for('static', filename='js/notifications.js') }}"></script>
     <script src="{{ url_for('static', filename='js/polls.js') }}"></script> {# Added polls.js #}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     {% block scripts %}{% endblock %} {# Added scripts block #}
 </body>
 </html>

@@ -70,6 +70,28 @@ A social media platform built with Flask, featuring user authentication, profile
 *   Default profile picture for new users.
 *   Unit tests for core features including authentication, profiles, posts, groups, chat, search, stories, and polls.
 
+### Events/Calendar
+*   **Purpose:** Allows users to create, discover, join, and manage events, fostering real-world interactions and community engagement.
+*   **Key Functionalities:**
+    *   Create new events with details such as name, description, start/end date & time, and location.
+    *   View a comprehensive list of all upcoming and past events.
+    *   Access detailed information for each specific event.
+    *   Users can join events they are interested in and leave events they can no longer attend.
+    *   Event organizers have the ability to edit or delete the events they've created.
+    *   Attendees and organizers receive notifications for important event updates, cancellations, and when new users join an event.
+
+### Analytics Dashboard
+*   **Purpose:** Provides users with a personal dashboard to view insights into their activity and engagement on the platform.
+*   **Key Statistics Displayed:**
+    *   Total number of posts created by the user.
+    *   Total number of likes received across all their posts.
+    *   Total number of comments received on all their posts.
+    *   Current count of users following them (Followers).
+    *   Current count of users they are following (Following).
+    *   A list of their top 5 most liked posts.
+*   **Visualizations:**
+    *   Charts are used to visually represent data, such as a bar chart for likes per post (top 5) and a simple bar chart for the current follower count. (Note: Follower growth over time is a placeholder for future data collection).
+
 ## Real-time Chat
 
 The platform includes a real-time chat feature allowing users to engage in one-on-one conversations.
@@ -222,7 +244,9 @@ Follow these instructions to get a copy of the project up and running on your lo
     ├── test_groups.py    # Tests for group functionality
     ├── test_search.py    # Tests for search functionality
     ├── test_stories.py   # Tests for Stories feature
-    └── test_polls.py     # Tests for Polls feature
+    ├── test_polls.py     # Tests for Polls feature
+    ├── test_events.py    # Tests for Events/Calendar feature
+    ├── test_analytics.py # Tests for Analytics Dashboard
 ├── venv/                 # Python virtual environment (if created with this name)
 ├── .gitignore            # Specifies intentionally untracked files that Git should ignore
 ├── config.py             # Configuration settings (e.g., SECRET_KEY, database URI)
