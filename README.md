@@ -86,7 +86,7 @@ These recommendations are generated based on your activity on the platform and a
     *   Notifications are sent for new polls to relevant users (group members or followers).
 
 #### Real-Time Poll Results
-To enhance interactivity, poll results now update in real-time. When a user votes, or when other users vote on the same poll, the vote counts and percentages dynamically refresh on the page without requiring a manual reload. This live update functionality is powered by SocketIO, providing immediate feedback and a more engaging user experience. To make these updates more noticeable, a subtle visual animation highlights the vote counts as they change.
+To enhance interactivity, poll results now update in real-time. When a user votes, or when other users vote on the same poll, the vote counts and percentages dynamically refresh on the page without requiring a manual reload. This live update functionality is powered by SocketIO, providing immediate feedback and a more engaging user experience. To make these updates more noticeable, a subtle visual animation highlights the vote counts as they change. Additionally, polls now display a live count of users currently viewing them, providing a sense of real-time engagement.
 
 ### Post Sharing
 - Users can share posts from other users to their own personal feed.

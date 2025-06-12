@@ -3,6 +3,7 @@ const socket = io();
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log("Polls JS loaded");
+    const joinedPollRooms = new Set();
 
     // Join rooms for all polls on the page
     const pollContainers = document.querySelectorAll('.poll-container');
@@ -10,11 +11,12 @@ document.addEventListener('DOMContentLoaded', function() {
         const pollId = pollContainer.dataset.pollId;
         if (pollId) {
             socket.emit('join_poll_room', { 'poll_id': pollId });
+            joinedPollRooms.add(pollId); // Store joined poll ID
             console.log(`Joined room for poll ${pollId}`);
         }
     });
 
-    // Listen for poll_update events
+    // Listen for poll_update events (vote counts)
     socket.on('poll_update', function(data) {
         console.log('Received poll_update:', data);
         const pollContainer = document.querySelector(`.poll-container[data-poll-id="${data.poll_id}"]`);
@@ -57,6 +59,25 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         } else {
             console.warn(`Poll container not found for poll_id: ${data.poll_id}`);
+        }
+    });
+
+    // Listen for poll_viewer_update events (viewer counts)
+    socket.on('poll_viewer_update', function(data) {
+        console.log('Received poll_viewer_update:', data);
+        const pollId = data.poll_id;
+        const viewerCount = data.viewer_count;
+
+        const viewerCountElement = document.querySelector(`.live-poll-viewers[data-poll-id="${pollId}"]`);
+        if (viewerCountElement) {
+            if (viewerCount > 0) {
+                viewerCountElement.textContent = `📊 ${viewerCount} viewing`;
+            } else {
+                viewerCountElement.textContent = ''; // Or "0 viewing", "No viewers currently"
+            }
+        } else {
+            // This might happen if the poll element is not visible or the HTML structure is unexpected
+            // console.warn(`Viewer count element not found for poll_id: ${pollId}`);
         }
     });
 
@@ -142,5 +163,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             });
         });
+    });
+
+    // Handle leaving poll rooms when the user navigates away
+    window.addEventListener('beforeunload', function() {
+        if (socket && socket.connected) { // Check if socket is still connected
+            joinedPollRooms.forEach(pollId => {
+                socket.emit('leave_poll_room', { 'poll_id': pollId });
+                console.log(`Emitted leave_poll_room for poll ${pollId} due to page unload.`);
+            });
+        }
     });
 });

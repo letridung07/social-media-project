@@ -121,6 +121,9 @@
                         </form>
                     {% endif %}
                      <small class="text-muted d-block mt-1 poll-total-votes">Total votes: {{ total_poll_votes }}</small>
+                     <small class="text-muted d-block mt-1 live-poll-viewers-container">
+                        <span class="live-poll-viewers" data-poll-id="{{ poll_in_post.id }}"></span>
+                     </small>
                 </div>
             {% endfor %}
         {% endif %}
