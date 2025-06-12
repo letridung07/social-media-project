@@ -60,6 +60,32 @@
                 </div>
 
                 <div class="form-group mb-3">
+                    {{ form.privacy_level.label(class="form-control-label") }}
+                    {{ form.privacy_level(class="form-control form-control-lg") }}
+                    {% if form.privacy_level.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.privacy_level.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <small class="form-text text-muted">Choose who can see this post.</small>
+                    {% endif %}
+                </div>
+
+                <div class="form-group" id="custom_list_select_div" style="display: none;"> {# Initially hidden #}
+                    {{ form.custom_friend_list_id.label(class="form-control-label") }}
+                    {{ form.custom_friend_list_id(class="form-control form-control-lg") }}
+                    {% if form.custom_friend_list_id.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.custom_friend_list_id.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+
+                <div class="form-group mb-3">
                     {{ form.alt_text.label(class="form-label") }}
                     {{ form.alt_text(class="form-control", rows="2", placeholder="Describe your image/video for accessibility...") }}
                     <small class="form-text text-muted">{{ form.alt_text.description }}</small>
@@ -77,4 +103,29 @@
         </div>
     </div>
 </div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var privacyLevelSelect = document.getElementById('privacy_level');
+        if (!privacyLevelSelect) {
+             privacyLevelSelect = document.getElementsByName('privacy_level')[0];
+        }
+        var customListDiv = document.getElementById('custom_list_select_div');
+
+        function toggleCustomListDiv() {
+            if (privacyLevelSelect && customListDiv) { // Ensure elements exist
+                if (privacyLevelSelect.value === 'CUSTOM_LIST') {
+                    customListDiv.style.display = 'block';
+                } else {
+                    customListDiv.style.display = 'none';
+                }
+            }
+        }
+
+        if (privacyLevelSelect && customListDiv) {
+             privacyLevelSelect.addEventListener('change', toggleCustomListDiv);
+             toggleCustomListDiv();
+        }
+    });
+</script>
 {% endblock %}

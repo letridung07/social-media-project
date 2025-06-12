@@ -46,6 +46,42 @@
                     {% endif %}
                 </div>
             </fieldset>
+            <fieldset class="form-group">
+                <legend class="border-bottom mb-4">Privacy Settings</legend>
+                <div class="form-group">
+                    {{ form.profile_visibility.label(class="form-control-label") }}
+                    {{ form.profile_visibility(class="form-control form-control-lg") }}
+                    {% if form.profile_visibility.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.profile_visibility.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+                <div class="form-group">
+                    {{ form.default_post_privacy.label(class="form-control-label") }}
+                    {{ form.default_post_privacy(class="form-control form-control-lg") }}
+                    {% if form.default_post_privacy.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.default_post_privacy.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+                <div class="form-group">
+                    {{ form.default_story_privacy.label(class="form-control-label") }}
+                    {{ form.default_story_privacy(class="form-control form-control-lg") }}
+                    {% if form.default_story_privacy.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.default_story_privacy.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+            </fieldset>
             <div class="form-group">
                 {{ form.submit(class="btn btn-primary") }}
             </div>

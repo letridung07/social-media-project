@@ -3,13 +3,13 @@ import re # For hashtag parsing
 from datetime import datetime, timezone
 from flask import Blueprint, render_template, redirect, url_for, flash, request, abort, current_app, jsonify, make_response # Import jsonify, make_response
 from flask_login import login_user, current_user, logout_user, login_required
-from sqlalchemy import or_, func # Import func
+from sqlalchemy import or_, func, and_ # Import func, and_
 import io # For CSV export
 import csv # For CSV export
 from sqlalchemy.orm import joinedload # Import joinedload
 from app import db, socketio, cache # Import cache
-from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm
-from app.models import User, Post, Like, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus, Mention # Import UserAnalytics, MessageReadStatus, Mention
+from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm, FriendListForm, AddUserToFriendListForm, PRIVACY_CHOICES
+from app.models import User, Post, Like, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus, Mention, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE, FriendList # Import UserAnalytics, MessageReadStatus, Mention
 from app.utils import save_picture, save_post_image, save_post_video, save_group_image, save_story_media, process_mentions, get_historical_engagement, get_top_performing_hashtags, get_top_performing_groups # Added process_mentions and analytics utils
 from app.email_utils import send_password_reset_email # Import email utility
 
@@ -58,12 +58,44 @@ def index():
 
     if current_user.is_authenticated:
         # Personalized feed for logged-in users
-        posts_pagination = current_user.followed_posts(page=page, per_page=per_page)
+        # Make sure 'followed_user_ids' is defined before this block if not already.
+        # It's usually part of the User model's followed_posts() method, which this replaces for now.
+        followed_user_ids = [user.id for user in current_user.followed]
+
+        posts_query = Post.query.filter(
+            or_(
+                Post.user_id == current_user.id, # User's own posts (all privacy levels visible to self)
+                and_( # Posts from followed users
+                    Post.user_id.in_(followed_user_ids),
+                    or_(
+                        Post.privacy_level == PRIVACY_PUBLIC,
+                        Post.privacy_level == PRIVACY_FOLLOWERS
+                        # PRIVACY_CUSTOM_LIST from followed users: only visible if current_user is in the specific list.
+                        # This requires joining with FriendList and FriendListMembers, deferred for now.
+                        # For now, CUSTOM_LIST posts from others won't appear in the main feed unless it's also their own.
+                    )
+                ),
+                and_( # Posts from ANY user shared with a custom list current_user is on
+                    Post.privacy_level == PRIVACY_CUSTOM_LIST,
+                    Post.custom_friend_list_id.isnot(None),
+                    Post.custom_friend_list.has( # Check if the post's custom_friend_list...
+                        FriendList.members.any(User.id == current_user.id) # ...has current_user as a member
+                    )
+                ),
+                and_( # Public posts from non-followed users (optional, but common for discovery)
+                    Post.privacy_level == PRIVACY_PUBLIC # This might be redundant if the goal is only followed + own + custom list items
+                    # If you want a feed of ONLY own posts, posts from followed (public/follower), and custom list posts,
+                    # then this additional public clause for non-followed might be removed.
+                    # For now, keeping it broad for public content.
+                )
+            )
+        ).distinct().order_by(Post.timestamp.desc()) # Added distinct() because a post could match multiple conditions (e.g. public and on a list)
+        posts_pagination = db.paginate(posts_query, page=page, per_page=per_page, error_out=False)
         posts = posts_pagination.items
     else:
         # Public feed for guests (e.g., most recent posts from all users)
         # For guests, let's also paginate all posts
-        posts_query = Post.query.order_by(Post.timestamp.desc())
+        posts_query = Post.query.filter(Post.privacy_level == PRIVACY_PUBLIC).order_by(Post.timestamp.desc())
         posts_pagination = db.paginate(posts_query, page=page, per_page=per_page, error_out=False)
         posts = posts_pagination.items
 
@@ -92,6 +124,17 @@ def search():
         # Users Search
         if category == 'all' or category == 'users':
             user_q = User.query.filter(or_(User.username.ilike(f'%{query_term}%'), User.email.ilike(f'%{query_term}%')))
+            if current_user.is_authenticated:
+                user_q = user_q.filter(
+                    or_(
+                        User.id == current_user.id, # Own profile
+                        User.profile_visibility == PRIVACY_PUBLIC,
+                        # Check if current_user is a follower of the User being searched
+                        and_(User.profile_visibility == PRIVACY_FOLLOWERS, User.followers.any(User.id == current_user.id))
+                    )
+                )
+            else: # Unauthenticated user
+                user_q = user_q.filter(User.profile_visibility == PRIVACY_PUBLIC)
             if sort_by == 'popularity':
                 user_q = user_q.outerjoin(followers, User.id == followers.c.followed_id)\
                                .group_by(User.id)\
@@ -105,6 +148,25 @@ def search():
         # Posts Search
         if category == 'all' or category == 'posts':
             post_q = Post.query.filter(Post.body.ilike(f'%{query_term}%'))
+            if current_user.is_authenticated:
+                # Define followed_ids_for_search if not already in scope
+                followed_ids_for_search = [u.id for u in current_user.followed]
+                post_q = post_q.filter(
+                    or_(
+                        Post.user_id == current_user.id, # Own posts
+                        Post.privacy_level == PRIVACY_PUBLIC,
+                        and_(Post.privacy_level == PRIVACY_FOLLOWERS, Post.user_id.in_(followed_ids_for_search)),
+                        and_( # Posts matching search term shared via a custom list current_user is on
+                            Post.privacy_level == PRIVACY_CUSTOM_LIST,
+                            Post.custom_friend_list_id.isnot(None),
+                            Post.custom_friend_list.has(
+                                FriendList.members.any(User.id == current_user.id)
+                            )
+                        )
+                    )
+                ).distinct() # Added distinct()
+            else: # Unauthenticated user
+                post_q = post_q.filter(Post.privacy_level == PRIVACY_PUBLIC)
             if sort_by == 'date':
                 post_q = post_q.order_by(Post.timestamp.desc())
             elif sort_by == 'popularity':
@@ -353,13 +415,65 @@ def reset_password(token):
 
 
 @main.route('/user/<username>')
-@cache.cached(timeout=3600, make_cache_key=make_user_specific_cache_key)
+# @cache.cached(timeout=3600, make_cache_key=make_user_specific_cache_key) # Removed for privacy refactor
 def profile(username):
     user = User.query.filter_by(username=username).first_or_404()
-    # Query posts for this specific user, newest first
-    posts = user.posts.order_by(Post.timestamp.desc()).all() # Assuming 'posts' is the relationship name
     comment_form = CommentForm() # Instantiate the form
-    return render_template('profile.html', title=f"{user.username}'s Profile", user=user, posts=posts, comment_form=comment_form) # Pass to template
+
+    profile_is_private = False
+    profile_is_limited = False
+
+    if user.id != getattr(current_user, 'id', None): # Not viewing own profile
+        if user.profile_visibility == PRIVACY_PRIVATE:
+            flash(f"{user.username}'s profile is private.", "info")
+            profile_is_private = True # Flag for template
+            # posts = [] # Ensure no posts are passed if profile is fully private to others
+        elif user.profile_visibility == PRIVACY_FOLLOWERS:
+            if not current_user.is_authenticated or not current_user.is_following(user):
+                flash(f"{user.username}'s profile is visible only to followers.", "info")
+                profile_is_limited = True # Flag for template
+                # posts = [] # Ensure no posts are passed if profile is limited
+
+    # Pass flags to template. Modify the render_template call at the end of the route:
+    # return render_template('profile.html', ..., profile_is_private=profile_is_private, profile_is_limited=profile_is_limited)
+
+    posts_query = user.posts.order_by(Post.timestamp.desc())
+
+    # If profile is fully private to this viewer, no need to query posts.
+    if profile_is_private: # This flag is set above if non-owner views a PRIVATE profile
+        posts = []
+    elif getattr(current_user, 'id', None) == user.id: # Viewing own profile
+        posts = posts_query.all()
+    else: # Viewing another user's profile (and it's not fully private)
+        q_filters = [Post.privacy_level == PRIVACY_PUBLIC]
+        if current_user.is_authenticated and current_user.is_following(user):
+            # If profile_is_limited is true, this follower check has already failed,
+            # but an explicit check here for post visibility is still good.
+            q_filters.append(Post.privacy_level == PRIVACY_FOLLOWERS)
+
+        # PRIVACY_CUSTOM_LIST posts on other's profile:
+        # Only visible if current_user is in the specific list. Deferred for now.
+
+            if current_user.is_authenticated: # Authenticated users might see custom list posts
+                q_filters.append(
+                    and_(
+                        Post.privacy_level == PRIVACY_CUSTOM_LIST,
+                        Post.custom_friend_list_id.isnot(None),
+                        Post.user_id == user.id, # Ensure it's the profile owner's post
+                        Post.custom_friend_list.has(
+                            FriendList.members.any(User.id == current_user.id)
+                        )
+                    )
+                )
+
+        posts_query = posts_query.filter(or_(*q_filters)) # posts_query was user.posts.order_by(...)
+        posts = posts_query.distinct().all() # Added distinct()
+
+        # If profile is limited (follower only but not followed by current_user), posts should be empty.
+        if profile_is_limited: # This flag is set above
+             posts = []
+
+    return render_template('profile.html', title=f"{user.username}'s Profile", user=user, posts=posts, comment_form=comment_form, profile_is_private=profile_is_private, profile_is_limited=profile_is_limited) # Pass to template
 
 @main.route('/edit_profile', methods=['GET', 'POST'])
 @login_required
@@ -384,6 +498,9 @@ def edit_profile():
 
         current_user.bio = form.bio.data
         current_user.theme_preference = form.theme.data # Save theme preference
+        current_user.profile_visibility = form.profile_visibility.data
+        current_user.default_post_privacy = form.default_post_privacy.data
+        current_user.default_story_privacy = form.default_story_privacy.data
 
         db.session.commit()
         # Invalidate cache for the profile page of the current user
@@ -416,9 +533,21 @@ def create_post():
         group_name_for_template = target_group.name
 
     form = PostForm()
+
+    # Populate choices for custom_friend_list_id
+    form.custom_friend_list_id.choices = [(fl.id, fl.name) for fl in current_user.friend_lists.all()]
+    # Add a default empty choice if desired, e.g., form.custom_friend_list_id.choices.insert(0, ('', 'Select a list if choosing Custom'))
+
     video_filename_to_save = None # Initialize
     if form.validate_on_submit():
         image_filename_to_save = None # Initialize
+
+        # Validate custom_friend_list_id if PRIVACY_CUSTOM_LIST is chosen
+        if form.privacy_level.data == PRIVACY_CUSTOM_LIST and not form.custom_friend_list_id.data:
+            flash('Please select a friend list when choosing "Custom List" visibility.', 'warning')
+            # Need to re-populate choices for rendering again as they are set outside the POST block
+            return render_template('create_post.html', title='Create Post', form=form, group_id=group_id_param, group_name=group_name_for_template)
+
         if form.image_file.data:
             try:
                 image_filename_to_save = save_post_image(form.image_file.data)
@@ -441,8 +570,12 @@ def create_post():
             author=current_user,
             image_filename=image_filename_to_save, # If applicable
             video_filename=video_filename_to_save, # If applicable
-            alt_text=form.alt_text.data
+            alt_text=form.alt_text.data,
+            # Add privacy_level from form; use user's default if somehow not provided (though form has DataRequired)
+            privacy_level=form.privacy_level.data, # Use the direct value from the form
+            custom_friend_list_id=form.custom_friend_list_id.data if form.privacy_level.data == PRIVACY_CUSTOM_LIST else None
         )
+
         if target_group:
             post.group_id = target_group.id
 
@@ -525,8 +658,27 @@ def edit_post(post_id):
 
     form = PostForm(obj=post)  # Pre-populate with existing post data for GET
 
+        # Populate choices for custom_friend_list_id
+        form.custom_friend_list_id.choices = [(fl.id, fl.name) for fl in current_user.friend_lists.all()]
+        # If it's a GET request and the post already has a custom list, set the default for the form
+        if request.method == 'GET':
+            if post.privacy_level == PRIVACY_CUSTOM_LIST and post.custom_friend_list_id:
+                form.custom_friend_list_id.data = post.custom_friend_list_id
+
     if form.validate_on_submit():
         post.body = form.body.data
+        post.alt_text = form.alt_text.data # Ensure alt_text is also updated
+        post.privacy_level = form.privacy_level.data
+
+        if post.privacy_level == PRIVACY_CUSTOM_LIST:
+            if form.custom_friend_list_id.data:
+                post.custom_friend_list_id = form.custom_friend_list_id.data
+            else:
+                flash('Please select a friend list if you choose "Custom List" visibility, or change visibility.', 'warning')
+                # Re-populate choices before rendering again
+                return render_template('edit_post.html', title='Edit Post', form=form, post=post)
+        else:
+            post.custom_friend_list_id = None # Clear if not custom list
 
         # Handle image update
         if form.image_file.data:
@@ -1507,13 +1659,39 @@ def groups_list():
 def display_stories():
     now = datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow()
 
-    followed_user_ids = [user.id for user in current_user.followed]
-    user_ids_to_show = followed_user_ids + [current_user.id]
+    stories_query = Story.query.filter(Story.expires_at > now)
 
-    active_stories = Story.query.filter(
-        Story.user_id.in_(user_ids_to_show),
-        Story.expires_at > now
-    ).order_by(Story.timestamp.desc()).all()
+    if current_user.is_authenticated:
+        # It's good practice to define followed_user_ids inside this block if only used here.
+        followed_user_ids = [user.id for user in current_user.followed]
+        stories_query = stories_query.filter(
+            or_(
+                Story.user_id == current_user.id, # Current user's own stories (all privacy levels)
+                and_( # Stories from followed users
+                    Story.user_id.in_(followed_user_ids),
+                    or_(
+                        Story.privacy_level == PRIVACY_PUBLIC,
+                        Story.privacy_level == PRIVACY_FOLLOWERS
+                        # CUSTOM_LIST/PRIVATE stories from others won't be shown here without specific checks.
+                    )
+                ),
+                and_( # Stories from ANY user shared with a custom list current_user is on
+                    Story.privacy_level == PRIVACY_CUSTOM_LIST,
+                    Story.custom_friend_list_id.isnot(None),
+                    Story.custom_friend_list.has(
+                        FriendList.members.any(User.id == current_user.id)
+                    )
+                )
+            )
+        ).distinct() # Added distinct() before order_by
+    else: # Unauthenticated users
+        # Decide if unauthenticated users see any stories. If yes, only public.
+        stories_query = stories_query.filter(Story.privacy_level == PRIVACY_PUBLIC)
+        # If unauthenticated users should not see any stories, then:
+        # active_stories = [] # And skip the query
+        # For now, assuming they can see public stories.
+
+    active_stories = stories_query.order_by(Story.timestamp.desc()).all()
 
     return render_template('stories.html', title='Stories', stories=active_stories)
 
@@ -1521,15 +1699,33 @@ def display_stories():
 @login_required
 def create_story():
     form = StoryForm()
+
+    # Populate choices for custom_friend_list_id
+    form.custom_friend_list_id.choices = [(fl.id, fl.name) for fl in current_user.friend_lists.all()]
+
     if form.validate_on_submit():
         if form.media_file.data:
             try:
-                filename, media_type = save_story_media(form.media_file.data)
+                filename, media_type = save_story_media(form.media_file.data) # Assuming save_story_media exists
+
+                story_privacy_level = form.privacy_level.data
+                story_custom_list_id = None
+
+                if story_privacy_level == PRIVACY_CUSTOM_LIST:
+                    if form.custom_friend_list_id.data:
+                        story_custom_list_id = form.custom_friend_list_id.data
+                    else:
+                        flash('Please select a friend list if you choose "Custom List" visibility, or change visibility.', 'warning')
+                        # Need to re-populate choices for rendering again
+                        return render_template('create_story.html', title='Create Story', form=form)
 
                 story_data = {
                     'user_id': current_user.id,
-                    'caption': form.caption.data
+                    'caption': form.caption.data,
+                    'privacy_level': story_privacy_level,
+                    'custom_friend_list_id': story_custom_list_id
                 }
+
                 if media_type == 'image':
                     story_data['image_filename'] = filename
                 elif media_type == 'video':
@@ -2158,3 +2354,146 @@ def view_stream(username):
 #     post = Post.query.get_or_404(post_id)
 #     return render_template('view_post_standalone.html', post=post) # Assuming a template for single post view
 # If no dedicated page, links can point to where posts are usually viewed (e.g., profile or index with anchor)
+
+
+# -------------------- Friend List Management Routes --------------------
+
+@main.route('/friend_lists')
+@login_required
+def list_friend_lists():
+    lists = current_user.friend_lists.order_by(FriendList.name).all()
+    return render_template('friend_lists.html', title='Your Friend Lists', lists=lists)
+
+@main.route('/friend_lists/create', methods=['GET', 'POST'])
+@login_required
+def create_friend_list():
+    form = FriendListForm()
+    if form.validate_on_submit():
+        new_list = FriendList(name=form.name.data, owner=current_user)
+        db.session.add(new_list)
+        db.session.commit()
+        flash(f'Friend list "{new_list.name}" created successfully!', 'success')
+        return redirect(url_for('main.list_friend_lists'))
+    return render_template('create_edit_friend_list.html', title='Create Friend List', form=form)
+
+@main.route('/friend_lists/edit/<int:list_id>', methods=['GET', 'POST'])
+@login_required
+def edit_friend_list(list_id):
+    friend_list = FriendList.query.get_or_404(list_id)
+    if friend_list.user_id != current_user.id:
+        abort(403)  # Forbidden
+
+    form = FriendListForm(obj=friend_list) # Pre-populate with current name
+    if form.validate_on_submit():
+        friend_list.name = form.name.data
+        db.session.commit()
+        flash(f'Friend list "{friend_list.name}" updated!', 'success')
+        return redirect(url_for('main.list_friend_lists'))
+    return render_template('create_edit_friend_list.html', title='Edit Friend List', form=form, list_id=list_id)
+
+@main.route('/friend_lists/delete/<int:list_id>', methods=['POST'])
+@login_required
+def delete_friend_list(list_id):
+    friend_list = FriendList.query.get_or_404(list_id)
+    if friend_list.user_id != current_user.id:
+        abort(403)
+
+    # Before deleting, consider posts/stories linked to this list.
+    # The current Post/Story model has custom_friend_list_id which is nullable.
+    # We might want to nullify these relationships or prevent deletion if in use.
+    # For now, just deleting the list. Cascades on members are handled by DB relationships.
+    # If Post/Story.custom_friend_list_id has a FK constraint, it might need ondelete='SET NULL' or similar.
+    # Or, manually update linked posts/stories:
+    Post.query.filter_by(custom_friend_list_id=list_id, user_id=current_user.id).update({'custom_friend_list_id': None, 'privacy_level': PRIVACY_PRIVATE}) # Or user's default
+    Story.query.filter_by(custom_friend_list_id=list_id, user_id=current_user.id).update({'custom_friend_list_id': None, 'privacy_level': PRIVACY_PRIVATE}) # Or user's default
+    db.session.commit() # Commit changes to posts/stories first
+
+    db.session.delete(friend_list)
+    db.session.commit()
+    flash(f'Friend list "{friend_list.name}" deleted.', 'success')
+    return redirect(url_for('main.list_friend_lists'))
+
+@main.route('/friend_lists/manage/<int:list_id>', methods=['GET', 'POST'])
+@login_required
+def manage_friend_list_members(list_id):
+    friend_list = FriendList.query.get_or_404(list_id)
+    if friend_list.user_id != current_user.id:
+        abort(403)
+
+    form = AddUserToFriendListForm() # For adding new members
+
+    if form.validate_on_submit(): # This is for the 'Add User' form submission
+        user_to_add = User.query.filter_by(username=form.username.data).first()
+        # form.validate_username ensures user_to_add exists.
+        if user_to_add == current_user:
+            flash("You cannot add yourself to your own friend list.", "warning")
+        elif user_to_add in friend_list.members:
+            flash(f"{user_to_add.username} is already in this list.", "info")
+        else:
+            friend_list.members.append(user_to_add)
+            db.session.commit()
+            flash(f"{user_to_add.username} added to '{friend_list.name}'.", "success")
+        return redirect(url_for('main.manage_friend_list_members', list_id=list_id)) # Redirect to refresh list and clear form
+
+    members = friend_list.members.all()
+    return render_template('manage_friend_list_members.html', title=f'Manage "{friend_list.name}"', friend_list=friend_list, members=members, form=form)
+
+@main.route('/friend_lists/remove_member/<int:list_id>/<int:user_id>', methods=['POST'])
+@login_required
+def remove_member_from_friend_list(list_id, user_id):
+    friend_list = FriendList.query.get_or_404(list_id)
+    if friend_list.user_id != current_user.id:
+        abort(403)
+
+    user_to_remove = User.query.get_or_404(user_id)
+
+    if user_to_remove not in friend_list.members:
+        flash(f"{user_to_remove.username} is not in this list.", "info")
+    else:
+        friend_list.members.remove(user_to_remove)
+        db.session.commit()
+        flash(f"{user_to_remove.username} removed from '{friend_list.name}'.", "success")
+    return redirect(url_for('main.manage_friend_list_members', list_id=list_id))
+
+# -------------------- Bulk Privacy Update Route --------------------
+@main.route('/bulk_update_privacy', methods=['GET', 'POST'])
+@login_required
+def bulk_update_privacy():
+    if request.method == 'POST':
+        post_ids = request.form.getlist('post_ids') # Get list of selected post IDs
+        new_privacy_level = request.form.get('new_privacy_level')
+
+        if not post_ids:
+            flash('Please select at least one post to update.', 'warning')
+            return redirect(url_for('main.bulk_update_privacy'))
+
+        if not new_privacy_level or new_privacy_level not in [choice[0] for choice in PRIVACY_CHOICES]:
+            flash('Invalid privacy level selected.', 'danger')
+            return redirect(url_for('main.bulk_update_privacy'))
+
+        posts_to_update = Post.query.filter(Post.id.in_(post_ids), Post.user_id == current_user.id).all()
+
+        updated_count = 0
+        for post in posts_to_update:
+            post.privacy_level = new_privacy_level
+            # If new_privacy_level is PRIVACY_CUSTOM_LIST, custom_friend_list_id is not set here.
+            # User would need to edit individually to assign a specific list.
+            if new_privacy_level != PRIVACY_CUSTOM_LIST: # Or some other logic
+                post.custom_friend_list_id = None # Clear if changing away from a specific list
+            db.session.add(post)
+            updated_count += 1
+
+        if updated_count > 0:
+            db.session.commit()
+            flash(f'{updated_count} post(s) updated to {new_privacy_level}.', 'success')
+        else:
+            flash('No posts were updated. They might not belong to you or were not found.', 'info')
+
+        return redirect(url_for('main.bulk_update_privacy'))
+
+    # GET request: Display user's posts for selection
+    user_posts = current_user.posts.order_by(Post.timestamp.desc()).all()
+    # Make sure PRIVACY_CHOICES is available for the template
+    # It's defined in app/forms.py. We need to pass it to the template.
+    privacy_options = PRIVACY_CHOICES
+    return render_template('bulk_update_privacy.html', title='Bulk Update Post Privacy', posts=user_posts, privacy_options=privacy_options)
