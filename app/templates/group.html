@@ -57,9 +57,9 @@
                 <p>Join this group to create a post.</p>
             {% endif %}
 
-            {% if posts %}
-                {% for post in posts %}
-                    {% set item_wrapper = {'type': 'post', 'item': post, 'timestamp': post.timestamp, 'sharer': None} %}
+            {% if feed_items %}
+                {% for item_wrapper in feed_items %}
+                    {# item_wrapper is now directly from the feed_items list, already formatted #}
                     {% include '_post.html' %}
                 {% endfor %}
             {% else %}
