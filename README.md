@@ -40,13 +40,13 @@ A social media platform built with Flask, featuring user authentication, profile
     *   Users can create and join groups based on shared interests, hobbies, or any other criteria.
     *   **Group Creation:** Create new groups with a unique name, description, and an optional group image. The creator automatically becomes an admin.
     *   **Joining & Leaving:** Users can easily join public or discoverable groups and leave groups they are part of.
-    *   **Group-Specific Feeds:** Each group has its own dedicated page displaying posts made exclusively within that group.
+    *   **Group-Specific Feeds:** Each group has its own dedicated page displaying posts made exclusively within that group, as well as posts shared to the group by its members.
     *   **Group Membership Visibility:** View a list of members for each group.
     *   **Group Management (for Admins):**
         *   Edit group details (name, description, image).
         *   Remove members from the group.
         *   Delete the group entirely (posts within the group will be disassociated).
-    *   **Notifications:** Members receive notifications for new posts within their groups, and group admins are notified when new users join.
+    *   **Notifications:** Members receive notifications for new posts and shares within their groups, and group admins are notified when new users join.
 *   **Real-time Chat:** (See dedicated section below for more details)
     *   One-on-one conversations.
     *   Real-time messaging with Socket.IO.
@@ -67,11 +67,15 @@ A social media platform built with Flask, featuring user authentication, profile
     *   Polls can be standalone, contextually linked to groups (e.g., created from a group page or when creating a post for a group), or conceptually linked to posts.
     *   Notifications are sent for new polls to relevant users (group members or followers).
 ### Post Sharing
-- Users can now share posts from other users to their own feed or (in future iterations) to groups they are part of.
-- When a post is shared, a new `Share` record is created, linking the sharer, the original post, and optionally a group.
-- The original author of the post receives a notification when their post is shared.
-- Shared posts appear in the main feed, attributed to the user who shared them, and are ordered chronologically based on the share time.
-- Implemented via the `Share` model, a `POST /post/<post_id>/share` route, a "Share" button on posts, and updates to the feed generation logic.
+- Users can share posts from other users to their own personal feed.
+- **Sharing to Groups:** Posts can also be shared directly to groups that the user is a member of.
+    - When a post is shared to a group, it appears in the group's dedicated feed, intermingled with direct posts to the group, sorted chronologically.
+    - The shared post is clearly attributed with "Shared by [User] on [Timestamp]" above the original post content.
+    - Members of the group (excluding the sharer) receive a notification when a new post is shared to the group.
+- When a post is shared (either to a personal feed or a group), a `Share` record is created, linking the sharer, the original post, and (if applicable) the target group.
+- The original author of the post receives a notification when their post is shared (regardless of whether it was to a personal feed or a group, unless they are the one sharing their own post).
+- Shared posts on personal feeds are attributed to the user who shared them and are ordered chronologically based on the share time.
+- This functionality is implemented via the `Share` model, a `POST /post/<post_id>/share` route (which now accepts an optional `group_id`), a "Share" button on posts, and updates to feed generation logic for both personal and group feeds.
 *   CSRF Protection for forms.
 *   Default profile picture for new users.
 *   Unit tests for core features including authentication, profiles, posts, groups, chat, search, stories, and polls.

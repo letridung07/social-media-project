@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, render_template, redirect, url_for, flash, request, abort, current_app, jsonify # Import jsonify
 from flask_login import login_user, current_user, logout_user, login_required
 from sqlalchemy import or_, func # Import func
+from sqlalchemy.orm import joinedload # Import joinedload
 from app import db, socketio, cache # Import cache
 from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm
 from app.models import User, Post, Like, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share # Import UserAnalytics
@@ -964,9 +965,38 @@ def create_group():
 @cache.cached(timeout=300)
 def view_group(group_id):
     group = Group.query.get_or_404(group_id)
-    # Fetch posts associated with this group, newest first
-    # Assuming group.posts is the backref from Post model
-    posts = group.posts.order_by(Post.timestamp.desc()).all()
+
+    feed_items = []
+
+    # 1. Query for direct posts to the group
+    direct_posts = Post.query.filter_by(group_id=group_id).order_by(Post.timestamp.desc()).all()
+    for post in direct_posts:
+        feed_items.append({
+            'type': 'post',
+            'item': post,
+            'timestamp': post.timestamp,
+            'sharer': None  # No sharer for direct posts
+        })
+
+    # 2. Query for shared posts to the group
+    shared_posts_query = Share.query.filter_by(group_id=group_id)\
+        .options(
+            joinedload(Share.original_post).joinedload(Post.author), # Eager load original post and its author
+            joinedload(Share.user)  # Eager load the user who shared
+        )\
+        .order_by(Share.timestamp.desc())\
+        .all()
+
+    for share_item in shared_posts_query:
+        feed_items.append({
+            'type': 'share',
+            'item': share_item.original_post, # The actual Post object
+            'timestamp': share_item.timestamp, # Timestamp of the share
+            'sharer': share_item.user # User object of the sharer
+        })
+
+    # 3. Sort the unified list by timestamp (descending)
+    feed_items.sort(key=lambda x: x['timestamp'], reverse=True)
 
     is_member = False
     is_admin = False
@@ -978,7 +1008,8 @@ def view_group(group_id):
                 is_admin = True
 
     # TODO: Create app/templates/group.html in a later step
-    return render_template('group.html', title=group.name, group=group, posts=posts, is_member=is_member, is_admin=is_admin)
+    # Pass feed_items to the template instead of posts
+    return render_template('group.html', title=group.name, group=group, feed_items=feed_items, is_member=is_member, is_admin=is_admin)
 
 @main.route('/group/<int:group_id>/join', methods=['POST'])
 @login_required
@@ -1456,24 +1487,59 @@ def share_post(post_id):
     db.session.add(share)
     db.session.commit()
 
-    # Notification for the original poster
-    if post_to_share.author != current_user:
-        notification = Notification(
+    # Notification for the original poster (if not sharing own post to own feed implicitly)
+    if post_to_share.author != current_user: # This condition implicitly handles not notifying self for a general share
+        original_poster_notification = Notification(
             recipient_id=post_to_share.author.id,
             actor_id=current_user.id,
-            type='share',
-            related_post_id=post_to_share.id
-            # We could also add share_id=share.id to the Notification model if we want a direct link to the share event
+            type='share', # This is a general share to user's feed or a group
+            related_post_id=share.post_id
+            # related_share_id=share.id # If you add this to Notification model
         )
-        db.session.add(notification)
+        db.session.add(original_poster_notification)
+        # Commit this separately or together with group share notifications later
+        # For now, let's commit it here to keep its logic contained.
         db.session.commit()
         socketio.emit('new_notification', {
             'message': f'{current_user.username} shared your post.',
             'type': 'share',
             'actor_username': current_user.username,
-            'post_id': post_to_share.id,
+            'post_id': share.post_id,
             'post_author_username': post_to_share.author.username
         }, room=str(post_to_share.author.id))
+
+    # Notifications for group members if it's a group share
+    if share.group_id:
+        group = Group.query.get(share.group_id)
+        if group:
+            notifications_for_socketio = [] # Store details for emitting socket events
+            for membership_assoc in group.memberships:
+                member_user = membership_assoc.user
+                if member_user.id != current_user.id: # Don't notify the sharer
+                    group_share_notification = Notification(
+                        recipient_id=member_user.id,
+                        actor_id=current_user.id,
+                        type='group_share', # Distinct type for group shares
+                        related_post_id=share.post_id,
+                        related_group_id=share.group_id
+                        # related_share_id=share.id # If you add this to Notification model
+                    )
+                    db.session.add(group_share_notification)
+                    notifications_for_socketio.append({
+                        'recipient_id': member_user.id,
+                        'group_name': group.name
+                    })
+            db.session.commit() # Commit all group share notifications
+
+            for notif_detail in notifications_for_socketio:
+                socketio.emit('new_notification', {
+                    'message': f"{current_user.username} shared a post to the group {notif_detail['group_name']}.",
+                    'type': 'group_share',
+                    'actor_username': current_user.username,
+                    'post_id': share.post_id,
+                    'group_id': share.group_id,
+                    'group_name': notif_detail['group_name']
+                }, room=str(notif_detail['recipient_id']))
 
     flash('Post shared successfully!', 'success')
     if group_id:
