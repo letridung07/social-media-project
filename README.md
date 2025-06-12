@@ -84,6 +84,10 @@ These recommendations are generated based on your activity on the platform and a
     *   Users can vote on polls (AJAX-based), with logic to prevent multiple votes or allow changing a vote. Poll results are displayed with vote counts and percentages.
     *   Polls can be standalone, contextually linked to groups (e.g., created from a group page or when creating a post for a group), or conceptually linked to posts.
     *   Notifications are sent for new polls to relevant users (group members or followers).
+
+#### Real-Time Poll Results
+To enhance interactivity, poll results now update in real-time. When a user votes, or when other users vote on the same poll, the vote counts and percentages dynamically refresh on the page without requiring a manual reload. This live update functionality is powered by SocketIO, providing immediate feedback and a more engaging user experience. To make these updates more noticeable, a subtle visual animation highlights the vote counts as they change. Additionally, polls now display a live count of users currently viewing them, providing a sense of real-time engagement.
+
 ### Post Sharing
 - Users can share posts from other users to their own personal feed.
 - **Sharing to Groups:** Posts can also be shared directly to groups that the user is a member of.

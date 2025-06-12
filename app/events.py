@@ -5,6 +5,8 @@ from app import socketio, db # Assuming socketio and db are initialized in app/_
 from app.models import Conversation, ChatMessage, User, Notification, MessageReadStatus, LiveStream # Import LiveStream
 from datetime import datetime, timezone
 
+poll_room_viewers = {}
+
 @socketio.on('connect')
 def handle_connect():
     if current_user.is_authenticated:
@@ -523,3 +525,70 @@ def stop_stream_recording_sfu(data):
     else:
         print(f"No stream record found for user {stream_username} to stop recording.")
         socketio.emit('recording_status_update', {'status': 'error', 'message': 'Stream record not found.'}, room=str(current_user.id))
+
+# -------------------- Poll Room Events --------------------
+
+@socketio.on('join_poll_room')
+def handle_join_poll_room(data):
+    if not isinstance(data, dict) or 'poll_id' not in data:
+        current_app.logger.warning(f"Invalid data received for join_poll_room from SID {request.sid}: {data}")
+        # emit('poll_room_error', {'message': 'Invalid poll_id provided.'}, room=request.sid) # Optional error to client
+        return
+
+    poll_id = data.get('poll_id')
+    # Basic validation for poll_id format could be added here if necessary
+    # For example, if poll_id is expected to be an integer or a specific string pattern.
+
+    room_name = f'poll_{poll_id}'
+    join_room(room_name)
+
+    viewers_set = poll_room_viewers.setdefault(room_name, set())
+    viewers_set.add(request.sid)
+    viewer_count = len(viewers_set)
+
+    socketio.emit('poll_viewer_update', {
+        'poll_id': poll_id,
+        'viewer_count': viewer_count
+    }, room=room_name)
+
+    user_info = f"SID {request.sid}"
+    if current_user.is_authenticated:
+        user_info = f"User {current_user.username} (SID {request.sid})"
+
+    current_app.logger.info(f"{user_info} joined {room_name}, viewer count: {viewer_count}")
+    # emit('joined_poll_room_ack', {'room': room_name, 'status': 'success', 'viewer_count': viewer_count}, room=request.sid) # Optional ack
+
+@socketio.on('leave_poll_room')
+def handle_leave_poll_room(data):
+    if not isinstance(data, dict) or 'poll_id' not in data:
+        current_app.logger.warning(f"Invalid data received for leave_poll_room from SID {request.sid}: {data}")
+        return
+
+    poll_id = data.get('poll_id')
+    room_name = f'poll_{poll_id}'
+
+    # It's good practice to leave the SocketIO room regardless of viewer tracking state
+    leave_room(room_name)
+
+    if room_name in poll_room_viewers:
+        viewers_set = poll_room_viewers[room_name]
+        viewers_set.discard(request.sid)
+        viewer_count = len(viewers_set)
+
+        if not viewers_set: # If set is empty
+            del poll_room_viewers[room_name]
+            current_app.logger.info(f"Room {room_name} is now empty and removed from tracking.")
+
+        socketio.emit('poll_viewer_update', {
+            'poll_id': poll_id,
+            'viewer_count': viewer_count
+        }, room=room_name)
+
+        user_info = f"SID {request.sid}"
+        if current_user.is_authenticated:
+            user_info = f"User {current_user.username} (SID {request.sid})"
+
+        current_app.logger.info(f"{user_info} left {room_name}, viewer count: {viewer_count}")
+        # emit('left_poll_room_ack', {'room': room_name, 'status': 'success', 'viewer_count': viewer_count}, room=request.sid) # Optional ack
+    else:
+        current_app.logger.warning(f"Attempted to leave {room_name} by SID {request.sid}, but room was not in viewer tracking.")
