@@ -9,6 +9,7 @@ class Config:
     POST_IMAGES_UPLOAD_FOLDER = 'app/static/post_images' # New config for post images
     VIDEO_UPLOAD_FOLDER = 'app/static/videos' # New config for post videos
     UPLOAD_FOLDER_GROUP_IMAGES = 'app/static/group_images' # For group images
+    STORY_MEDIA_UPLOAD_FOLDER = os.path.join('app', 'static', 'story_media') # For story media
 
     # Flask-Mail configuration
     MAIL_SERVER = os.environ.get('MAIL_SERVER', 'smtp.googlemail.com')
@@ -28,4 +29,5 @@ class TestingConfig(Config):
     PREFERRED_URL_SCHEME = 'http'
     VIDEO_UPLOAD_FOLDER = 'app/static/videos_test' # For test video uploads
     UPLOAD_FOLDER_GROUP_IMAGES = 'app/static/group_images_test' # For test group images
+    STORY_MEDIA_UPLOAD_FOLDER = os.path.join('app', 'static', 'story_media_test') # For test story media
     # LOGIN_DISABLED = True # Useful if you want to bypass login in some tests

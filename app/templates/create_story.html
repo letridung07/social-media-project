@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Create Story{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-8 offset-md-2">
+            <h2>Upload Your Story</h2>
+            <hr>
+            <form method="POST" enctype="multipart/form-data" novalidate>
+                {{ form.hidden_tag() }} {# CSRF token #}
+
+                <div class="form-group mb-3">
+                    {{ form.media_file.label(class="form-label") }}
+                    {{ form.media_file(class="form-control") }} {# Bootstrap 5 uses form-control for file inputs too #}
+                    {% if form.media_file.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.media_file.errors %}
+                                <span>{{ error }}</span><br>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+
+                <div class="form-group mb-3">
+                    {{ form.caption.label(class="form-label") }}
+                    {{ form.caption(class="form-control", rows="3") }}
+                    {% if form.caption.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.caption.errors %}
+                                <span>{{ error }}</span><br>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+
+                <div class="form-group mt-4">
+                    {{ form.submit(class="btn btn-primary") }}
+                    <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary ms-2">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

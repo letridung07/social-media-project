@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}Stories{% endblock %}
+
+{% block styles %}
+    {{ super() if super }}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/stories.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1>Today's Stories</h1>
+        <a href="{{ url_for('main.create_story') }}" class="btn btn-primary">Create a Story</a>
+    </div>
+    <hr>
+
+    {% if stories %}
+        <div class="stories-container"> {# Applied .stories-container #}
+            {% for story in stories %}
+            <div class="story-item"> {# Applied .story-item #}
+                <div class="story-author"> {# Applied .story-author #}
+                    <a href="{{ url_for('main.profile', username=story.author.username) }}" class="d-flex align-items-center text-decoration-none">
+                        <img src="{{ url_for('static', filename='images/' + (story.author.profile_picture_url or 'default_profile_pic.png')) }}" alt="{{ story.author.username }}'s Profile Picture"> {# img tag directly inside story-author for CSS to apply #}
+                        <span class="username ms-2">{{ story.author.username }}</span> {# Applied .username #}
+                    </a>
+                </div>
+
+                {% if story.image_filename %}
+                    <img src="{{ url_for('static', filename='story_media/' + story.image_filename) }}" class="story-media" alt="Story by {{ story.author.username }}"> {# Applied .story-media #}
+                {% elif story.video_filename %}
+                    <video controls src="{{ url_for('static', filename='story_media/' + story.video_filename) }}" class="story-media"></video> {# Applied .story-media #}
+                {% endif %}
+
+                {% if story.caption %}
+                    <p class="story-caption">{{ story.caption }}</p> {# Applied .story-caption #}
+                {% endif %}
+                <p class="story-timestamp"> {# Applied .story-timestamp #}
+                    Posted: {{ story.timestamp.strftime('%Y-%m-%d %H:%M') if story.timestamp else 'N/A' }}
+                    <br>
+                    Expires: {{ story.expires_at.strftime('%Y-%m-%d %H:%M') if story.expires_at else 'N/A' }}
+                </p>
+            </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="text-center">
+            <p>No new stories to show right now.</p>
+            <p><a href="{{ url_for('main.create_story') }}">Why not create one?</a></p>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+    {{ super() if super }}
+    <script src="{{ url_for('static', filename='js/stories.js') }}"></script>
+{% endblock %}

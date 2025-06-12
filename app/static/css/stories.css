@@ -1,0 +1,64 @@
+/* Main container for stories on stories.html */
+.stories-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center; /* Center story items if they don't take full width */
+    gap: 20px; /* Space between story items */
+    padding-top: 20px; /* Some space from the top */
+    padding-bottom: 20px; /* Some space at the bottom */
+}
+
+/* Individual story item (card or block) */
+.story-item {
+    background-color: #f8f9fa; /* Light grey background, similar to Bootstrap cards */
+    border: 1px solid #dee2e6; /* Standard Bootstrap border color */
+    border-radius: .25rem; /* Standard Bootstrap border radius */
+    padding: 15px;
+    width: 100%; /* Take full width of its column (e.g., col-md-8) */
+    max-width: 600px; /* Max width for readability, can be adjusted */
+    box-shadow: 0 0 10px rgba(0,0,0,0.05); /* Softer shadow */
+    margin-bottom: 20px; /* If not using flex gap from parent effectively */
+}
+
+/* Story author display */
+.story-author {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.story-author img { /* Profile picture */
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    margin-right: 10px;
+    object-fit: cover; /* Ensures the image covers the area without distortion */
+}
+
+.story-author .username {
+    font-weight: bold;
+    color: #333; /* Darker text for username */
+}
+
+/* Story media (images/videos) */
+.story-media {
+    width: 100%; /* Make media responsive */
+    max-height: 70vh; /* Limit height to 70% of viewport height */
+    object-fit: contain; /* Show entire image/video, letterbox if necessary */
+    margin-bottom: 10px;
+    border-radius: .25rem; /* Match card's border radius */
+    background-color: #e9ecef; /* Placeholder background for media area */
+}
+
+/* Story caption */
+.story-caption {
+    margin-bottom: 10px; /* Space between caption and timestamp */
+    font-size: 1rem;
+    color: #212529; /* Standard text color */
+}
+
+/* Story timestamp */
+.story-timestamp {
+    font-size: 0.8em;
+    color: #6c757d; /* Muted text color */
+}

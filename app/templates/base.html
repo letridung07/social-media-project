@@ -6,6 +6,7 @@
     <title>{% block title %}My Flask App{% endblock %}</title>
     <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block styles %}{% endblock %} {# Added styles block #}
 </head>
 <body data-current-user-username="{{ current_user.username if current_user.is_authenticated else '' }}" data-current-user-id="{{ current_user.id if current_user.is_authenticated else '' }}">
     <nav class="navbar navbar-expand-lg navbar-light bg-light">
@@ -74,5 +75,7 @@
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script src="{{ url_for('static', filename='js/notifications.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/polls.js') }}"></script> {# Added polls.js #}
+    {% block scripts %}{% endblock %} {# Added scripts block #}
 </body>
 </html>
