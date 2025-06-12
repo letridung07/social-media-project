@@ -6,203 +6,340 @@ document.addEventListener('DOMContentLoaded', () => {
     const connectionStatusP = document.getElementById('connectionStatus');
     const socket = io();
 
-    let peerConnection;
+    let peerConnection; // For SFU, this will be the connection to Janus
+    const JANUS_SERVER_URL = typeof janusServerUrlGlobal !== 'undefined' ? janusServerUrlGlobal : '/janus_placeholder';
+
     const iceServers = {
         iceServers: [
             { urls: 'stun:stun.l.google.com:19302' }
         ]
     };
+    if (typeof turnConfigGlobal !== 'undefined' && turnConfigGlobal.urls && !turnConfigGlobal.urls.includes('yourturnserver.example.com')) {
+        iceServers.iceServers.push({
+            urls: turnConfigGlobal.urls,
+            username: turnConfigGlobal.username,
+            credential: turnConfigGlobal.credential
+        });
+    }
+
+    function updateConnectionStatus(message) {
+        if (connectionStatusP) {
+            connectionStatusP.textContent = `Status: ${message}`;
+        }
+        console.log(`Connection Status: ${message}`);
+    }
+
+    function initializeStreamChat() {
+        if (!streamData.conversationId) {
+            console.log("No conversation ID for stream chat.");
+            return;
+        }
+        console.log("Initializing stream chat for conversation ID:", streamData.conversationId);
+
+        const chatMessagesContainer = document.getElementById('chat-messages-container');
+        const sendMessageForm = document.getElementById('send-message-form-stream');
+        const messageInput = document.getElementById('message-input-stream');
+        const typingIndicatorContainer = document.getElementById('typing-indicator-container');
+        const noMessagesYetP = document.getElementById('no-messages-yet');
+
+
+        socket.emit('join_chat_room', { conversation_id: streamData.conversationId });
+
+        if (sendMessageForm && messageInput) {
+            sendMessageForm.addEventListener('submit', function(event) {
+                event.preventDefault();
+                const messageBody = messageInput.value.trim();
+                if (messageBody) {
+                    socket.emit('send_chat_message', {
+                        conversation_id: streamData.conversationId,
+                        body: messageBody
+                    });
+                    messageInput.value = '';
+                    socket.emit('typing_stopped', { conversation_id: streamData.conversationId });
+                }
+            });
+
+            let typingTimeout;
+            messageInput.addEventListener('input', () => {
+                clearTimeout(typingTimeout);
+                socket.emit('typing_started', { conversation_id: streamData.conversationId });
+                typingTimeout = setTimeout(() => {
+                    socket.emit('typing_stopped', { conversation_id: streamData.conversationId });
+                }, 2000);
+            });
+        }
+
+        socket.on('new_chat_message', function(data) {
+            if (data.conversation_id.toString() === streamData.conversationId.toString()) {
+                if (noMessagesYetP) {
+                    noMessagesYetP.style.display = 'none';
+                }
+                appendMessageToChat(data, chatMessagesContainer);
+            }
+        });
+
+        socket.on('user_typing', function(data) {
+            if (data.conversation_id.toString() === streamData.conversationId.toString() && data.user_id.toString() !== streamData.currentUserId.toString()) {
+                let indicator = document.getElementById(`typing-${data.user_id}`);
+                if (!indicator) {
+                    indicator = document.createElement('small');
+                    indicator.id = `typing-${data.user_id}`;
+                    indicator.classList.add('text-muted', 'd-block');
+                    indicator.textContent = `${data.username} is typing...`;
+                    typingIndicatorContainer.appendChild(indicator);
+                }
+            }
+        });
+
+        socket.on('user_stopped_typing', function(data) {
+            if (data.conversation_id.toString() === streamData.conversationId.toString()) {
+                const indicator = document.getElementById(`typing-${data.user_id}`);
+                if (indicator) {
+                    indicator.remove();
+                }
+            }
+        });
+        scrollToBottom(chatMessagesContainer); // Scroll on initial load
+    }
+
+    function appendMessageToChat(msgData, container) {
+        const messageDiv = document.createElement('div');
+        messageDiv.classList.add('chat-message', 'mb-2');
+        messageDiv.dataset.messageId = msgData.message_id || msgData.id; // Adapt to potential differences in field name
+        messageDiv.dataset.senderId = msgData.sender_id;
+        messageDiv.dataset.timestamp = msgData.timestamp;
+
+        const senderUsername = msgData.sender_username || 'User'; // Fallback if username not provided
+        const messageBodyText = msgData.body;
+        const messageTimestamp = new Date(msgData.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        if (msgData.sender_id.toString() === streamData.currentUserId.toString()) {
+            messageDiv.classList.add('text-right');
+        } else {
+            messageDiv.classList.add('text-left');
+        }
+
+        messageDiv.innerHTML = `
+            <small class="font-weight-bold">${senderUsername}</small>
+            <div class="message-body p-2 d-inline-block rounded ${msgData.sender_id.toString() === streamData.currentUserId.toString() ? 'bg-primary text-white' : 'bg-secondary text-white'}">
+                ${messageBodyText}
+            </div>
+            <small class="d-block text-muted message-timestamp" data-utc-timestamp="${msgData.timestamp}">
+                ${messageTimestamp}
+            </small>
+        `;
+        container.appendChild(messageDiv);
+        scrollToBottom(container);
+    }
+
+    function scrollToBottom(element) {
+        if (element) {
+            element.scrollTop = element.scrollHeight;
+        }
+    }
+
 
     function initializeViewerConnection() {
         if (!streamData || !streamData.streamerUsername) {
             console.error("Stream data (streamerUsername) is not available.");
-            if(connectionStatusP) connectionStatusP.textContent = 'Status: Error - Stream information missing.';
+            updateConnectionStatus('Error - Stream information missing.');
             return false;
         }
 
         if (!streamData.isLive) {
-            if(connectionStatusP) connectionStatusP.textContent = 'Status: Stream is currently offline.';
+            updateConnectionStatus('Stream is currently offline.');
             console.log(`Streamer ${streamData.streamerUsername} is not live.`);
             return false;
         }
 
-        if(connectionStatusP) connectionStatusP.textContent = 'Status: Initializing WebRTC connection...';
-        console.log("Initializing PeerConnection for viewer.");
+        updateConnectionStatus('Initializing WebRTC connection (SFU)...');
+        console.log("Initializing PeerConnection for viewer to connect to SFU.");
 
         peerConnection = new RTCPeerConnection(iceServers);
 
         peerConnection.onicecandidate = event => {
             if (event.candidate) {
-                console.log('Viewer sending ICE candidate to broadcaster:', event.candidate);
-                socket.emit('webrtc_ice_candidate', {
-                    candidate: event.candidate,
+                console.log('Viewer sending ICE candidate to SFU (via server):', event.candidate);
+                socket.emit('sfu_relay_message', {
+                    type: 'candidate',
+                    payload: event.candidate,
                     stream_username: streamData.streamerUsername,
-                    target_sid: null // Server relays to broadcaster in stream_username's room
+                    // target_sid: null, // Not needed if Janus handles candidates at stream level
+                    // recipient_username: streamData.streamerUsername // Or to SFU directly if server handles that
                 });
             }
         };
 
         peerConnection.ontrack = event => {
-            console.log('Track received from broadcaster.');
+            console.log('Track received from SFU.');
             if (remoteVideo && event.streams && event.streams[0]) {
                 if (remoteVideo.srcObject !== event.streams[0]) {
                     remoteVideo.srcObject = event.streams[0];
-                    console.log('Remote stream added to video element and attempting to play.');
-                    remoteVideo.play().catch(e => console.error("Error playing remote stream:", e));
-                    // Status update will be handled by onconnectionstatechange 'connected' or video.onplaying
+                    console.log('Remote stream from SFU added to video element and attempting to play.');
+                    remoteVideo.play().catch(e => console.error("Error playing remote SFU stream:", e));
                 }
             } else {
-                console.warn("Track event received, but no stream or video element to attach to.", event);
+                console.warn("SFU Track event received, but no stream or video element to attach to.", event);
             }
         };
 
         peerConnection.onconnectionstatechange = () => {
             if (peerConnection) {
-                console.log('Viewer Peer Connection State:', peerConnection.connectionState);
-                if(connectionStatusP) connectionStatusP.textContent = `Status: ${peerConnection.connectionState}`;
+                console.log('Viewer SFU Peer Connection State:', peerConnection.connectionState);
+                updateConnectionStatus(peerConnection.connectionState);
 
                 switch(peerConnection.connectionState) {
                     case 'connected':
-                        if(connectionStatusP) connectionStatusP.textContent = 'Status: Live!';
+                        updateConnectionStatus('Live!');
                         if (remoteVideo && remoteVideo.paused && remoteVideo.srcObject) {
-                           remoteVideo.play().catch(e => console.error("Error auto-playing remote stream post-connection:", e));
+                           remoteVideo.play().catch(e => console.error("Error auto-playing remote SFU stream post-connection:", e));
                         }
                         break;
                     case 'disconnected':
-                        if(connectionStatusP) connectionStatusP.textContent = 'Status: Disconnected. Trying to reconnect...';
-                        // Some browsers might attempt to reconnect automatically.
+                        updateConnectionStatus('Disconnected from SFU. Trying to reconnect...');
+                        // TODO: Implement SFU reconnection logic if needed
                         break;
                     case 'failed':
-                        if(connectionStatusP) connectionStatusP.textContent = 'Status: Connection failed. Stream may have ended.';
+                        updateConnectionStatus('SFU Connection failed. Stream may have ended.');
                         if(remoteVideo) remoteVideo.srcObject = null;
                         break;
                     case 'closed':
-                        if(connectionStatusP) connectionStatusP.textContent = 'Status: Stream closed.';
+                        updateConnectionStatus('SFU Stream closed.');
                         if(remoteVideo) remoteVideo.srcObject = null;
                         break;
                 }
             }
         };
 
-        console.log("PeerConnection created for viewer. Ready for SDP offer from broadcaster.");
-        if(connectionStatusP) connectionStatusP.textContent = 'Status: Ready to receive stream data...';
+        // TODO: Conceptual Janus Interaction for viewer
+        // 1. Initialize Janus library, create session, attach to VideoRoom plugin.
+        // 2. Send a "join and subscribe" request to Janus for streamData.streamerUsername's stream.
+        //    This might involve janusHandle.send({ message: { request: "join", room: <room_id_for_stream>, ptype: "subscriber", feed: <feed_id_of_streamer> }})
+        //    The room_id and feed_id would typically be managed by your application or a convention.
+        // 3. Janus will then likely send an SDP offer (JSEP) for this subscription.
+        //    This offer will come via 'sfu_message_direct' (or similar) from the server.
+
+        console.log("PeerConnection for SFU created. Waiting for offer from SFU.");
+        updateConnectionStatus('Ready to receive stream data from SFU...');
         return true;
     }
 
-    async function handleOfferAndCreateAnswer(offerSdp, fromUsername) {
+    async function handleOfferAndCreateAnswer(offerSdp, fromUsername) { // fromUsername is likely SFU/Janus via server
         if (!peerConnection) {
-            console.error("PeerConnection not initialized for viewer. Cannot handle offer.");
-            if(connectionStatusP) connectionStatusP.textContent = 'Status: Error - Connection not ready to handle offer.';
+            console.error("PeerConnection not initialized for viewer. Cannot handle SFU offer.");
+            updateConnectionStatus('Error - Connection not ready to handle SFU offer.');
             return;
         }
-        if (fromUsername !== streamData.streamerUsername) {
-            console.warn(`Offer received from unexpected user ${fromUsername}. Expected ${streamData.streamerUsername}. Ignoring.`);
-            return;
-        }
-
-        console.log('Received SDP Offer from broadcaster:', offerSdp);
-        if(connectionStatusP) connectionStatusP.textContent = 'Status: Stream data received, preparing...';
+        // For SFU, offer typically comes from Janus, not directly from another user in same way as P2P.
+        // The 'fromUsername' might be the streamer's if the server relays it that way, or a generic SFU identifier.
+        console.log('Received SDP Offer from SFU (via server from', fromUsername, '):', offerSdp);
+        updateConnectionStatus('SFU stream data received, preparing answer...');
 
         try {
             await peerConnection.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: offerSdp }));
-            console.log("Remote description (offer) set successfully.");
+            console.log("Remote description (SFU offer) set successfully.");
 
             const answer = await peerConnection.createAnswer();
-            console.log("Answer created successfully.");
+            console.log("Answer to SFU offer created successfully.");
 
             await peerConnection.setLocalDescription(answer);
-            console.log("Local description (answer) set successfully.");
-            console.log('Viewer SDP Answer:', answer.sdp);
+            console.log("Local description (SFU answer) set successfully.");
 
-            socket.emit('webrtc_answer', {
-                answer_sdp: answer.sdp,
-                stream_username: streamData.streamerUsername,
+            socket.emit('sfu_relay_message', {
+                type: 'answer', // Viewer is sending an answer
+                payload: { sdp: answer.sdp }, // The answer JSEP
+                stream_username: streamData.streamerUsername, // Context of the stream
+                // target_sid: null, // Or specific SID if known for Janus component
+                // recipient_username: streamData.streamerUsername // Or to SFU directly
             });
-            if(connectionStatusP) connectionStatusP.textContent = 'Status: Connecting to broadcaster...';
+            updateConnectionStatus('Connecting to SFU...');
 
         } catch (error) {
-            console.error('Error handling WebRTC offer or creating/setting answer:', error);
-            if(connectionStatusP) connectionStatusP.textContent = 'Status: Error processing stream offer.';
+            console.error('Error handling SFU WebRTC offer or creating/setting answer:', error);
+            updateConnectionStatus('Error processing SFU stream offer.');
         }
     }
 
-    async function handleReceivedIceCandidate(candidate, fromUsername) {
+    async function handleReceivedIceCandidate(candidate, fromUsername) { // fromUsername is likely SFU/Janus
         if (!peerConnection) {
-            console.error("PeerConnection not initialized for viewer. Cannot handle ICE candidate.");
-            return;
-        }
-        if (fromUsername !== streamData.streamerUsername) {
-            console.warn(`ICE candidate received from unexpected user ${fromUsername}. Expected ${streamData.streamerUsername}. Ignoring.`);
+            console.error("PeerConnection not initialized for viewer. Cannot handle SFU ICE candidate.");
             return;
         }
 
         try {
             await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-            console.log('Added ICE candidate from broadcaster:', candidate);
+            console.log('Added ICE candidate from SFU (via server from', fromUsername, '):', candidate);
         } catch (error) {
-            console.error('Error adding received ICE candidate (viewer):', error);
+            console.error('Error adding received SFU ICE candidate (viewer):', error);
         }
     }
 
     socket.on('connect', () => {
         console.log('Socket.IO connected for viewer.');
-        if (streamData && streamData.streamerUsername) { // streamData.isLive check is now inside initializeViewerConnection
-            const initialized = initializeViewerConnection(); // This also checks isLive
-            if (initialized) { // if isLive and PC is set up
+        if (streamData && streamData.streamerUsername) {
+            const initialized = initializeViewerConnection();
+            if (initialized) {
                 console.log(`Emitting join_stream_room for ${streamData.streamerUsername}`);
                 socket.emit('join_stream_room', { stream_username: streamData.streamerUsername });
             }
+            // Initialize chat if conversationId is present
+            if (streamData.conversationId) {
+                initializeStreamChat();
+            }
         } else {
             console.log("Streamer info missing on connect.");
-            if(connectionStatusP) connectionStatusP.textContent = 'Status: Stream information missing.';
+            updateConnectionStatus('Stream information missing.');
         }
     });
 
     socket.on('joined_stream_room_ack', (data) => {
         console.log('Viewer joined stream room:', data.room);
-        if(connectionStatusP && peerConnection && peerConnection.connectionState !== 'connected') {
-             connectionStatusP.textContent = 'Status: Joined stream room. Waiting for broadcast...';
+        if (peerConnection && peerConnection.connectionState !== 'connected') {
+             updateConnectionStatus('Joined stream room. Waiting for SFU broadcast...');
         }
     });
 
-    socket.on('webrtc_offer_received', async (data) => {
-        console.log("Socket event: webrtc_offer_received", data);
-        if (data.from_username === streamData.streamerUsername) {
-            if (!peerConnection) {
-                console.log("PeerConnection not ready, but received offer. Initializing now.");
-                const initialized = initializeViewerConnection();
-                 if (!initialized || !peerConnection) {
-                    console.error("Failed to initialize PeerConnection on offer receipt.");
-                    return;
-                }
-            }
-            await handleOfferAndCreateAnswer(data.offer_sdp, data.from_username);
-        } else {
-            console.warn("Offer received from non-streamer user:", data.from_username);
-        }
-    });
-
-    socket.on('webrtc_ice_candidate_received', async (data) => {
-        console.log("Socket event: webrtc_ice_candidate_received", data);
-        if (data.from_username === streamData.streamerUsername) {
-             if (!peerConnection) {
-                console.warn("Received ICE candidate but PeerConnection is not initialized.");
+    // Listen for SFU messages (offer, candidate) relayed by the server
+    socket.on('sfu_message_direct', async (data) => { // Or 'sfu_message_user' or 'sfu_message_room' depending on server logic
+        console.log("Socket event: sfu_message_direct received", data);
+        if (data.stream_username === streamData.streamerUsername) {
+            if (!peerConnection && data.type !== 'offer') { // Allow offer to initialize PC
+                console.warn("Received SFU message but PeerConnection is not initialized, and it's not an offer.");
                 return;
             }
-            await handleReceivedIceCandidate(data.candidate, data.from_username);
+
+            if (data.type === 'offer') {
+                if (!peerConnection) {
+                    console.log("PeerConnection not ready, but received SFU offer. Initializing now.");
+                    const initialized = initializeViewerConnection();
+                     if (!initialized || !peerConnection) {
+                        console.error("Failed to initialize PeerConnection on SFU offer receipt.");
+                        return;
+                    }
+                }
+                await handleOfferAndCreateAnswer(data.payload.sdp || data.payload, data.from_username); // data.payload might be the jsep itself
+            } else if (data.type === 'candidate') {
+                await handleReceivedIceCandidate(data.payload, data.from_username);
+            } else {
+                console.log("Received other SFU message type:", data.type, data.payload);
+                // Handle other Janus-specific messages if necessary
+            }
         } else {
-             console.warn("ICE Candidate received from non-streamer user:", data.from_username);
+            console.warn("SFU message received for a different stream or from an unexpected source:", data);
         }
     });
+
+    // socket.on('webrtc_offer_received', ...); // Old P2P: Remove or adapt
+    // socket.on('webrtc_ice_candidate_received', ...); // Old P2P: Remove or adapt
 
     socket.on('stream_error', (data) => {
         console.error("Stream Error from server:", data.message);
-        if(connectionStatusP) connectionStatusP.textContent = "Status: Error - " + data.message;
+        updateConnectionStatus("Error - " + data.message);
     });
 
     socket.on('stream_really_ended', (data) => {
         console.log("Stream has officially ended by broadcaster.", data.message);
-        if(connectionStatusP) connectionStatusP.textContent = 'Status: Stream has ended by broadcaster.';
+        updateConnectionStatus('Stream has ended by broadcaster.');
         if (peerConnection) {
             peerConnection.close();
             peerConnection = null;
@@ -212,21 +349,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     socket.on('disconnect', () => {
         console.log('Socket.IO disconnected for viewer.');
-        // Avoid aggressive "Disconnected" message if stream already ended gracefully
         if (connectionStatusP && !connectionStatusP.textContent.includes("ended") && !connectionStatusP.textContent.includes("offline")) {
-            connectionStatusP.textContent = 'Status: Disconnected from signaling server.';
+            updateConnectionStatus('Disconnected from signaling server.');
         }
     });
 
     // Initial status based on streamData passed from template
     if (typeof streamData === 'undefined') {
         console.error("streamData is not defined. Check template.");
-        if(connectionStatusP) connectionStatusP.textContent = 'Status: Error - Stream information unavailable.';
+        updateConnectionStatus('Error - Stream information unavailable.');
     } else if (!streamData.isLive) {
-         if(connectionStatusP) connectionStatusP.textContent = 'Status: Stream is currently offline.';
+         updateConnectionStatus('Stream is currently offline.');
     } else {
-        // If streamData.isLive is true, socket 'connect' handler will call initializeViewerConnection
-        // and then emit join_stream_room. Initial status set there.
-        if(connectionStatusP) connectionStatusP.textContent = 'Status: Connecting to signaling server...';
+        updateConnectionStatus('Connecting to signaling server...');
     }
 });

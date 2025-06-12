@@ -20,6 +20,12 @@ class Config:
     MAIL_PASSWORD = os.environ.get('MAIL_PASSWORD')
     MAIL_DEFAULT_SENDER = os.environ.get('MAIL_DEFAULT_SENDER', MAIL_USERNAME or 'noreply@example.com')
 
+    # Janus and TURN server configurations
+    JANUS_SERVER_URL = os.environ.get('JANUS_SERVER_URL') or 'http://localhost:8088/janus' # Example placeholder
+    TURN_SERVER_URL = os.environ.get('TURN_SERVER_URL') or 'turn:yourturnserver.example.com:3478' # Example placeholder
+    TURN_SERVER_USERNAME = os.environ.get('TURN_SERVER_USERNAME') or 'turn_username' # Example placeholder
+    TURN_SERVER_CREDENTIAL = os.environ.get('TURN_SERVER_CREDENTIAL') or 'turn_password' # Example placeholder
+
 class TestingConfig(Config):
     TESTING = True
     SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:' # Use in-memory SQLite for tests

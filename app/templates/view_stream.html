@@ -18,29 +18,61 @@
         <p id="streamDescription" class="text-muted">{{ stream.description }}</p>
         {% endif %}
 
+        {% if stream and stream.enable_recording %}
+           <p class="text-info"><small><strong><i class="fas fa-circle text-danger"></i> Recording may be active</strong></small></p>
+        {% endif %}
+
         <div class="video-container mb-3" style="background-color: #000; min-height: 300px; display: flex; align-items: center; justify-content: center; position: relative;">
             <video id="remoteVideo" width="100%" height="auto" playsinline autoplay controls style="display: block; max-height: 520px;"></video>
             <p id="remoteVideoPlaceholder" class="text-white" style="position: absolute; display: block;">Waiting for stream to load...</p>
         </div>
         <p id="connectionStatus">Status: Connecting to stream...</p>
 
-        <!-- Basic chat placeholder -->
         <div class="mt-4">
-            <h4>Live Chat (Placeholder)</h4>
-            <div id="chat-messages" class="border rounded p-3 mb-2" style="height: 200px; overflow-y: auto;">
-                <p><small class="text-muted">Chat features are not yet implemented for streams.</small></p>
-            </div>
-            {% if current_user.is_authenticated %}
-            <div class="input-group">
-                <input type="text" id="chat-input" class="form-control" placeholder="Say something..." disabled>
-                <div class="input-group-append">
-                    <button class="btn btn-primary" disabled>Send</button>
-                </div>
-            </div>
-            {% else %}
-            <p><small><a href="{{ url_for('main.login', next=request.url) }}">Log in</a> to chat.</small></p>
-            {% endif %}
-        </div>
+           <h4>Live Stream Chat</h4>
+           {% if stream_chat_conversation %}
+               <div id="chat-messages-container" class="mb-3 p-3 border rounded bg-light" style="height: 300px; overflow-y: auto;">
+                   {% if stream_chat_messages %}
+                       {% for msg in stream_chat_messages %}
+                           <div class="chat-message mb-2 {% if msg.sender_id == current_user.id %}text-right{% else %}text-left{% endif %}"
+                                data-message-id="{{ msg.id }}"
+                                data-sender-id="{{ msg.sender_id }}"
+                                data-timestamp="{{ msg.timestamp.isoformat() ~ 'Z' }}">
+                               <small class="font-weight-bold">{{ msg.sender_username }}</small>
+                               <div class="message-body p-2 d-inline-block rounded {% if msg.sender_id == current_user.id %}bg-primary text-white{% else %}bg-secondary text-white{% endif %}">
+                                   {{ msg.body }}
+                               </div>
+                               <small class="d-block text-muted message-timestamp" data-utc-timestamp="{{ msg.timestamp.isoformat() ~ 'Z' }}">
+                                   {{ msg.timestamp.strftime('%H:%M') }}
+                               </small>
+                           </div>
+                       {% endfor %}
+                   {% else %}
+                       <p id="no-messages-yet" class="text-muted">No messages in this chat yet. Be the first to say something!</p>
+                   {% endif %}
+               </div>
+
+               <div id="typing-indicator-container" class="mb-2" style="min-height: 20px;">
+                   <!-- Typing indicators will appear here -->
+               </div>
+
+               {% if current_user.is_authenticated %}
+                   <form id="send-message-form-stream"> {# Ensure unique ID if chat_page.js is also loaded on other pages #}
+                       <input type="hidden" id="conversation-id-stream" value="{{ stream_chat_conversation.id }}">
+                       <div class="input-group mb-3">
+                           <input type="text" id="message-input-stream" class="form-control" placeholder="Type your message...">
+                           <div class="input-group-append">
+                               <button class="btn btn-primary" type="submit">Send</button>
+                           </div>
+                       </div>
+                   </form>
+               {% else %}
+                   <p><a href="{{ url_for('main.login', next=request.url) }}">Log in</a> to participate in the chat.</p>
+               {% endif %}
+           {% else %}
+               <p class="text-muted">Chat is not available for this stream.</p>
+           {% endif %}
+       </div>
 
     {% else %} {# Handles case where stream object might not exist or is_live is false #}
         <h2>Stream Offline</h2>
@@ -52,19 +84,32 @@
 
 {% block scripts %}
 {{ super() }}
+<script>
+    // streamData is already defined here (further down)
+    const turnConfigGlobal = { // Use a slightly different name to avoid conflict if manage_stream.js was ever on same page by error
+        urls: "{{ config.TURN_SERVER_URL }}",
+        username: "{{ config.TURN_SERVER_USERNAME }}",
+        credential: "{{ config.TURN_SERVER_CREDENTIAL }}"
+    };
+    const janusServerUrlGlobal = "{{ config.JANUS_SERVER_URL }}"; // Pass Janus URL too
+</script>
 <script src="{{ url_for('static', filename='js/view_stream.js') }}"></script>
 <script>
     // Pass stream data to JavaScript if stream object is available
     {% if stream and user %}
     const streamData = {
         streamerUsername: "{{ user.username }}",
-        isLive: {{ stream.is_live | lower if stream.is_live is not none else 'false' }}
+        isLive: {{ stream.is_live | lower if stream.is_live is not none else 'false' }},
+        conversationId: "{{ stream_chat_conversation.id if stream_chat_conversation else '' }}",
+        currentUserId: "{{ current_user.id if current_user.is_authenticated else '' }}"
         // streamKey: "{{ stream.stream_key if stream and stream.stream_key else '' }}" // Stream key might not be needed by viewer client directly
     };
     {% else %}
     const streamData = {
         streamerUsername: "{{ user.username if user else 'Unknown' }}",
-        isLive: false
+        isLive: false,
+        conversationId: "",
+        currentUserId: "{{ current_user.id if current_user.is_authenticated else '' }}"
     };
     {% endif %}
 

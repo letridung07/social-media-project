@@ -1807,10 +1807,24 @@ def manage_stream():
         stream.title = form.title.data
         stream.description = form.description.data
         stream.is_live = form.go_live.data
+        stream.enable_recording = form.enable_recording.data # Save enable_recording status
 
         if not stream.stream_key:
             stream.stream_key = secrets.token_hex(16)
             # flash("Your unique stream key has been generated. Keep it secret!", "info") # Flash moved below
+
+        if stream.is_live and not stream.stream_conversation_id:
+            # Create a new conversation for the stream chat
+            new_conversation = Conversation()
+            db.session.add(new_conversation)
+            db.session.flush() # To get the new_conversation.id
+
+            # Add the broadcaster as a participant
+            new_conversation.participants.append(current_user)
+
+            stream.stream_conversation_id = new_conversation.id
+            # db.session.add(stream) # stream is already in session and will be committed
+            flash(f'Chat room created for your stream.', 'info')
 
         try:
             db.session.commit() # Commit first to save stream details
@@ -1855,10 +1869,34 @@ def view_stream(username):
         flash(f"{username} is not currently live.", "info")
         return redirect(url_for('main.profile', username=username))
 
+    stream_conversation = None
+    chat_messages = []
+    augmented_chat_messages = [] # For consistency with existing chat display
+
+    if active_stream.stream_conversation_id:
+        stream_conversation = Conversation.query.get(active_stream.stream_conversation_id)
+        if stream_conversation:
+            # Fetch messages, similar to view_conversation route
+            raw_chat_messages = stream_conversation.messages.order_by(ChatMessage.timestamp.asc()).all()
+
+            # Let's include basic augmentation for sender username
+            for msg in raw_chat_messages:
+                augmented_chat_messages.append({
+                    'id': msg.id,
+                    'sender_id': msg.sender_id,
+                    'sender_username': msg.sender.username, # Assumes sender relationship loads User
+                    'body': msg.body,
+                    'timestamp': msg.timestamp,
+                    # Add other fields like read_at if your stream chat will show detailed read receipts
+                })
+            chat_messages = augmented_chat_messages # Use the augmented list
+
     return render_template('view_stream.html',
-                           title=f"Live Stream by {user.username}",
+                           title=f"Live Stream by {user.username} - {active_stream.title}", # Updated title
                            stream=active_stream,
-                           user=user)
+                           user=user,
+                           stream_chat_conversation=stream_conversation, # Pass the conversation object
+                           stream_chat_messages=chat_messages) # Pass the messages
 
 # Placeholder for a potential view_post_page route if it's different from index or profile views
 # This is just for the URL generation in recommendations, actual route can be defined elsewhere or may already exist
