@@ -58,41 +58,95 @@ def index():
     return render_template('index.html', title='Home', posts=posts, comment_form=comment_form, pagination=posts_pagination)
 
 
+from app.models import post_hashtags # For hashtag popularity sort
+
 @main.route('/search')
 def search():
-    query = request.args.get('q', '').strip()
-    users_found = []
-    posts_found = []
-    groups_found = []
+    query_term = request.args.get('q', '').strip()
+    category = request.args.get('category', 'all').lower()
+    sort_by = request.args.get('sort_by', 'relevance').lower()
 
-    if query:
-        # Search Users by username or email (case-insensitive)
-        users_found = User.query.filter(
-            or_(
-                User.username.ilike(f'%{query}%'),
-                User.email.ilike(f'%{query}%')
-            )
-        ).all()
+    users_found, posts_found, groups_found, hashtags_found = [], [], [], []
 
-        # Search Posts by body content (case-insensitive)
-        posts_found = Post.query.filter(
-            Post.body.ilike(f'%{query}%')
-        ).order_by(Post.timestamp.desc()).all()
+    title_parts = []
+    if query_term:
+        title_parts.append(f'Results for "{query_term}"')
+    if category != 'all':
+        title_parts.append(f'in {category.capitalize()}')
+    if sort_by != 'relevance':
+        title_parts.append(f'sorted by {sort_by.capitalize()}')
 
-        # Search Groups by name or description (case-insensitive)
-        groups_found = Group.query.filter(
-            or_(
-                Group.name.ilike(f'%{query}%'),
-                Group.description.ilike(f'%{query}%')
-            )
-        ).all()
+    title = " ".join(title_parts) if title_parts else 'Search'
+    if not query_term: # If no query, show empty results, but keep filters in title
+        title = f'Search {category.capitalize() if category != "all" else "All"} by {sort_by.capitalize() if sort_by != "relevance" else "Relevance"}'
+
+
+    if query_term:
+        # Users Search
+        if category == 'all' or category == 'users':
+            user_q = User.query.filter(or_(User.username.ilike(f'%{query_term}%'), User.email.ilike(f'%{query_term}%')))
+            if sort_by == 'popularity':
+                # Sorting by follower count. Join with followers table, group by user, order by count.
+                user_q = user_q.outerjoin(followers, User.id == followers.c.followed_id)\
+                               .group_by(User.id)\
+                               .order_by(func.count(followers.c.follower_id).desc(), User.username.asc())
+            elif sort_by == 'date': # User model does not have a created_at, fallback to ID or username
+                user_q = user_q.order_by(User.id.desc()) # Arbitrary date-like sort
+            else: # relevance (default)
+                user_q = user_q.order_by(User.username.asc()) # Default relevance sort
+            users_found = user_q.all()
+
+        # Posts Search
+        if category == 'all' or category == 'posts':
+            post_q = Post.query.filter(Post.body.ilike(f'%{query_term}%'))
+            if sort_by == 'date':
+                post_q = post_q.order_by(Post.timestamp.desc())
+            elif sort_by == 'popularity':
+                # Sort by sum of likes and comments. Coalesce ensures NULL counts are treated as 0.
+                post_q = post_q.outerjoin(Post.likes).outerjoin(Post.comments)\
+                               .group_by(Post.id)\
+                               .order_by((func.coalesce(func.count(Like.id), 0) + func.coalesce(func.count(Comment.id), 0)).desc(), Post.timestamp.desc())
+            else: # relevance
+                post_q = post_q.order_by(Post.timestamp.desc()) # Default relevance for posts by date
+            posts_found = post_q.all()
+
+        # Groups Search
+        if category == 'all' or category == 'groups':
+            group_q = Group.query.filter(or_(Group.name.ilike(f'%{query_term}%'), Group.description.ilike(f'%{query_term}%')))
+            if sort_by == 'date':
+                group_q = group_q.order_by(Group.created_at.desc())
+            elif sort_by == 'popularity':
+                # Sort by member count. Join with GroupMembership, group by group, order by count.
+                group_q = group_q.outerjoin(GroupMembership)\
+                                 .group_by(Group.id)\
+                                 .order_by(func.count(GroupMembership.id).desc(), Group.name.asc())
+            else: # relevance
+                group_q = group_q.order_by(Group.name.asc()) # Default relevance for groups by name
+            groups_found = group_q.all()
+
+        # Hashtags Search
+        if category == 'all' or category == 'hashtags':
+            hashtag_q = Hashtag.query.filter(Hashtag.tag_text.ilike(f'%{query_term}%'))
+            if sort_by == 'popularity':
+                 # Sort by number of posts associated. Join with post_hashtags table.
+                hashtag_q = hashtag_q.outerjoin(post_hashtags, Hashtag.id == post_hashtags.c.hashtag_id)\
+                                     .group_by(Hashtag.id)\
+                                     .order_by(func.count(post_hashtags.c.post_id).desc(), Hashtag.tag_text.asc())
+            elif sort_by == 'date': # Hashtags don't have a creation date, sort by text
+                hashtag_q = hashtag_q.order_by(Hashtag.tag_text.asc())
+            else: # relevance
+                hashtag_q = hashtag_q.order_by(Hashtag.tag_text.asc()) # Default relevance for hashtags by text
+            hashtags_found = hashtag_q.all()
 
     return render_template('search_results.html',
-                           title=f'Search Results for "{query}"' if query else 'Search',
-                           query=query,
+                           title=title,
+                           query=query_term,
                            users=users_found,
                            posts=posts_found,
-                           groups=groups_found)
+                           groups=groups_found,
+                           hashtags=hashtags_found,
+                           selected_category=category,
+                           selected_sort_by=sort_by)
 
 
 @main.route('/hashtag/<string:tag_text>')
@@ -203,7 +257,7 @@ def profile(username):
 @main.route('/edit_profile', methods=['GET', 'POST'])
 @login_required
 def edit_profile():
-    form = EditProfileForm()
+    form = EditProfileForm(obj=current_user) # Pre-populate form with current_user data for GET
     if form.validate_on_submit():
         if form.profile_picture.data:
             old_picture_url = current_user.profile_picture_url # Store old one
@@ -220,15 +274,18 @@ def edit_profile():
                     current_app.logger.error(f"Error deleting old profile picture {old_picture_url}: {e}")
                     # flash('Error removing old profile picture.', 'warning') # Optional feedback
             current_user.profile_picture_url = picture_file
+
         current_user.bio = form.bio.data
+        current_user.theme_preference = form.theme.data # Save theme preference
+
         db.session.commit()
         cache.delete_memoized(profile, current_user.username) # Invalidate cache
         flash('Your profile has been updated!', 'success')
         return redirect(url_for('main.profile', username=current_user.username))
     elif request.method == 'GET':
-        form.bio.data = current_user.bio
-        # The profile picture field is not pre-filled for security and usability reasons.
-        # Users must re-select a file if they want to change it.
+        form.bio.data = current_user.bio # Already handled by obj=current_user for WTForms-Alchemy
+        form.theme.data = current_user.theme_preference or 'default' # Populate theme for GET
+        # The profile picture field is not pre-filled.
     return render_template('edit_profile.html', title='Edit Profile', form=form)
 
 @main.route('/create_post', methods=['GET', 'POST'])
@@ -628,15 +685,41 @@ def view_conversation(conversation_id):
         flash('You are not part of this conversation.', 'danger')
         return redirect(url_for('main.list_conversations'))
 
-    messages = conversation.messages.all()
+    messages_query = conversation.messages.order_by(ChatMessage.timestamp.asc()).all() # Ensure order
+
+    # Get read statuses for the current user for messages in this conversation
+    message_ids_in_conversation = [msg.id for msg in messages_query]
+
+    current_user_read_statuses = {}
+    if message_ids_in_conversation: # Only query if there are messages
+        statuses = MessageReadStatus.query.filter(
+            MessageReadStatus.user_id == current_user.id,
+            MessageReadStatus.message_id.in_(message_ids_in_conversation)
+        ).all()
+        current_user_read_statuses = {status.message_id: status.read_at for status in statuses}
+
+    # Augment messages with read status for the current user and the general read_at
+    augmented_messages = []
+    for msg in messages_query:
+        augmented_messages.append({
+            'id': msg.id,
+            'sender_id': msg.sender_id,
+            'sender_username': msg.sender.username, # Assuming sender relationship is loaded or accessible
+            'body': msg.body,
+            'timestamp': msg.timestamp,
+            'read_at': msg.read_at, # This is the general read_at (first read by anyone/recipient in 1-1)
+            'is_read_by_current_user': msg.id in current_user_read_statuses,
+            'read_at_by_current_user': current_user_read_statuses.get(msg.id) # Specific time current user read it
+        })
 
     other_participants = [p for p in conversation.participants if p.id != current_user.id]
 
     return render_template('chat/view_conversation.html',
                            title=f'Chat with {", ".join(p.username for p in other_participants) if other_participants else "Saved Messages"}',
                            conversation=conversation,
-                           messages=messages,
-                           other_participants=other_participants)
+                           messages=augmented_messages, # Pass augmented messages
+                           other_participants=other_participants,
+                           current_user_id=current_user.id) # Pass current_user_id for template logic
 
 @main.route('/chat/start/<int:user_id>', methods=['POST', 'GET'])
 @login_required
@@ -1545,3 +1628,122 @@ def share_post(post_id):
     if group_id:
         return redirect(url_for('main.view_group', group_id=group_id))
     return redirect(url_for('main.index')) # Or redirect to current_user's profile/feed
+
+
+# -------------------- OAuth and External Sharing Routes --------------------
+
+@main.route('/authorize/twitter')
+@login_required
+def twitter_authorize():
+    # Placeholder for actual OAuth flow
+    flash("Imagine being redirected to Twitter for authorization...", "info")
+    # In a real app, this would involve redirecting to Twitter's auth URL
+    # and handling the OAuth dance with a library like Flask-Dance or requests-oauthlib
+    return redirect(url_for('main.edit_profile'))
+
+@main.route('/callback/twitter')
+@login_required
+def twitter_callback():
+    # Placeholder for handling callback from Twitter
+    # In a real app, you'd verify the response and get the access token
+    current_user.twitter_access_token = "fake_twitter_token_for_user_" + str(current_user.id)
+    db.session.commit()
+    flash("Successfully connected your Twitter account (simulated).", "success")
+    return redirect(url_for('main.edit_profile'))
+
+@main.route('/authorize/facebook')
+@login_required
+def facebook_authorize():
+    # Placeholder for actual OAuth flow
+    flash("Imagine being redirected to Facebook for authorization...", "info")
+    return redirect(url_for('main.edit_profile'))
+
+@main.route('/callback/facebook')
+@login_required
+def facebook_callback():
+    # Placeholder for handling callback from Facebook
+    current_user.facebook_access_token = "fake_facebook_token_for_user_" + str(current_user.id)
+    db.session.commit()
+    flash("Successfully connected your Facebook account (simulated).", "success")
+    return redirect(url_for('main.edit_profile'))
+
+@main.route('/share/twitter/<int:post_id>', methods=['POST']) # Should be POST
+@login_required
+def share_to_twitter(post_id):
+    post = Post.query.get_or_404(post_id)
+    if not current_user.twitter_access_token:
+        flash("Please connect your Twitter account first via your Edit Profile page.", "warning")
+        return redirect(request.referrer or url_for('main.index'))
+
+    # Placeholder for actual sharing logic using the token
+    flash(f"Simulated sharing post '{post.body[:30]}...' to Twitter!", "success")
+    # Example: client.create_tweet(text=post.body, user_auth=True) with tweepy
+    return redirect(request.referrer or url_for('main.index'))
+
+@main.route('/share/facebook/<int:post_id>', methods=['POST']) # Should be POST
+@login_required
+def share_to_facebook(post_id):
+    post = Post.query.get_or_404(post_id)
+    if not current_user.facebook_access_token:
+        flash("Please connect your Facebook account first via your Edit Profile page.", "warning")
+        return redirect(request.referrer or url_for('main.index'))
+
+    # Placeholder for actual sharing logic
+    flash(f"Simulated sharing post '{post.body[:30]}...' to Facebook!", "success")
+    # Example: graph.put_object("me", "feed", message=post.body) with facebook-sdk
+    return redirect(request.referrer or url_for('main.index'))
+
+
+# -------------------- Live Stream Routes --------------------
+import secrets
+from app.models import LiveStream # Already have User, Post
+from app.forms import StreamSetupForm # Already have other forms
+
+@main.route('/stream/manage', methods=['GET', 'POST'])
+@login_required
+def manage_stream():
+    stream = LiveStream.query.filter_by(user_id=current_user.id).first()
+    if not stream:
+        # Initialize a new stream object if one doesn't exist, but don't save yet
+        stream = LiveStream(user_id=current_user.id)
+
+    form = StreamSetupForm(obj=stream) # Populate form with stream data if it exists
+
+    if form.validate_on_submit():
+        if not stream.id: # If it's a new stream object not yet in session
+            db.session.add(stream)
+
+        stream.title = form.title.data
+        stream.description = form.description.data
+        stream.is_live = form.go_live.data
+
+        if not stream.stream_key:
+            stream.stream_key = secrets.token_hex(16)
+            flash("Your unique stream key has been generated. Keep it secret!", "info")
+
+        try:
+            db.session.commit()
+            flash("Stream settings updated.", "success")
+        except Exception as e:
+            db.session.rollback()
+            flash(f"Error updating stream settings: {e}", "danger")
+            current_app.logger.error(f"Error in manage_stream POST: {e}")
+
+        return redirect(url_for('main.manage_stream'))
+
+    # For GET request, or if form validation fails
+    return render_template('manage_stream.html', title='Manage Your Live Stream', form=form, stream=stream)
+
+@main.route('/stream/<username>')
+def view_stream(username):
+    user = User.query.filter_by(username=username).first_or_404()
+    active_stream = LiveStream.query.filter_by(user_id=user.id, is_live=True).first()
+
+    if not active_stream:
+        flash(f"{username} is not currently live.", "info")
+        return redirect(url_for('main.profile', username=username))
+
+    return render_template('view_stream.html',
+                           title=f"Live Stream by {user.username}",
+                           stream=active_stream,
+                           user=user)

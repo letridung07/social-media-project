@@ -146,6 +146,22 @@
                 </form>
             {% endif %}
 
+            {# External Share Buttons #}
+            {% if current_user.is_authenticated %}
+                <form action="{{ url_for('main.share_to_twitter', post_id=post.id) }}" method="post" class="d-inline ml-2">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token else '' }}"/>
+                    <button type="submit" class="btn btn-info btn-sm">
+                        <i class="fab fa-twitter"></i> Twitter
+                    </button>
+                </form>
+                <form action="{{ url_for('main.share_to_facebook', post_id=post.id) }}" method="post" class="d-inline ml-1">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token else '' }}"/>
+                    <button type="submit" class="btn btn-primary btn-sm">
+                        <i class="fab fa-facebook"></i> Facebook
+                    </button>
+                </form>
+            {% endif %}
+
             {# Edit and Delete buttons for post author #}
             {% if current_user.is_authenticated and current_user == post.author %}
                 <a href="{{ url_for('main.edit_post', post_id=post.id) }}" class="btn btn-sm btn-outline-secondary ml-3">Edit</a>

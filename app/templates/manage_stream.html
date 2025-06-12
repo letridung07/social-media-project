@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% import "bootstrap/wtf.html" as wtf %} {# For rendering Flask-WTF form easily #}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h2>{{ title }}</h2>
+    <hr>
+
+    <div class="row">
+        <div class="col-md-8">
+            <form method="POST" action="{{ url_for('main.manage_stream') }}" novalidate>
+                {{ form.hidden_tag() }} {# CSRF token #}
+
+                <div class="form-group">
+                    {{ form.title.label(class="form-control-label") }}
+                    {% if form.title.errors %}
+                        {{ form.title(class="form-control form-control-lg is-invalid") }}
+                        <div class="invalid-feedback">
+                            {% for error in form.title.errors %}<span>{{ error }}</span>{% endfor %}
+                        </div>
+                    {% else %}
+                        {{ form.title(class="form-control form-control-lg") }}
+                    {% endif %}
+                </div>
+
+                <div class="form-group">
+                    {{ form.description.label(class="form-control-label") }}
+                    {% if form.description.errors %}
+                        {{ form.description(class="form-control form-control-lg is-invalid", rows=3) }}
+                        <div class="invalid-feedback">
+                            {% for error in form.description.errors %}<span>{{ error }}</span>{% endfor %}
+                        </div>
+                    {% else %}
+                        {{ form.description(class="form-control form-control-lg", rows=3) }}
+                    {% endif %}
+                </div>
+
+                <div class="form-group form-check">
+                    {{ form.go_live(class="form-check-input") }}
+                    {{ form.go_live.label(class="form-check-label") }}
+                </div>
+
+                <div class="form-group">
+                    {{ form.submit(class="btn btn-primary") }}
+                </div>
+            </form>
+        </div>
+        <div class="col-md-4">
+            <h4>Stream Information</h4>
+            {% if stream and stream.stream_key %}
+                <div class="alert alert-info">
+                    <p><strong>Stream Key:</strong> <code>{{ stream.stream_key }}</code></p>
+                    <p><small>Use this key in your broadcasting software (e.g., OBS, Streamlabs) to send your stream to our platform.</small></p>
+                    <p class="text-danger"><small><strong>Important:</strong> Do not share this key publicly!</small></p>
+                </div>
+            {% else %}
+                <p class="text-muted">Your stream key will be generated when you first update your settings or go live.</p>
+            {% endif %}
+
+            {% if stream %}
+                <p><strong>Current Status:</strong>
+                    {% if stream.is_live %}
+                        <span class="badge badge-success">LIVE</span>
+                    {% else %}
+                        <span class="badge badge-secondary">Offline</span>
+                    {% endif %}
+                </p>
+                {% if stream.is_live %}
+                     <a href="{{ url_for('main.view_stream', username=current_user.username) }}" class="btn btn-success btn-sm">View Your Live Stream</a>
+                {% endif %}
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

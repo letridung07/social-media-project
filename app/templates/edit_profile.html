@@ -34,10 +34,66 @@
                         </div>
                     {% endif %}
                 </div>
+                <div class="form-group">
+                    {{ form.theme.label(class="form-control-label") }}
+                    {{ form.theme(class="form-control custom-select") }} {# Added custom-select for Bootstrap styling #}
+                    {% if form.theme.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.theme.errors %}
+                                <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
             </fieldset>
             <div class="form-group">
                 {{ form.submit(class="btn btn-primary") }}
             </div>
         </form>
+
+        <hr class="my-4">
+
+        <div class="connected-accounts-section mt-4">
+            <legend class="border-bottom mb-4">Connected Accounts</legend>
+
+            {# Twitter Connection #}
+            <div class="mb-3">
+                <h5>Twitter</h5>
+                {% if current_user.twitter_access_token %}
+                    <p class="text-success">
+                        <i class="fab fa-twitter"></i> Connected
+                        <small class="d-block text-muted">Token: {{ current_user.twitter_access_token[:20] }}...</small> {# Displaying part of token for demo #}
+                    </p>
+                    {# Placeholder for disconnect - In a real app, this would be a POST request to a disconnect route #}
+                    <a href="{{ url_for('main.twitter_callback') }}?disconnect=true" class="btn btn-sm btn-outline-danger disabled" aria-disabled="true" onclick="alert('Disconnect functionality is a placeholder.'); return false;">
+                        Disconnect Twitter (Placeholder)
+                    </a>
+                {% else %}
+                    <p class="text-muted"><i class="fab fa-twitter"></i> Not Connected</p>
+                    <a href="{{ url_for('main.twitter_authorize') }}" class="btn btn-sm btn-info">
+                        <i class="fab fa-twitter"></i> Connect Twitter
+                    </a>
+                {% endif %}
+            </div>
+
+            {# Facebook Connection #}
+            <div class="mb-3">
+                <h5>Facebook</h5>
+                {% if current_user.facebook_access_token %}
+                    <p class="text-success">
+                        <i class="fab fa-facebook"></i> Connected
+                        <small class="d-block text-muted">Token: {{ current_user.facebook_access_token[:20] }}...</small>
+                    </p>
+                    <a href="{{ url_for('main.facebook_callback') }}?disconnect=true" class="btn btn-sm btn-outline-danger disabled" aria-disabled="true" onclick="alert('Disconnect functionality is a placeholder.'); return false;">
+                        Disconnect Facebook (Placeholder)
+                    </a>
+                {% else %}
+                    <p class="text-muted"><i class="fab fa-facebook"></i> Not Connected</p>
+                    <a href="{{ url_for('main.facebook_authorize') }}" class="btn btn-sm btn-primary">
+                        <i class="fab fa-facebook"></i> Connect Facebook
+                    </a>
+                {% endif %}
+            </div>
+        </div>
     </div>
 {% endblock %}

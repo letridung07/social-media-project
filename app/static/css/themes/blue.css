@@ -1,0 +1,122 @@
+/* Example Blue Lagoon Theme */
+body {
+    background-color: #e0f7fa; /* Light cyan background */
+    color: #004d40; /* Dark teal text */
+}
+.card {
+    background-color: #ffffff; /* White cards */
+    border-color: #b2ebf2; /* Lighter cyan border for cards */
+}
+.card-header, .card-footer {
+    color: #004d40; /* Dark teal text for card headers/footers */
+    background-color: #f1fafd; /* Very light blue/cyan for card headers/footers */
+    border-bottom-color: #b2ebf2;
+    border-top-color: #b2ebf2; /* For card-footer */
+}
+.list-group-item {
+    background-color: #ffffff;
+    border-color: #b2ebf2;
+    color: #004d40;
+}
+a {
+    color: #00796b; /* Dark teal for links */
+}
+a:hover {
+    color: #004d40; /* Darker teal for hover */
+}
+.navbar.bg-light { /* Override for blue theme */
+    background-color: #00796b !important; /* Dark teal navbar */
+}
+.navbar.bg-light .navbar-brand,
+.navbar.bg-light .nav-link {
+    color: #ffffff !important; /* White text on navbar */
+}
+.navbar.bg-light .nav-link:hover {
+    color: #c8ffff !important; /* Very light cyan for hover */
+}
+.navbar.bg-light .navbar-toggler-icon {
+    background-image: url("data:image/svg+xml;charset=utf8,%3Csvg viewBox='0 0 30 30' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath stroke='rgba(255, 255, 255, 0.8)' stroke-width='2' stroke-linecap='round' stroke-miterlimit='10' d='M4 7h22M4 15h22M4 23h22'/%3E%3C/svg%3E") !important; /* White toggler icon */
+}
+.form-control, .custom-select {
+    background-color: #ffffff;
+    color: #004d40;
+    border-color: #4dd0e1; /* Medium cyan border for form controls */
+}
+.form-control:focus, .custom-select:focus {
+    border-color: #00796b; /* Dark teal for focus */
+    box-shadow: 0 0 0 0.2rem rgba(0, 121, 107, 0.25);
+}
+.btn-primary {
+    background-color: #00796b; /* Dark teal for primary buttons */
+    border-color: #00796b;
+    color: #ffffff;
+}
+.btn-primary:hover {
+    background-color: #004d40; /* Darker teal on hover */
+    border-color: #004d40;
+    color: #ffffff;
+}
+.btn-secondary { /* Adjust secondary buttons if needed */
+    background-color: #4dd0e1;
+    border-color: #4dd0e1;
+    color: #004d40;
+}
+.btn-secondary:hover {
+    background-color: #26c6da;
+    border-color: #26c6da;
+    color: #004d40;
+}
+.btn-outline-success { /* For navbar search button */
+    color: #ffffff;
+    border-color: #ffffff;
+}
+.btn-outline-success:hover {
+    color: #00796b;
+    background-color: #ffffff;
+    border-color: #ffffff;
+}
+.alert-info {
+    color: #004085;
+    background-color: #cce5ff;
+    border-color: #b8daff;
+}
+.alert-success {
+    color: #155724;
+    background-color: #d4edda;
+    border-color: #c3e6cb;
+}
+.alert-warning {
+    color: #856404;
+    background-color: #fff3cd;
+    border-color: #ffeeba;
+}
+.alert-danger {
+    color: #721c24;
+    background-color: #f8d7da;
+    border-color: #f5c6cb;
+}
+.text-dark {
+    color: #004d40 !important;
+}
+.text-muted {
+     color: #00796b !important; /* Muted text a bit darker teal */
+}
+.bg-light { /* For things like incoming message bodies */
+    background-color: #f0fbfc !important; /* Very light cyan */
+    color: #004d40 !important;
+}
+.border {
+    border-color: #b2ebf2 !important;
+}
+.modal-content {
+    background-color: #ffffff;
+    color: #004d40;
+    border-color: #b2ebf2;
+}
+.modal-header {
+    border-bottom-color: #b2ebf2;
+}
+.modal-footer {
+    border-top-color: #b2ebf2;
+}
+/* Add more specific overrides as needed */

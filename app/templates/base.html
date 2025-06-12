@@ -6,6 +6,10 @@
     <title>{% block title %}My Flask App{% endblock %}</title>
     <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {# Theme-specific CSS #}
+    {% if current_user.is_authenticated and current_user.theme_preference and current_user.theme_preference != 'default' %}
+        <link rel="stylesheet" href="{{ url_for('static', filename='css/themes/' + current_user.theme_preference + '.css') }}">
+    {% endif %}
     {% block styles %}{% endblock %} {# Added styles block #}
 </head>
 <body data-current-user-username="{{ current_user.username if current_user.is_authenticated else '' }}" data-current-user-id="{{ current_user.id if current_user.is_authenticated else '' }}">
@@ -28,6 +32,9 @@
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('main.events_list') }}">Events</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('main.manage_stream') }}">My Stream</a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('main.notifications') }}">

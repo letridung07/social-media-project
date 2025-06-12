@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <div class="col-md-12">
+            <h2 class="mb-3">{{ stream.title if stream.title else "Live Stream by " + user.username }}</h2>
+            {% if stream.description %}
+                <p class="lead">{{ stream.description }}</p>
+            {% endif %}
+            <hr>
+        </div>
+    </div>
+
+    <div class="row">
+        {# Main Video Area #}
+        <div class="col-md-9">
+            <div class="embed-responsive embed-responsive-16by9 mb-3" style="background-color: #000;">
+                {# In a real application, this would be an actual video player (e.g., HLS.js, Video.js)
+                   configured with the stream URL derived from the user/stream_key.
+                   For example, an RTMP stream might be ingested by a media server and re-streamed via HLS.
+                   The HLS URL would be like: /hls/{{ stream.stream_key }}.m3u8 or similar. #}
+                <div class="video-placeholder bg-dark text-white d-flex align-items-center justify-content-center embed-responsive-item" style="height:100%;">
+                    <div class="text-center">
+                        <i class="fas fa-video fa-3x mb-2"></i>
+                        <p>Live Stream Video (Placeholder)</p>
+                        <p><small>User: {{ user.username }}</small></p>
+                        {% if stream.is_live %}
+                            <p><span class="badge badge-danger">● LIVE</span></p>
+                        {% else %}
+                             <p><span class="badge badge-secondary">Offline</span></p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <p>Streamed by:
+                <a href="{{ url_for('main.profile', username=user.username) }}">
+                    <img src="{{ url_for('static', filename='images/' + user.profile_picture_url) }}" alt="{{ user.username }}" class="rounded-circle" width="30" height="30">
+                    {{ user.username }}
+                </a>
+            </p>
+        </div>
+
+        {# Optional Chat Area Placeholder #}
+        <div class="col-md-3">
+            <h4>Live Chat (Placeholder)</h4>
+            <div class="chat-messages border rounded p-2 mb-2" style="height: 300px; overflow-y: auto;">
+                <p><small class="text-muted">Chat features are not yet implemented.</small></p>
+                {# Sample chat messages
+                <p><strong>User1:</strong> Hello!</p>
+                <p><strong>User2:</strong> Great stream!</p>
+                #}
+            </div>
+            {% if current_user.is_authenticated %}
+            <div class="form-group">
+                <input type="text" class="form-control" placeholder="Say something..." disabled>
+            </div>
+            <button class="btn btn-primary btn-sm" disabled>Send</button>
+            {% else %}
+            <p><small><a href="{{ url_for('main.login', next=request.url) }}">Log in</a> to chat.</small></p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
