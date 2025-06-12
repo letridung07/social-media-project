@@ -1,6 +1,6 @@
 # Flask Social Platform
 
-A social media platform built with Flask, featuring user authentication, profiles, content posting, user following, likes, comments, and real-time chat. The application also features a refreshed, modern user interface, advanced search, theme customization, and integrations for live streaming and external content sharing (currently in placeholder state).
+A social media platform built with Flask, featuring user authentication, profiles, content posting, user following, likes, comments, real-time chat, user tagging/mentions, and a refreshed, modern user interface. The application also includes advanced search, theme customization, and integrations for live streaming and external content sharing (currently in placeholder state).
 
 ## Features
 
@@ -21,6 +21,10 @@ A social media platform built with Flask, featuring user authentication, profile
         *   Posts can be tagged with hashtags (e.g., `#Flask`, `#PythonTips`) to improve content discoverability.
         *   Hashtags are automatically parsed from the post body.
         *   Clicking on a hashtag displays a feed of all posts associated with that tag.
+    *   **User Tagging (Mentions):**
+        *   Tag other users in posts and comments using the `@username` syntax.
+        *   Autocomplete suggestions for usernames appear while typing `@...`.
+        *   Mentions in content are rendered as clickable links to the tagged user's profile.
 *   **Following System:**
     *   Users can follow and unfollow other users.
     *   Personalized feed on the homepage displaying posts from followed users and own posts.
@@ -34,6 +38,7 @@ A social media platform built with Flask, featuring user authentication, profile
         *   New likes on their posts.
         *   New comments on their posts.
         *   New followers.
+        *   Mentions in their posts or comments.
         *   New chat messages.
         *   **Like Milestones:** Automatic notifications when a user's post reaches specific like count milestones (e.g., 10, 50, 100, 250, 500, 1000 likes), celebrating its popularity.
 *   **User Groups/Communities:**
@@ -222,7 +227,7 @@ Follow these instructions to get a copy of the project up and running on your lo
     ```
     On Windows:
     ```bash
-    venv\Scripts\activate
+    venv\Scriptsctivate
     ```
 
 3.  **Install dependencies**:
@@ -265,9 +270,8 @@ Follow these instructions to get a copy of the project up and running on your lo
 ├── app/                  # Main application package
 │   ├── static/           # Static files (CSS, JS, images)
 │   │   ├── css/
-│   │   ├── js/           # JavaScript files (e.g., chat_page.js, notifications.js, stories.js, polls.js)
-│   │   ├── css/          # CSS files (e.g., style.css, stories.css)
-│   │   ├── images/       # User profile pictures
+│   │   ├── js/           # JavaScript files (e.g., chat_page.js, notifications.js, stories.js, polls.js, mention_autocomplete.js)
+│   │   ├── images/       # User profile pictures (corrected path, was listed under js/ before)
 │   │   ├── post_images/  # Images attached to posts
 │   │   ├── videos/       # Videos attached to posts
 │   │   ├── group_images/ # Group profile images
@@ -282,14 +286,14 @@ Follow these instructions to get a copy of the project up and running on your lo
 │   ├── models.py         # SQLAlchemy database models
 │   ├── routes.py         # Application routes (views)
 │   ├── events.py         # Socket.IO event handlers
-│   └── utils.py          # Utility functions (e.g., saving pictures)
+│   └── utils.py          # Utility functions (e.g., saving pictures, processing hashtags & mentions, linkifying mentions)
 ├── tests/                # Unit tests
 │   ├── __init__.py
 │   ├── test_auth.py      # Authentication tests
 │   ├── test_profile.py   # Profile management tests
-│   ├── test_posts.py     # Tests for creating and viewing posts
+│   ├── test_posts.py     # Tests for posts, comments, likes, hashtags, and mentions
 │   ├── test_follow.py    # Tests for following/unfollowing users and feed generation
-│   ├── test_engagement.py # Tests for liking/unliking posts and adding/viewing comments
+│   ├── test_engagement.py # Tests for liking/unliking posts and adding/viewing comments (can be merged or specialized)
 │   ├── test_chat.py      # Chat functionality tests
     ├── test_groups.py    # Tests for group functionality
     ├── test_search.py    # Tests for search functionality
@@ -307,7 +311,7 @@ Follow these instructions to get a copy of the project up and running on your lo
 ├── requirements.txt      # Python package dependencies
 └── run.py                # Script to run the Flask development server
 ```
-*(Note: Project structure updated to reflect chat-related files, new static asset folders, new templates, and new test files.)*
+*(Note: Project structure updated to reflect mention-related files/updates, corrected static asset paths, and consolidated test descriptions.)*
 
 ## Usage Highlights
 
@@ -317,6 +321,7 @@ Follow these instructions to get a copy of the project up and running on your lo
     *   **Standalone Poll**: On the "Create Post" page (when not targeting a specific group), you'll find a link "Create a Standalone Poll Instead?" which leads to `/poll/create`.
     *   **Group-Specific Poll**: On a group's page, use the "Create Poll in this Group" button. Alternatively, when creating a post for a group, a link "Create a Poll in {{ group_name }} Instead?" will be available. Both will pre-fill the group context for the poll.
 *   **Voting on Polls**: Polls associated with posts will appear directly within the post's display. If you haven't voted, you can select an option and submit your vote via AJAX. Results update dynamically (currently on page reload after AJAX vote).
+*   **Tagging Users (Mentions)**: When creating or editing a post, or when adding a comment, type `@` followed by the username (e.g., `@exampleuser`). An autocomplete suggestions list will appear to help you select the correct user. Clickable mentions in displayed content will navigate to the user's profile.
 
 ## Contributing
 
@@ -387,77 +392,209 @@ This enhanced setup addresses the scalability limitations of the previous P2P We
     *   Theme selection is available in the "Edit Profile" page.
     *   The chosen theme is applied globally via theme-specific CSS files.
 
-## Data Model for Groups Feature (Mermaid Diagram)
+## Data Model for Engagement Features (Mermaid Diagram)
 
 ```mermaid
 classDiagram
     class User {
-        id
-        username
-        email
-        bio
-        profile_picture_url  // Corrected from profile_picture
-        +groups_created
-        +group_memberships
-    }
-    class Group {
-        id
-        name
-        description
-        image_file
-        creator_id
-        created_at
-        +creator
-        +posts
-        +memberships
-        +members (association_proxy)
-    }
-    class GroupMembership {
-        id         // Added for clarity, though often composite PK
-        user_id
-        group_id
-        joined_at
-        role       // e.g., 'admin', 'member'
-        +user
-        +group
+        id: Integer
+        username: String
+        email: String
+        bio: String
+        profile_picture_url: String
+        +posts: Post[]
+        +comments: Comment[]
+        +likes: Like[]
+        +groups_created: Group[]
+        +group_memberships: GroupMembership[]
+        +mentions_received: Mention[]
+        +mentions_made: Mention[]
+        +notifications_received: Notification[]
+        +notifications_sent: Notification[]
     }
     class Post {
-        id
-        body       // Corrected from content
-        user_id
-        group_id   // Nullable
-        timestamp  // Corrected from created_at
-        +author
-        +group     // Relationship to Group
+        id: Integer
+        body: Text
+        user_id: Integer
+        group_id: Integer (nullable)
+        timestamp: DateTime
+        image_filename: String (nullable)
+        video_filename: String (nullable)
+        alt_text: String (nullable)
+        +author: User
+        +group: Group
+        +comments: Comment[]
+        +likes: Like[]
+        +hashtags: Hashtag[]
+        +mentions: Mention[]
+        +related_notifications: Notification[]
+        +polls: Poll[]
+    }
+    class Comment {
+        id: Integer
+        body: Text
+        user_id: Integer
+        post_id: Integer
+        timestamp: DateTime
+        +author: User
+        +commented_post: Post
+        +mentions: Mention[]
+    }
+    class Group {
+        id: Integer
+        name: String
+        description: String
+        image_file: String
+        creator_id: Integer
+        created_at: DateTime
+        +creator: User
+        +posts: Post[]
+        +memberships: GroupMembership[]
+        +members: User[] (association_proxy)
+        +related_notifications: Notification[]
+        +polls: Poll[]
+    }
+    class GroupMembership {
+        id: Integer
+        user_id: Integer
+        group_id: Integer
+        joined_at: DateTime
+        role: String
+        +user: User
+        +group: Group
+    }
+    class Hashtag {
+        id: Integer
+        tag_text: String
+        +posts: Post[]
+    }
+    class post_hashtags {
+        post_id: Integer
+        hashtag_id: Integer
+    }
+    class Like {
+        id: Integer
+        user_id: Integer
+        post_id: Integer
+        timestamp: DateTime
+        +user: User
+        +post: Post
+    }
+    class Mention {
+        id: Integer
+        user_id: Integer  // Tagged user
+        actor_id: Integer // User who made the mention
+        post_id: Integer (nullable)
+        comment_id: Integer (nullable)
+        timestamp: DateTime
+        +user: User
+        +actor: User
+        +post: Post
+        +comment: Comment
+        +notifications: Notification[]
     }
     class Notification {
-        id
-        recipient_id
-        actor_id
-        type
-        related_post_id
-        related_group_id // Added
-        timestamp
-        is_read
-        +recipient
-        +actor
-        +related_post
-        +related_group   // Added
+        id: Integer
+        recipient_id: Integer
+        actor_id: Integer
+        type: String
+        related_post_id: Integer (nullable)
+        related_group_id: Integer (nullable)
+        related_mention_id: Integer (nullable)
+        related_comment_id: Integer (nullable)
+        related_event_id: Integer (nullable)
+        timestamp: DateTime
+        is_read: Boolean
+        +recipient: User
+        +actor: User
+        +related_post: Post
+        +related_group: Group
+        +related_mention: Mention
+        +related_comment: Comment
+        +related_event: Event
+    }
+    class Poll {
+        id: Integer
+        question: Text
+        user_id: Integer
+        post_id: Integer (nullable)
+        group_id: Integer (nullable)
+        timestamp: DateTime
+        +author: User
+        +post: Post
+        +group: Group
+        +options: PollOption[]
+    }
+    class PollOption {
+        id: Integer
+        option_text: String
+        poll_id: Integer
+        +poll: Poll
+        +votes: PollVote[]
+    }
+    class PollVote {
+        id: Integer
+        user_id: Integer
+        option_id: Integer
+        poll_id: Integer
+        timestamp: DateTime
+        +user: User
+        +option: PollOption
+        +poll: Poll
+    }
+     class Event {
+        id: Integer
+        name: String
+        description: Text
+        start_datetime: DateTime
+        end_datetime: DateTime
+        location: String
+        organizer_id: Integer
+        +organizer: User
+        +attendees: User[]
+        +related_notifications: Notification[]
     }
 
-    User "1" -- "*" Group : creates (via groups_created/creator)
-    User "*" -- "*" Group : member of (via GroupMembership)
-    GroupMembership "*" -- "1" User : belongs to
-    GroupMembership "*" -- "1" Group : belongs to
 
-    Group "1" -- "*" Post : contains posts (via posts/group)
-    User "1" -- "*" Post : authors (via author/posts)
+    User "1" -- "*" Post : authors
+    User "1" -- "*" Comment : authors
+    User "1" -- "*" Like : gives
+    User "1" -- "*" Group : creates
+    User "*" -- "*" GroupMembership : has
+    GroupMembership "*" -- "1" User : user
+    GroupMembership "*" -- "1" Group : group
 
-    Notification -- User : recipient
-    Notification -- User : actor
-    Notification -- Post : related_post (optional)
-    Notification -- Group : related_group (optional)
+    Post "1" -- "*" Comment : has
+    Post "1" -- "*" Like : received on
+    Post "*" -- "*" post_hashtags : tagged_in
+    post_hashtags "*" -- "*" Hashtag : uses
+    Post "0..1" -- "1" Group : posted_in (optional)
+    Post "1" -- "*" Poll : can_have_poll
+
+    Mention "1"--"1" User : tagged_user_rel (user_id)
+    Mention "1"--"1" User : actor_user_rel (actor_id)
+    Mention "0..1"--"1" Post : in_post_rel (post_id)
+    Mention "0..1"--"1" Comment : in_comment_rel (comment_id)
+
+    Notification "1"--"1" User : recipient_rel (recipient_id)
+    Notification "1"--"1" User : actor_rel (actor_id)
+    Notification "0..1"--"1" Post : about_post (related_post_id)
+    Notification "0..1"--"1" Group : about_group (related_group_id)
+    Notification "0..1"--"1" Comment : about_comment (related_comment_id)
+    Notification "0..1"--"1" Mention : about_mention (related_mention_id)
+    Notification "0..1"--"1" Event : about_event (related_event_id)
+
+    Poll "1"--"1" User : created_by
+    Poll "1"--"*" PollOption : has_options
+    PollOption "1"--"*" PollVote : receives_votes
+    PollVote "1"--"1" User : cast_by
+
+    Event "1"--"1" User : organized_by
+    Event "*" -- "*" User : attended_by
+
 
     note for GroupMembership "Intermediary table defining user roles within groups."
     note for Post "group_id is nullable, allowing posts outside groups."
+    note for Mention "Represents a @username tag in a post or comment."
+    note for Notification "Consolidated notification relationships."
 ```
