@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} - {{ super() }}{% endblock %}
+
+{% block page_content %}
+<div class="container mt-4">
+    <h1>My Analytics Dashboard</h1>
+    <p class="lead">Welcome, <a href="{{ url_for('main.profile', username=user.username) }}">{{ user.username }}</a>! Here's an overview of your activity.</p>
+
+    <hr>
+
+    <h2>Summary Statistics</h2>
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card text-white bg-primary mb-3">
+                <div class="card-header">Total Posts</div>
+                <div class="card-body">
+                    <h4 class="card-title">{{ total_posts if total_posts is not none else 'N/A' }}</h4>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card text-white bg-success mb-3">
+                <div class="card-header">Total Likes Received</div>
+                <div class="card-body">
+                    <h4 class="card-title">{{ total_likes_received if total_likes_received is not none else 'N/A' }}</h4>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card text-white bg-info mb-3">
+                <div class="card-header">Total Comments Received</div>
+                <div class="card-body">
+                    <h4 class="card-title">{{ total_comments_received if total_comments_received is not none else 'N/A' }}</h4>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card bg-light mb-3">
+                <div class="card-header">Followers</div>
+                <div class="card-body">
+                    <h4 class="card-title">{{ follower_count if follower_count is not none else 'N/A' }}</h4>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card bg-light mb-3">
+                <div class="card-header">Following</div>
+                <div class="card-body">
+                    <h4 class="card-title">{{ following_count if following_count is not none else 'N/A' }}</h4>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <hr>
+
+    <h2>Your Most Liked Posts</h2>
+    {% if top_posts %}
+        <div class="list-group mb-4">
+            {% for post in top_posts %}
+                <a href="{{ url_for('main.profile', username=post.author.username) }}#post-{{ post.id }}" class="list-group-item list-group-item-action flex-column align-items-start">
+                    <div class="d-flex w-100 justify-content-between">
+                        <h5 class="mb-1">"{{ post.body[:80] }}{% if post.body|length > 80 %}...{% endif %}"</h5>
+                        <small>{{ post.timestamp.strftime('%Y-%m-%d') }}</small>
+                    </div>
+                    <p class="mb-1">Likes: <span class="badge badge-danger">{{ post.likes.count() }}</span></p>
+                </a>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p>You don't have any posts with likes yet, or no posts at all!</p>
+    {% endif %}
+
+    <hr>
+
+    <h2>Charts (Visualizations Coming Soon!)</h2>
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    Likes Per Post (Top 5)
+                </div>
+                <div class="card-body">
+                    <canvas id="likesPerPostChart" width="400" height="200"></canvas>
+                    <p class="text-muted text-center small mt-2">Chart will be displayed here.</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    Follower Growth (Placeholder)
+                </div>
+                <div class="card-body">
+                    <canvas id="followerGrowthChart" width="400" height="200"></canvas>
+                    <p class="text-muted text-center small mt-2">Chart will be displayed here once follower history is tracked.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        // Data for Likes per Post Chart (Top 5)
+        var topPostsDataRaw = {{ top_posts_chart_data | safe if top_posts_chart_data else '[]' }};
+
+        if (topPostsDataRaw && topPostsDataRaw.length > 0) {
+            var postLabels = topPostsDataRaw.map(function(item) { return item.label; });
+            var postLikes = topPostsDataRaw.map(function(item) { return item.value; });
+
+            var ctxLikes = document.getElementById('likesPerPostChart').getContext('2d');
+            if (ctxLikes) {
+                new Chart(ctxLikes, {
+                    type: 'bar',
+                    data: {
+                        labels: postLabels,
+                        datasets: [{
+                            label: 'Likes per Post',
+                            data: postLikes,
+                            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                            borderColor: 'rgba(75, 192, 192, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: { // For Chart.js v3.x and later
+                                beginAtZero: true,
+                                ticks: {
+                                    stepSize: 1 // Ensure y-axis has integer steps if like counts are integers
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: true,
+                                position: 'top',
+                            },
+                            title: {
+                                display: true,
+                                text: 'Top 5 Liked Posts'
+                            }
+                        }
+                    }
+                });
+                // Remove the placeholder paragraph
+                var placeholderLikes = document.querySelector('#likesPerPostChart + p');
+                if(placeholderLikes) placeholderLikes.style.display = 'none';
+            }
+        } else {
+            var likesChartContainer = document.getElementById('likesPerPostChart');
+            if(likesChartContainer && likesChartContainer.parentElement) {
+                 likesChartContainer.parentElement.innerHTML = '<p class="text-muted text-center">No posts with likes to display in chart.</p>';
+            }
+        }
+
+        // Follower "Chart" - Displaying current count as a simple bar
+        var followerCount = {{ follower_count if follower_count is not none else 0 }};
+        var ctxFollowers = document.getElementById('followerGrowthChart').getContext('2d');
+        if (ctxFollowers) {
+            new Chart(ctxFollowers, {
+                type: 'bar',
+                data: {
+                    labels: ['Current Followers'],
+                    datasets: [{
+                        label: 'Followers',
+                        data: [followerCount],
+                        backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                         y: {
+                            beginAtZero: true,
+                            ticks: {
+                                stepSize: 1
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false // No need for legend for a single bar
+                        },
+                        title: {
+                            display: true,
+                            text: 'Current Follower Count'
+                        }
+                    }
+                }
+            });
+            // Remove the placeholder paragraph
+            var placeholderFollowers = document.querySelector('#followerGrowthChart + p');
+            if(placeholderFollowers) placeholderFollowers.style.display = 'none';
+        }
+    });
+</script>
+{% endblock %}

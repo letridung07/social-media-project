@@ -121,3 +121,18 @@ class PollForm(FlaskForm):
 
         if len(option_texts_seen) != len(set(option_texts_seen)):
             raise ValidationError('Poll options must be unique (case-insensitive).')
+
+from wtforms.fields import DateTimeLocalField
+
+class EventForm(FlaskForm):
+    name = StringField('Event Name', validators=[DataRequired(), Length(min=3, max=100)])
+    description = TextAreaField('Description', validators=[Optional(), Length(max=500)])
+    start_datetime = DateTimeLocalField('Start Time', format='%Y-%m-%dT%H:%M', validators=[DataRequired()])
+    end_datetime = DateTimeLocalField('End Time', format='%Y-%m-%dT%H:%M', validators=[DataRequired()])
+    location = StringField('Location', validators=[Optional(), Length(max=255)])
+    submit = SubmitField('Create Event')
+
+    def validate_end_datetime(self, field):
+        if self.start_datetime.data and field.data:
+            if field.data <= self.start_datetime.data:
+                raise ValidationError('End time must be after start time.')

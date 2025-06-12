@@ -5,8 +5,8 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request,
 from flask_login import login_user, current_user, logout_user, login_required
 from sqlalchemy import or_
 from app import db, socketio
-from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm
-from app.models import User, Post, Like, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers # Import PollVote
+from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm
+from app.models import User, Post, Like, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event # Import PollVote and Event
 from app.utils import save_picture, save_post_image, save_post_video, save_group_image, save_story_media
 from app.email_utils import send_password_reset_email # Import email utility
 
@@ -678,6 +678,223 @@ def start_or_get_conversation(user_id):
         return redirect(url_for('main.view_conversation', conversation_id=conversation.id))
     else:
         return redirect(url_for('main.view_conversation', conversation_id=existing_conversation.id))
+
+import json # Added for preparing data for Chart.js
+from sqlalchemy import func
+
+@main.route('/analytics')
+@login_required
+def analytics():
+    user_posts = current_user.posts.all() # Get all posts once
+
+    total_posts_count = len(user_posts)
+
+    total_likes_received = 0
+    total_comments_received = 0
+    for post in user_posts:
+        total_likes_received += post.likes.count()
+        total_comments_received += post.comments.count()
+
+    follower_count = current_user.followers.count()
+    following_count = current_user.followed.count()
+
+    # Simpler method for top posts using Python's sorted()
+    # This is generally fine for a moderate number of posts per user.
+    # For users with extremely large numbers of posts, a DB-level query would be more performant.
+    sorted_posts = sorted(user_posts, key=lambda p: p.likes.count(), reverse=True)
+    top_5_posts = sorted_posts[:5]
+
+    # Alternative DB-level query for top 5 posts (more performant for very large datasets)
+    # top_5_posts_query_result = db.session.query(
+    # Post, func.count(Like.id).label('total_likes')
+    # ).join(Like, Like.post_id == Post.id, isouter=True).filter(
+    # Post.user_id == current_user.id
+    # ).group_by(Post.id).order_by(func.count(Like.id).desc()).limit(5).all()
+    # top_5_posts = [post_obj for post_obj, _ in top_5_posts_query_result]
+
+    # Prepare data for "Likes per Post" chart
+    top_posts_chart_data = []
+    if top_5_posts:
+        top_posts_chart_data = json.dumps([
+            {'label': f"Post ID {post.id}: {post.body[:20]}..." if len(post.body) > 20 else f"Post ID {post.id}: {post.body}", 'value': post.likes.count()}
+            for post in top_5_posts
+        ])
+
+
+    return render_template('analytics.html', title='User Analytics',
+                           user=current_user,
+                           total_posts=total_posts_count,
+                           total_likes_received=total_likes_received,
+                           total_comments_received=total_comments_received,
+                           follower_count=follower_count,
+                           following_count=following_count,
+                           top_posts=top_5_posts,
+                           top_posts_chart_data=top_posts_chart_data)
+
+# -------------------- Event Routes --------------------
+
+@main.route('/event/create', methods=['GET', 'POST'])
+@login_required
+def create_event():
+    form = EventForm()
+    if form.validate_on_submit():
+        event = Event(
+            name=form.name.data,
+            description=form.description.data,
+            start_datetime=form.start_datetime.data,
+            end_datetime=form.end_datetime.data,
+            location=form.location.data,
+            organizer_id=current_user.id
+        )
+        db.session.add(event)
+        db.session.commit()
+        flash('Event created successfully!', 'success')
+        return redirect(url_for('main.view_event', event_id=event.id)) # Assuming view_event route exists
+    return render_template('create_event.html', title='Create Event', form=form)
+
+@main.route('/events')
+def events_list():
+    events = Event.query.order_by(Event.start_datetime.asc()).all()
+    return render_template('events_list.html', title='Upcoming Events', events=events)
+
+@main.route('/event/<int:event_id>')
+def view_event(event_id):
+    event = Event.query.get_or_404(event_id)
+    is_attending = False
+    if current_user.is_authenticated:
+        is_attending = current_user in event.attendees
+    return render_template('event_detail.html', title=event.name, event=event, is_attending=is_attending)
+
+@main.route('/event/<int:event_id>/join', methods=['POST'])
+@login_required
+def join_event(event_id):
+    event = Event.query.get_or_404(event_id)
+    if current_user not in event.attendees:
+        event.attendees.append(current_user)
+        db.session.add(event) # Add event to session if it was modified
+
+        # Notification for the event organizer
+        if event.organizer_id != current_user.id:
+            notification = Notification(
+                recipient_id=event.organizer_id,
+                actor_id=current_user.id,
+                type='event_join',
+                related_event_id=event.id
+            )
+            db.session.add(notification)
+            # Emit socketio event if desired for real-time notification
+            socketio.emit('new_notification',
+                          {'message': f'{current_user.username} is attending your event: {event.name}.',
+                           'type': 'event_join',
+                           'actor_username': current_user.username,
+                           # 'event_id': event.id, # Optional: for client-side routing
+                           'event_name': event.name
+                           },
+                          room=str(event.organizer_id))
+
+        db.session.commit()
+        flash(f'You are now attending {event.name}!', 'success')
+    else:
+        flash(f'You are already attending {event.name}.', 'info')
+    return redirect(url_for('main.view_event', event_id=event.id))
+
+@main.route('/event/<int:event_id>/leave', methods=['POST'])
+@login_required
+def leave_event(event_id):
+    event = Event.query.get_or_404(event_id)
+    if current_user in event.attendees:
+        event.attendees.remove(current_user)
+        db.session.add(event) # Add event to session if it was modified
+        db.session.commit()
+        flash(f'You are no longer attending {event.name}.', 'success')
+    else:
+        flash(f'You were not attending {event.name}.', 'info')
+    return redirect(url_for('main.view_event', event_id=event.id))
+
+@main.route('/event/<int:event_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_event(event_id):
+    event = Event.query.get_or_404(event_id)
+    if event.organizer_id != current_user.id:
+        abort(403)  # Forbidden
+    form = EventForm(obj=event)
+    if form.validate_on_submit():
+        event.name = form.name.data
+        event.description = form.description.data
+        event.start_datetime = form.start_datetime.data
+        event.end_datetime = form.end_datetime.data
+        event.location = form.location.data
+        db.session.commit() # Commit event changes first
+
+        # Notify attendees about the update
+        for attendee in event.attendees:
+            if attendee.id != current_user.id: # Don't notify the organizer
+                notification = Notification(
+                    recipient_id=attendee.id,
+                    actor_id=current_user.id,
+                    type='event_updated',
+                    related_event_id=event.id
+                )
+                db.session.add(notification)
+                # Emit socketio event for real-time notification
+                socketio.emit('new_notification',
+                              {'message': f'Event "{event.name}" has been updated.',
+                               'type': 'event_updated',
+                               'actor_username': current_user.username,
+                               'event_id': event.id,
+                               'event_name': event.name
+                               },
+                              room=str(attendee.id))
+        db.session.commit() # Commit notifications
+        flash('Event updated successfully! Attendees have been notified.', 'success')
+        return redirect(url_for('main.view_event', event_id=event.id))
+    return render_template('edit_event.html', title='Edit Event', form=form, event=event)
+
+@main.route('/event/<int:event_id>/delete', methods=['POST'])
+@login_required
+def delete_event(event_id):
+    event = Event.query.get_or_404(event_id)
+    if event.organizer_id != current_user.id:
+        abort(403)  # Forbidden
+
+    # Before deleting the event, clear its attendees list to manage the many-to-many relationship
+    # This might not be strictly necessary depending on cascade settings, but it's explicit.
+    # Store event name and attendees before clearing/deleting for notifications
+    event_name_for_notification = event.name
+    attendees_to_notify = list(event.attendees) # Create a copy
+
+    event.attendees = []
+    db.session.commit() # Commit this change first
+
+    db.session.delete(event)
+    db.session.commit() # Commit deletion of event
+
+    # Notify former attendees about the cancellation
+    for attendee in attendees_to_notify:
+        if attendee.id != current_user.id: # Don't notify the organizer
+            notification = Notification(
+                recipient_id=attendee.id,
+                actor_id=current_user.id,
+                type='event_cancelled',
+                # related_event_id is not set here as the event is deleted.
+                # Store event name in notification body/data if needed, or handle in template.
+                # For simplicity, we'll rely on the type and actor.
+            )
+            # Add event name to notification message if possible, or handle in template
+            # For now, keeping it simple as related_event_id won't link to a live event.
+            db.session.add(notification)
+            socketio.emit('new_notification',
+                          {'message': f'Event "{event_name_for_notification}" has been cancelled.',
+                           'type': 'event_cancelled',
+                           'actor_username': current_user.username,
+                           # 'event_id': event_id, # Pass original event_id if useful for client
+                           'event_name': event_name_for_notification
+                           },
+                          room=str(attendee.id))
+    db.session.commit() # Commit notifications
+
+    flash('Event deleted successfully! Attendees have been notified of the cancellation.', 'success')
+    return redirect(url_for('main.events_list'))
 
 
 # -------------------- Group Routes --------------------

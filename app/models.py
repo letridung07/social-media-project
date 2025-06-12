@@ -203,6 +203,8 @@ class Notification(db.Model):
     related_conversation = db.relationship('Conversation', foreign_keys=[related_conversation_id], lazy='joined')
     related_group_id = db.Column(db.Integer, db.ForeignKey('group.id'), nullable=True)
     related_group = db.relationship('Group', foreign_keys=[related_group_id], backref=db.backref('related_notifications', lazy='dynamic'))
+    related_event_id = db.Column(db.Integer, db.ForeignKey('event.id'), nullable=True)
+    related_event = db.relationship('Event', foreign_keys=[related_event_id], backref=db.backref('related_notifications', lazy='dynamic'))
 
     def __repr__(self):
         return f'<Notification {self.type} for User ID {self.recipient_id} by User ID {self.actor_id}>'
@@ -350,3 +352,27 @@ class PollVote(db.Model):
 
     def __repr__(self):
         return f'<PollVote by User {self.user_id} for Option {self.option_id} in Poll {self.poll_id}>'
+
+# Association table for Event attendees
+event_attendees = db.Table('event_attendees',
+    db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
+    db.Column('event_id', db.Integer, db.ForeignKey('event.id'), primary_key=True)
+)
+
+class Event(db.Model):
+    __tablename__ = 'event'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    start_datetime = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+    end_datetime = db.Column(db.DateTime, nullable=False)
+    location = db.Column(db.String(255), nullable=True)
+    organizer_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+
+    organizer = db.relationship('User', backref=db.backref('organized_events', lazy='dynamic'))
+    attendees = db.relationship('User', secondary=event_attendees,
+                                backref=db.backref('attended_events', lazy='dynamic'),
+                                lazy='dynamic')
+
+    def __repr__(self):
+        return f'<Event {self.name}>'
