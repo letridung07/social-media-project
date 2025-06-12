@@ -44,7 +44,7 @@ def create_app(config_class=Config):
     # from app.auth import auth as auth_blueprint # We will create this soon
     # app.register_blueprint(auth_blueprint, url_prefix='/auth')
 
-    from app.utils import inject_unread_notification_count, inject_search_form # Import inject_search_form
+    from app.utils import inject_unread_notification_count, inject_search_form, linkify_mentions # Import inject_search_form and linkify_mentions
     @app.context_processor
     def _inject_unread_notification_count():
         return inject_unread_notification_count()
@@ -59,6 +59,9 @@ def create_app(config_class=Config):
     # Remove db.create_all() when using Flask-Migrate
     # with app.app_context():
     #     db.create_all() # Create database tables if they don't exist
+
+    # Register custom Jinja2 filters
+    app.jinja_env.filters['linkify_mentions'] = linkify_mentions
 
     from app import events # noqa
     return app

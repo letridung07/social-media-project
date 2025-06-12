@@ -7,8 +7,8 @@ from sqlalchemy import or_, func # Import func
 from sqlalchemy.orm import joinedload # Import joinedload
 from app import db, socketio, cache # Import cache
 from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm
-from app.models import User, Post, Like, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus # Import UserAnalytics, MessageReadStatus
-from app.utils import save_picture, save_post_image, save_post_video, save_group_image, save_story_media
+from app.models import User, Post, Like, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus, Mention # Import UserAnalytics, MessageReadStatus, Mention
+from app.utils import save_picture, save_post_image, save_post_video, save_group_image, save_story_media, process_mentions # Added process_mentions
 from app.email_utils import send_password_reset_email # Import email utility
 
 # Import for recommendations
@@ -237,6 +237,22 @@ def search_recommendations():
     }
     return jsonify(serialized_recommendations)
 
+@main.route('/users/search_mentions')
+@login_required
+def search_mentions_for_autocomplete():
+    query = request.args.get('q', '', type=str)
+    results = []
+    if query and len(query) >= 1: # Require at least 1 char for query
+        # Search for users where username starts with the query (case-insensitive)
+        users = User.query.filter(User.username.ilike(f"{query}%")).limit(10).all()
+        for user in users:
+            results.append({
+                'username': user.username,
+                # Construct profile picture URL safely
+                'profile_picture_url': url_for('static', filename=f'images/{user.profile_picture_url if user.profile_picture_url else "default_profile_pic.png"}')
+            })
+    return jsonify({'users': results})
+
 
 @main.route('/hashtag/<string:tag_text>')
 def hashtag_feed(tag_text):
@@ -431,8 +447,48 @@ def create_post():
         db.session.add(post)
         # Process hashtags before committing the post
         process_hashtags(post.body, post)
-        # Commit post first to get post.id
+
+        # Process mentions before committing the post
+        # The actual notification creation will be handled in a subsequent step/subtask
+        mentioned_users_in_post = process_mentions(text_content=post.body, owner_object=post, actor_user=current_user)
+
+        # Commit post first to get post.id (and save mentions)
         db.session.commit()
+
+        # Create notifications for mentions in the post
+        if mentioned_users_in_post:
+            for tagged_user in mentioned_users_in_post:
+                if tagged_user.id != current_user.id: # Avoid self-notification
+                    # Fetch the specific Mention instance created for this user in this post by this actor
+                    # Order by desc timestamp just in case of very rare duplicate processing, take the latest
+                    mention_obj = Mention.query.filter_by(
+                        user_id=tagged_user.id,
+                        post_id=post.id,
+                        actor_id=current_user.id
+                    ).order_by(Mention.timestamp.desc()).first()
+
+                    if mention_obj:
+                        notification = Notification(
+                            recipient_id=tagged_user.id,
+                            actor_id=current_user.id,
+                            type='mention',
+                            related_post_id=post.id,
+                            related_mention_id=mention_obj.id
+                        )
+                        db.session.add(notification)
+
+                        # Emit SocketIO event for real-time notification
+                        socketio.emit('new_notification', {
+                            'type': 'mention',
+                            'message': f"{current_user.username} mentioned you in a post.",
+                            'actor_username': current_user.username,
+                            'tagged_username': tagged_user.username,
+                            'post_id': post.id,
+                            'post_body_preview': post.body[:50] + "..." if len(post.body) > 50 else post.body,
+                            'owner_username': post.author.username, # Username of the post author
+                            'url': url_for('main.profile', username=post.author.username, _external=True) + f'#post-{post.id}' # Basic URL
+                        }, room=str(tagged_user.id))
+            db.session.commit() # Commit mention notifications
 
         if target_group: # target_group is the Group object from earlier in the route
             # Notify group members about the new post
@@ -509,7 +565,56 @@ def edit_post(post_id):
         # Process hashtags before committing the post changes
         post.alt_text = form.alt_text.data # <-- Add this line
         process_hashtags(post.body, post)
+
+        # Clear existing mentions for the post before processing new ones
+        Mention.query.filter_by(post_id=post.id).delete()
+        # Process new mentions
+        # The actual notification creation will be handled in a subsequent step/subtask
+        mentioned_users_in_edited_post = process_mentions(text_content=post.body, owner_object=post, actor_user=current_user)
+
         db.session.commit()
+
+        # Create notifications for mentions in the edited post
+        if mentioned_users_in_edited_post:
+            for tagged_user in mentioned_users_in_edited_post:
+                if tagged_user.id != current_user.id: # Avoid self-notification
+                    mention_obj = Mention.query.filter_by(
+                        user_id=tagged_user.id,
+                        post_id=post.id,
+                        actor_id=current_user.id
+                    ).order_by(Mention.timestamp.desc()).first()
+
+                    if mention_obj:
+                        # Check if a similar notification already exists to avoid duplicates if content hasn't changed much
+                        existing_notification = Notification.query.filter_by(
+                            recipient_id=tagged_user.id,
+                            actor_id=current_user.id,
+                            type='mention',
+                            related_mention_id=mention_obj.id
+                        ).first()
+
+                        if not existing_notification:
+                            notification = Notification(
+                                recipient_id=tagged_user.id,
+                                actor_id=current_user.id,
+                                type='mention',
+                                related_post_id=post.id,
+                                related_mention_id=mention_obj.id
+                            )
+                            db.session.add(notification)
+
+                            socketio.emit('new_notification', {
+                                'type': 'mention',
+                                'message': f"{current_user.username} mentioned you in an updated post.",
+                                'actor_username': current_user.username,
+                                'tagged_username': tagged_user.username,
+                                'post_id': post.id,
+                                'post_body_preview': post.body[:50] + "..." if len(post.body) > 50 else post.body,
+                                'owner_username': post.author.username,
+                                'url': url_for('main.profile', username=post.author.username, _external=True) + f'#post-{post.id}'
+                            }, room=str(tagged_user.id))
+            db.session.commit() # Commit mention notifications for edited post
+
         flash('Your post has been updated!', 'success')
         return redirect(url_for('main.profile', username=current_user.username)) # Or redirect to post view: url_for('main.view_post', post_id=post.id)
 
@@ -703,10 +808,50 @@ def add_comment(post_id):
     if form.validate_on_submit(): # Check if the submitted form (from the template) is valid
         comment = Comment(body=form.body.data, author=current_user, commented_post=post)
         db.session.add(comment)
+
+        # Process mentions before committing the comment
+        # The actual notification creation will be handled in a subsequent step/subtask
+        mentioned_users_in_comment = process_mentions(text_content=comment.body, owner_object=comment, actor_user=current_user)
+
         db.session.commit()
+
+        # Create notifications for mentions in the comment
+        if mentioned_users_in_comment:
+            for tagged_user in mentioned_users_in_comment:
+                if tagged_user.id != current_user.id: # Avoid self-notification
+                    mention_obj = Mention.query.filter_by(
+                        user_id=tagged_user.id,
+                        comment_id=comment.id, # Key difference: filter by comment_id
+                        actor_id=current_user.id
+                    ).order_by(Mention.timestamp.desc()).first()
+
+                    if mention_obj:
+                        notification = Notification(
+                            recipient_id=tagged_user.id,
+                            actor_id=current_user.id,
+                            type='mention',
+                            related_post_id=comment.post_id, # Link to the parent post
+                            related_mention_id=mention_obj.id
+                        )
+                        db.session.add(notification)
+
+                        socketio.emit('new_notification', {
+                            'type': 'mention',
+                            'message': f"{current_user.username} mentioned you in a comment.",
+                            'actor_username': current_user.username,
+                            'tagged_username': tagged_user.username,
+                            'post_id': comment.post_id,
+                            'comment_id': comment.id,
+                            'comment_body_preview': comment.body[:50] + "..." if len(comment.body) > 50 else comment.body,
+                            'owner_username': comment.author.username, # Username of the comment author (could be current_user)
+                            'post_author_username': post.author.username, # Username of the parent post's author
+                               'url': url_for('main.profile', username=post.author.username, _external=True) + f'#comment-{comment.id}' # Basic URL
+                        }, room=str(tagged_user.id))
+            db.session.commit() # Commit mention notifications for comment
+
         flash('Your comment has been added!', 'success')
 
-        # Notification and event for comment
+        # Notification and event for comment (original comment notification to post author)
         if post.author.id != current_user.id:
             notification = Notification(
                 recipient_id=post.author.id,

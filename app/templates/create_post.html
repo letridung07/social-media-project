@@ -31,7 +31,7 @@
 
                 <div class="form-group mb-3">
                     {{ form.body.label(class="form-label") }}
-                    {{ form.body(class="form-control form-control-lg", rows="5", placeholder="What's on your mind?") }}
+                    {{ form.body(class="form-control form-control-lg mentionable-textarea", rows="5", placeholder="What's on your mind?") }}
                     {% if form.body.errors %}
                         <div class="invalid-feedback d-block">
                             {% for error in form.body.errors %}{{ error }}{% endfor %}

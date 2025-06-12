@@ -9,7 +9,7 @@
 
                 <div class="form-group">
                     {{ form.body.label(class="form-control-label") }}
-                    {{ form.body(class="form-control", rows="3") }}
+                    {{ form.body(class="form-control mentionable-textarea", rows="3") }}
                     {% if form.body.errors %}
                         {% for error in form.body.errors %}
                             <span class="text-danger">{{ error }}</span><br>

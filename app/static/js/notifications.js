@@ -80,6 +80,18 @@ document.addEventListener('DOMContentLoaded', function () {
                         <a href="${userProfileBaseUrl}${data.actor_username}">${data.actor_username}</a>
                         started following you.
                     `;
+                } else if (data.type === 'mention') {
+                    let mentionInType = '';
+                    if (data.comment_id) { // Mention in a comment
+                        mentionInType = `a <a href="${data.url || '#'}">comment</a> on ${data.post_author_username}'s post`;
+                    } else { // Mention in a post
+                        mentionInType = `a <a href="${data.url || '#'}">post</a>`;
+                    }
+                    contentHTML = `
+                        <a href="${userProfileBaseUrl}${data.actor_username}">${data.actor_username}</a>
+                        mentioned you in ${mentionInType}:
+                        <em>"${data.content_preview}"</em>
+                    `;
                 } else if (data.type === 'new_chat_message') {
                     // Ensure data.conversation_id is present
                     contentHTML = `
@@ -133,6 +145,15 @@ document.addEventListener('DOMContentLoaded', function () {
                     // Link to the post itself
                     window.location.href = `${postBaseUrl}${data.post_author_username}#post-${data.post_id}`;
                 };
+            } else if (data.type === 'mention') {
+                browserNotification = new Notification("New Mention!", {
+                    body: data.message, // e.g., "user mentioned you in a post/comment."
+                    // icon: "..." // Optional: mention icon
+                });
+                browserNotification.onclick = function() {
+                    // data.url should be the direct link to the post or comment anchor
+                    window.location.href = data.url || "/notifications";
+                };
             } else { // For other types of notifications like 'like', 'comment', 'follow'
                 browserNotification = new Notification("New Notification", {
                     body: data.message || "You have a new notification."
@@ -163,6 +184,14 @@ document.addEventListener('DOMContentLoaded', function () {
                         });
                         browserNotification.onclick = function() {
                             window.location.href = `${postBaseUrl}${data.post_author_username}#post-${data.post_id}`;
+                        };
+                    } else if (data.type === 'mention') {
+                        browserNotification = new Notification("New Mention!", {
+                            body: data.message,
+                            // icon: "..." // Optional: mention icon
+                        });
+                        browserNotification.onclick = function() {
+                            window.location.href = data.url || "/notifications";
                         };
                     } else {
                         browserNotification = new Notification("New Notification", {
