@@ -2,7 +2,7 @@ from flask_socketio import join_room, leave_room, emit
 from flask_login import current_user
 from flask import request
 from app import socketio, db # Assuming socketio and db are initialized in app/__init__.py
-from app.models import Conversation, ChatMessage, User, Notification, MessageReadStatus # Import Notification & MessageReadStatus
+from app.models import Conversation, ChatMessage, User, Notification, MessageReadStatus, LiveStream # Import LiveStream
 from datetime import datetime, timezone
 
 @socketio.on('connect')
@@ -255,3 +255,161 @@ def handle_mark_messages_as_read(data):
             if sender_room != str(current_user.id):
                  socketio.emit('messages_read_update', update_payload, room=sender_room)
                  print(f"Emitted messages_read_update to sender {sender_room} for messages {processed_message_ids_for_notification}")
+
+# -------------------- WebRTC Signaling Events for Live Streaming --------------------
+
+@socketio.on('join_stream_room')
+def handle_join_stream_room(data):
+    stream_username = data.get('stream_username')
+    if not stream_username:
+        emit('stream_error', {'message': 'stream_username missing'}, room=request.sid)
+        return
+
+    stream_user = User.query.filter_by(username=stream_username).first()
+    if not stream_user:
+        emit('stream_error', {'message': f'User {stream_username} not found.'}, room=request.sid)
+        return
+
+    stream_room = f"stream_{stream_username}"
+    join_room(stream_room)
+    print(f"User SID {request.sid} (User: {current_user.username if current_user.is_authenticated else 'Anonymous'}) joined room {stream_room}")
+    emit('joined_stream_room_ack', {'room': stream_room, 'message': f'Successfully joined stream room for {stream_username}.'}, room=request.sid)
+
+    # Notify broadcaster that a viewer has joined, if broadcaster is not the one joining
+    if current_user.is_authenticated and current_user.username != stream_username:
+        # This event can trigger the broadcaster to send an offer to the new viewer (request.sid)
+        # Or, if offer is broadcast to room, this just informs broadcaster of new viewer.
+        socketio.emit('viewer_joined', {'viewer_sid': request.sid, 'viewer_username': current_user.username}, room=str(stream_user.id)) # Send to broadcaster's personal room
+        print(f"Notified broadcaster {stream_username} that viewer {current_user.username} joined.")
+
+
+@socketio.on('leave_stream_room')
+def handle_leave_stream_room(data):
+    stream_username = data.get('stream_username')
+    if not stream_username:
+        # Log error, but may not need to emit back if client is disconnecting
+        print(f"Error: stream_username missing in leave_stream_room from SID {request.sid}")
+        return
+
+    stream_room = f"stream_{stream_username}"
+    leave_room(stream_room)
+    print(f"User SID {request.sid} (User: {current_user.username if current_user.is_authenticated else 'Anonymous'}) left room {stream_room}")
+    emit('left_stream_room_ack', {'room': stream_room, 'message': f'Successfully left stream room for {stream_username}.'}, room=request.sid)
+
+    # Notify broadcaster that a viewer has left
+    if current_user.is_authenticated: # Ensure current_user is valid before accessing username
+        stream_user = User.query.filter_by(username=stream_username).first()
+        if stream_user and current_user.username != stream_username :
+             socketio.emit('viewer_left', {'viewer_sid': request.sid, 'viewer_username': current_user.username}, room=str(stream_user.id))
+             print(f"Notified broadcaster {stream_username} that viewer {current_user.username} left.")
+
+
+@socketio.on('webrtc_offer')
+def handle_webrtc_offer(data):
+    """Broadcaster sends their SDP offer to be relayed to viewers."""
+    if not current_user.is_authenticated:
+        emit('stream_error', {'message': 'Authentication required to send offer.'}, room=request.sid)
+        return
+
+    offer_sdp = data.get('offer_sdp')
+    stream_username = data.get('stream_username') # Broadcaster's username
+
+    if not offer_sdp or not stream_username:
+        emit('stream_error', {'message': 'Missing offer_sdp or stream_username.'}, room=request.sid)
+        return
+
+    if current_user.username != stream_username:
+        emit('stream_error', {'message': 'User mismatch. Cannot send offer for another user.'}, room=request.sid)
+        return
+
+    stream_room = f"stream_{stream_username}"
+    # Emit to all SIDs in the room *except* the sender (broadcaster)
+    emit('webrtc_offer_received',
+         {'offer_sdp': offer_sdp, 'from_username': current_user.username},
+         room=stream_room,
+         skip_sid=request.sid)
+    print(f"Broadcaster {current_user.username} sent WebRTC offer to room {stream_room}")
+
+
+@socketio.on('webrtc_answer')
+def handle_webrtc_answer(data):
+    """Viewer sends their SDP answer back to the broadcaster."""
+    if not current_user.is_authenticated:
+        emit('stream_error', {'message': 'Authentication required to send answer.'}, room=request.sid)
+        return
+
+    answer_sdp = data.get('answer_sdp')
+    stream_username = data.get('stream_username') # Broadcaster's username (target of this answer)
+
+    if not answer_sdp or not stream_username:
+        emit('stream_error', {'message': 'Missing answer_sdp or stream_username.'}, room=request.sid)
+        return
+
+    broadcaster = User.query.filter_by(username=stream_username).first()
+    if not broadcaster:
+        emit('stream_error', {'message': f'Broadcaster {stream_username} not found.'}, room=request.sid)
+        return
+
+    # Emit the answer specifically to the broadcaster's personal room (their user ID)
+    # The broadcaster's client-side JS will handle this.
+    emit('webrtc_answer_received',
+         {'answer_sdp': answer_sdp, 'from_username': current_user.username, 'viewer_sid': request.sid},
+         room=str(broadcaster.id)) # Target broadcaster's user room
+    print(f"Viewer {current_user.username} (SID: {request.sid}) sent WebRTC answer to broadcaster {stream_username} (Room: {broadcaster.id})")
+
+
+@socketio.on('webrtc_ice_candidate')
+def handle_webrtc_ice_candidate(data):
+    """Used by both broadcaster and viewers to exchange ICE candidates."""
+    if not current_user.is_authenticated:
+        emit('stream_error', {'message': 'Authentication required to send ICE candidate.'}, room=request.sid)
+        return
+
+    candidate = data.get('candidate')
+    stream_username = data.get('stream_username') # The context of the stream this candidate belongs to
+    # target_username = data.get('target_username') # Optional: if sending to a specific user
+
+    if not candidate or not stream_username:
+        emit('stream_error', {'message': 'Missing candidate or stream_username.'}, room=request.sid)
+        return
+
+    stream_room = f"stream_{stream_username}"
+
+    # Relay the candidate to others in the stream room
+    # The client side will decide if the candidate is for them based on the WebRTC connection state
+    # or if more specific targeting is added via target_username / target_sid.
+    emit('webrtc_ice_candidate_received',
+         {'candidate': candidate, 'from_username': current_user.username},
+         room=stream_room,
+         skip_sid=request.sid)
+    print(f"User {current_user.username} sent ICE candidate to room {stream_room}: {candidate.get('candidate', '')[:30]}...")
+
+@socketio.on('stream_ended_webrtc')
+def handle_stream_ended_webrtc(data):
+    stream_username = data.get('stream_username')
+    if not stream_username:
+        print(f"Error: stream_username missing in stream_ended_webrtc from SID {request.sid}")
+        return
+
+    if not current_user.is_authenticated or current_user.username != stream_username:
+        # Only the broadcaster can declare their stream ended.
+        # Or, if an admin function, it would need different checks.
+        emit('stream_error', {'message': 'Unauthorized to end this stream.'}, room=request.sid)
+        print(f"Unauthorized attempt to end stream {stream_username} by SID {request.sid} (User: {current_user.username if current_user.is_authenticated else 'Anonymous'})")
+        return
+
+    stream_room = f"stream_{stream_username}"
+    # Notify all viewers in the room that the stream specifically ended by broadcaster command
+    emit('stream_really_ended', {'message': f'Stream by {stream_username} has ended.'}, room=stream_room, skip_sid=request.sid) # skip_sid to not notify self
+
+    # Optionally, update the backend status of the stream
+    # stream_obj = LiveStream.query.filter_by(user_id=current_user.id).first()
+    # if stream_obj and stream_obj.is_live:
+    #     stream_obj.is_live = False
+    #     db.session.commit()
+    #     print(f"Stream {stream_username} marked as not live in DB.")
+    # This backend update is currently handled by the form submission in manage_stream route.
+    # If client-side "Stop WebRTC Broadcast" should also make it not live on backend without form submission,
+    # then the above lines should be un-commented and DB session handling considered.
+
+    print(f"WebRTC stream ended by broadcaster {stream_username}. Viewers in room {stream_room} notified.")

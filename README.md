@@ -341,10 +341,21 @@ Beyond the core functionalities listed above, recent developments have introduce
     *   Users can (simulate) connecting their Twitter/Facebook accounts via OAuth placeholders in their profile settings.
     *   "Share on Twitter" and "Share on Facebook" buttons are available on posts.
     *   *Note: Actual API integration for sharing is a placeholder and not yet functional.*
-*   **Live Streaming (Placeholder):**
-    *   Users can set up and manage their live stream settings, including title, description, and a unique stream key.
-    *   A dedicated page allows users to (simulate) viewing a live stream.
-    *   *Note: Video broadcasting and consumption are placeholders; no actual video streaming is implemented.*
+*   **Live Streaming (WebRTC Implementation):**
+    *   The platform now includes a live streaming feature implemented using **WebRTC** for real-time, peer-to-peer (or small group) video and audio streaming.
+    *   **Key Functionalities:**
+        *   Users can manage their stream settings (title, description) and indicate their intent to go live via the "My Stream" page.
+        *   Broadcasters have a local camera preview and client-side controls to "Start Camera," "Start WebRTC Broadcast," and "Stop WebRTC Broadcast."
+        *   Viewers can watch active live streams on a streamer's dedicated public stream page.
+        *   Real-time signaling for WebRTC (exchanging SDP offers/answers and ICE candidates) is handled via SocketIO events, enabling connections between broadcaster and viewer(s).
+    *   **Current Limitations & Considerations:**
+        *   **Scalability:** The current WebRTC setup is primarily designed for 1-to-1 or very small group streaming as it directly connects peers. It does not include an SFU (Selective Forwarding Unit) or MCU (Multipoint Conferencing Unit), so broadcasting to a large number of concurrent viewers will significantly strain the broadcaster's internet connection and processing capabilities.
+        *   **STUN/TURN Servers:** For reliable operation across various network configurations (especially NATs and firewalls), a publicly accessible STUN server (e.g., Google's `stun:stun.l.google.com:19302`) is used for NAT traversal assistance. For more complex network scenarios and to ensure connectivity where STUN might fail (e.g., symmetric NATs), a TURN server would be necessary but is not currently configured.
+        *   **Browser Compatibility:** The live streaming functionality relies on WebRTC support, which is available in most modern web browsers (Chrome, Firefox, Safari, Edge).
+    *   **Future Enhancements (Potential):**
+        *   Integration of chat on the stream viewing page (current chat UI is a placeholder).
+        *   Stream recording capabilities.
+        *   More robust error handling and connection recovery.
 *   **Customizable User Themes:**
     *   Users can now personalize their viewing experience by selecting a site theme.
     *   Options include "Default," "Dark Theme," and "Blue Lagoon Theme."

@@ -1,67 +1,97 @@
 {% extends "base.html" %}
 
-{% block title %}{{ title }}{% endblock %}
+{% block title %}
+    {% if stream and stream.title %}{{ stream.title }}{% else %}Live Stream by {{ user.username }}{% endif %}
+{% endblock %}
 
 {% block content %}
 <div class="container">
-    <div class="row">
-        <div class="col-md-12">
-            <h2 class="mb-3">{{ stream.title if stream.title else "Live Stream by " + user.username }}</h2>
-            {% if stream.description %}
-                <p class="lead">{{ stream.description }}</p>
-            {% endif %}
-            <hr>
-        </div>
-    </div>
+    {% if stream and stream.is_live %} {# Ensure stream object exists and is_live is true #}
+        <h2 id="streamTitle">{{ stream.title or "Live Stream" }}</h2>
+        <p>By:
+            <a href="{{ url_for('main.profile', username=user.username) }}">
+                <img src="{{ url_for('static', filename='images/' + user.profile_picture_url) }}" loading="lazy" alt="{{ user.username }}'s profile picture" class="rounded-circle mr-1" width="24" height="24">
+                {{ user.username }}
+            </a>
+        </p>
+        {% if stream.description %}
+        <p id="streamDescription" class="text-muted">{{ stream.description }}</p>
+        {% endif %}
 
-    <div class="row">
-        {# Main Video Area #}
-        <div class="col-md-9">
-            <div class="embed-responsive embed-responsive-16by9 mb-3" style="background-color: #000;">
-                {# In a real application, this would be an actual video player (e.g., HLS.js, Video.js)
-                   configured with the stream URL derived from the user/stream_key.
-                   For example, an RTMP stream might be ingested by a media server and re-streamed via HLS.
-                   The HLS URL would be like: /hls/{{ stream.stream_key }}.m3u8 or similar. #}
-                <div class="video-placeholder bg-dark text-white d-flex align-items-center justify-content-center embed-responsive-item" style="height:100%;">
-                    <div class="text-center">
-                        <i class="fas fa-video fa-3x mb-2"></i>
-                        <p>Live Stream Video (Placeholder)</p>
-                        <p><small>User: {{ user.username }}</small></p>
-                        {% if stream.is_live %}
-                            <p><span class="badge badge-danger">● LIVE</span></p>
-                        {% else %}
-                             <p><span class="badge badge-secondary">Offline</span></p>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-            <p>Streamed by:
-                <a href="{{ url_for('main.profile', username=user.username) }}">
-                    <img src="{{ url_for('static', filename='images/' + user.profile_picture_url) }}" alt="{{ user.username }}" class="rounded-circle" width="30" height="30">
-                    {{ user.username }}
-                </a>
-            </p>
+        <div class="video-container mb-3" style="background-color: #000; min-height: 300px; display: flex; align-items: center; justify-content: center; position: relative;">
+            <video id="remoteVideo" width="100%" height="auto" playsinline autoplay controls style="display: block; max-height: 520px;"></video>
+            <p id="remoteVideoPlaceholder" class="text-white" style="position: absolute; display: block;">Waiting for stream to load...</p>
         </div>
+        <p id="connectionStatus">Status: Connecting to stream...</p>
 
-        {# Optional Chat Area Placeholder #}
-        <div class="col-md-3">
+        <!-- Basic chat placeholder -->
+        <div class="mt-4">
             <h4>Live Chat (Placeholder)</h4>
-            <div class="chat-messages border rounded p-2 mb-2" style="height: 300px; overflow-y: auto;">
-                <p><small class="text-muted">Chat features are not yet implemented.</small></p>
-                {# Sample chat messages
-                <p><strong>User1:</strong> Hello!</p>
-                <p><strong>User2:</strong> Great stream!</p>
-                #}
+            <div id="chat-messages" class="border rounded p-3 mb-2" style="height: 200px; overflow-y: auto;">
+                <p><small class="text-muted">Chat features are not yet implemented for streams.</small></p>
             </div>
             {% if current_user.is_authenticated %}
-            <div class="form-group">
-                <input type="text" class="form-control" placeholder="Say something..." disabled>
+            <div class="input-group">
+                <input type="text" id="chat-input" class="form-control" placeholder="Say something..." disabled>
+                <div class="input-group-append">
+                    <button class="btn btn-primary" disabled>Send</button>
+                </div>
             </div>
-            <button class="btn btn-primary btn-sm" disabled>Send</button>
             {% else %}
             <p><small><a href="{{ url_for('main.login', next=request.url) }}">Log in</a> to chat.</small></p>
             {% endif %}
         </div>
-    </div>
+
+    {% else %} {# Handles case where stream object might not exist or is_live is false #}
+        <h2>Stream Offline</h2>
+        <p>{{ user.username }} is not currently live streaming or the stream could not be found.</p>
+        <a href="{{ url_for('main.profile', username=user.username) }}" class="btn btn-primary">View Profile</a>
+    {% endif %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="{{ url_for('static', filename='js/view_stream.js') }}"></script>
+<script>
+    // Pass stream data to JavaScript if stream object is available
+    {% if stream and user %}
+    const streamData = {
+        streamerUsername: "{{ user.username }}",
+        isLive: {{ stream.is_live | lower if stream.is_live is not none else 'false' }}
+        // streamKey: "{{ stream.stream_key if stream and stream.stream_key else '' }}" // Stream key might not be needed by viewer client directly
+    };
+    {% else %}
+    const streamData = {
+        streamerUsername: "{{ user.username if user else 'Unknown' }}",
+        isLive: false
+    };
+    {% endif %}
+
+    // Small script to hide placeholder text when video starts playing
+    const remoteVideo = document.getElementById('remoteVideo');
+    const remoteVideoPlaceholder = document.getElementById('remoteVideoPlaceholder');
+    if (remoteVideo && remoteVideoPlaceholder) {
+        remoteVideo.onplaying = () => {
+            remoteVideoPlaceholder.style.display = 'none';
+            document.getElementById('connectionStatus').textContent = 'Status: Connected and Playing.';
+        };
+        remoteVideo.onwaiting = () => {
+            remoteVideoPlaceholder.style.display = 'block';
+            document.getElementById('connectionStatus').textContent = 'Status: Buffering...';
+        };
+        remoteVideo.onerror = (e) => {
+            remoteVideoPlaceholder.style.display = 'block';
+            remoteVideoPlaceholder.textContent = 'Error loading stream or stream ended.';
+            document.getElementById('connectionStatus').textContent = 'Status: Error or stream ended.';
+            console.error('Video error:', e);
+        };
+         // Initial check in case autoplay doesn't fire 'playing' if there's no srcObject yet
+        if (!remoteVideo.srcObject && streamData.isLive) {
+             remoteVideoPlaceholder.style.display = 'block';
+        } else if (remoteVideo.srcObject) {
+            remoteVideoPlaceholder.style.display = 'none';
+        }
+    }
+</script>
 {% endblock %}

@@ -1710,8 +1710,10 @@ def manage_stream():
     form = StreamSetupForm(obj=stream) # Populate form with stream data if it exists
 
     if form.validate_on_submit():
-        if not stream.id: # If it's a new stream object not yet in session
+        previous_is_live = stream.is_live # Store previous state if stream object already existed
+        if not stream.id: # If it's a new stream object
             db.session.add(stream)
+            previous_is_live = False # For a new stream, previous state is effectively not live
 
         stream.title = form.title.data
         stream.description = form.description.data
@@ -1719,11 +1721,32 @@ def manage_stream():
 
         if not stream.stream_key:
             stream.stream_key = secrets.token_hex(16)
-            flash("Your unique stream key has been generated. Keep it secret!", "info")
+            # flash("Your unique stream key has been generated. Keep it secret!", "info") # Flash moved below
 
         try:
-            db.session.commit()
+            db.session.commit() # Commit first to save stream details
             flash("Stream settings updated.", "success")
+
+            # Emit global SocketIO events if is_live status changed
+            if stream.is_live and not previous_is_live:
+                # Stream just went live
+                socketio.emit('global_stream_started', {
+                    'username': current_user.username,
+                    'title': stream.title,
+                    'stream_page_url': url_for('main.view_stream', username=current_user.username, _external=True)
+                }, namespace='/') # Emit to global namespace
+                print(f"User {current_user.username} started a live stream: {stream.title}")
+            elif not stream.is_live and previous_is_live:
+                # Stream just ended
+                socketio.emit('global_stream_ended', {
+                    'username': current_user.username
+                }, namespace='/')
+                print(f"User {current_user.username} ended their live stream.")
+
+            if not stream.stream_key and stream.is_live: # If stream key was just generated and went live
+                 flash("Your unique stream key has been generated. Keep it secret!", "info")
+
+
         except Exception as e:
             db.session.rollback()
             flash(f"Error updating stream settings: {e}", "danger")
