@@ -66,6 +66,12 @@ A social media platform built with Flask, featuring user authentication, profile
     *   Users can vote on polls (AJAX-based), with logic to prevent multiple votes or allow changing a vote. Poll results are displayed with vote counts and percentages.
     *   Polls can be standalone, contextually linked to groups (e.g., created from a group page or when creating a post for a group), or conceptually linked to posts.
     *   Notifications are sent for new polls to relevant users (group members or followers).
+### Post Sharing
+- Users can now share posts from other users to their own feed or (in future iterations) to groups they are part of.
+- When a post is shared, a new `Share` record is created, linking the sharer, the original post, and optionally a group.
+- The original author of the post receives a notification when their post is shared.
+- Shared posts appear in the main feed, attributed to the user who shared them, and are ordered chronologically based on the share time.
+- Implemented via the `Share` model, a `POST /post/<post_id>/share` route, a "Share" button on posts, and updates to the feed generation logic.
 *   CSRF Protection for forms.
 *   Default profile picture for new users.
 *   Unit tests for core features including authentication, profiles, posts, groups, chat, search, stories, and polls.

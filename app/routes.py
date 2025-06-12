@@ -6,7 +6,7 @@ from flask_login import login_user, current_user, logout_user, login_required
 from sqlalchemy import or_, func # Import func
 from app import db, socketio, cache # Import cache
 from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm
-from app.models import User, Post, Like, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics # Import UserAnalytics
+from app.models import User, Post, Like, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share # Import UserAnalytics
 from app.utils import save_picture, save_post_image, save_post_video, save_group_image, save_story_media
 from app.email_utils import send_password_reset_email # Import email utility
 
@@ -1423,3 +1423,59 @@ def delete_group(group_id):
 
     flash(f'Group "{group.name}" has been deleted successfully.', 'success')
     return redirect(url_for('main.index')) # Or a future groups listing page
+
+
+@main.route('/post/<int:post_id>/share', methods=['POST'])
+@login_required
+def share_post(post_id):
+    post_to_share = Post.query.get_or_404(post_id)
+    group_id = request.form.get('group_id', type=int) # Optional group_id from form
+
+    # Prevent sharing own post to own feed (though sharing to a group is fine)
+    if post_to_share.author == current_user and group_id is None:
+        flash("You cannot share your own post to your main feed.", "info")
+        return redirect(request.referrer or url_for('main.index'))
+
+    # Check if already shared to the same destination (user's feed or specific group)
+    existing_share_query = Share.query.filter_by(
+        user_id=current_user.id,
+        post_id=post_to_share.id
+    )
+    if group_id:
+        existing_share_query = existing_share_query.filter_by(group_id=group_id)
+    else:
+        existing_share_query = existing_share_query.filter(Share.group_id.is_(None))
+
+    existing_share = existing_share_query.first()
+
+    if existing_share:
+        flash('You have already shared this post to this destination.', 'info')
+        return redirect(request.referrer or url_for('main.index'))
+
+    share = Share(user_id=current_user.id, post_id=post_to_share.id, group_id=group_id)
+    db.session.add(share)
+    db.session.commit()
+
+    # Notification for the original poster
+    if post_to_share.author != current_user:
+        notification = Notification(
+            recipient_id=post_to_share.author.id,
+            actor_id=current_user.id,
+            type='share',
+            related_post_id=post_to_share.id
+            # We could also add share_id=share.id to the Notification model if we want a direct link to the share event
+        )
+        db.session.add(notification)
+        db.session.commit()
+        socketio.emit('new_notification', {
+            'message': f'{current_user.username} shared your post.',
+            'type': 'share',
+            'actor_username': current_user.username,
+            'post_id': post_to_share.id,
+            'post_author_username': post_to_share.author.username
+        }, room=str(post_to_share.author.id))
+
+    flash('Post shared successfully!', 'success')
+    if group_id:
+        return redirect(url_for('main.view_group', group_id=group_id))
+    return redirect(url_for('main.index')) # Or redirect to current_user's profile/feed
