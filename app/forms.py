@@ -146,4 +146,5 @@ class StreamSetupForm(FlaskForm):
     title = StringField('Stream Title', validators=[Optional(), Length(max=150)])
     description = TextAreaField('Stream Description', validators=[Optional()])
     go_live = BooleanField('Go Live Now / Update Live Status')
+    enable_recording = BooleanField('Enable Recording')
     submit = SubmitField('Update Stream Settings')

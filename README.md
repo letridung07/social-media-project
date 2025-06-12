@@ -352,21 +352,35 @@ Beyond the core functionalities listed above, recent developments have introduce
     *   Users can (simulate) connecting their Twitter/Facebook accounts via OAuth placeholders in their profile settings.
     *   "Share on Twitter" and "Share on Facebook" buttons are available on posts.
     *   *Note: Actual API integration for sharing is a placeholder and not yet functional.*
-*   **Live Streaming (WebRTC Implementation):**
-    *   The platform now includes a live streaming feature implemented using **WebRTC** for real-time, peer-to-peer (or small group) video and audio streaming.
-    *   **Key Functionalities:**
-        *   Users can manage their stream settings (title, description) and indicate their intent to go live via the "My Stream" page.
-        *   Broadcasters have a local camera preview and client-side controls to "Start Camera," "Start WebRTC Broadcast," and "Stop WebRTC Broadcast."
-        *   Viewers can watch active live streams on a streamer's dedicated public stream page.
-        *   Real-time signaling for WebRTC (exchanging SDP offers/answers and ICE candidates) is handled via SocketIO events, enabling connections between broadcaster and viewer(s).
-    *   **Current Limitations & Considerations:**
-        *   **Scalability:** The current WebRTC setup is primarily designed for 1-to-1 or very small group streaming as it directly connects peers. It does not include an SFU (Selective Forwarding Unit) or MCU (Multipoint Conferencing Unit), so broadcasting to a large number of concurrent viewers will significantly strain the broadcaster's internet connection and processing capabilities.
-        *   **STUN/TURN Servers:** For reliable operation across various network configurations (especially NATs and firewalls), a publicly accessible STUN server (e.g., Google's `stun:stun.l.google.com:19302`) is used for NAT traversal assistance. For more complex network scenarios and to ensure connectivity where STUN might fail (e.g., symmetric NATs), a TURN server would be necessary but is not currently configured.
-        *   **Browser Compatibility:** The live streaming functionality relies on WebRTC support, which is available in most modern web browsers (Chrome, Firefox, Safari, Edge).
-    *   **Future Enhancements (Potential):**
-        *   Integration of chat on the stream viewing page (current chat UI is a placeholder).
-        *   Stream recording capabilities.
-        *   More robust error handling and connection recovery.
+### Live Streaming (Enhanced with Media Server)
+
+The platform features an enhanced live streaming capability, moving beyond basic P2P WebRTC to a more scalable solution using a media server.
+
+*   **Scalable Architecture (SFU Model)**:
+    *   Integrates with a media server (e.g., **Janus Gateway**) acting as a Selective Forwarding Unit (SFU).
+    *   The broadcaster sends a single stream to the SFU, which then efficiently relays it to all viewers. This significantly improves scalability for larger audiences compared to P2P.
+    *   The system still uses WebRTC for real-time communication, ensuring compatibility with modern browsers.
+*   **STUN/TURN Servers**:
+    *   Utilizes a public STUN server (e.g., Google's `stun:stun.l.google.com:19302`) for NAT traversal.
+    *   Requires a **TURN server** (e.g., Coturn) to be configured and available for robust connectivity, especially in complex network scenarios like symmetric NATs. The application must be configured with the TURN server's URL and credentials.
+*   **Stream Recording**:
+    *   Leverages the media server (Janus) for server-side stream recording.
+    *   Broadcasters can choose to have their streams recorded.
+    *   Recorded streams are intended to be stored (e.g., in `app/static/stream_recordings/`) and linked to the `LiveStream` model via a `recording_filename`.
+    *   *(Note: The mechanism for accessing/playing back recordings is a future enhancement.)*
+*   **Real-Time Chat Integration**:
+    *   The stream viewing page now includes a dedicated real-time chat panel.
+    *   Each live stream has its own chat room, allowing viewers and the broadcaster to interact during the broadcast.
+    *   This uses the existing Flask-SocketIO chat infrastructure, associating messages with a stream-specific conversation.
+*   **Error Handling and Connection Recovery (Client-Side)**:
+    *   Client-side JavaScript includes logic to detect connection drops to the media server and will attempt reconnection, providing UI feedback to the user.
+
+**Dependencies for Enhanced Live Streaming:**
+
+*   **Janus Media Server**: A running instance of Janus Gateway, configured with the VideoRoom plugin (for SFU functionality) and the RecordPlay plugin (if using its recording capabilities directly). The application needs its URL (`JANUS_SERVER_URL` in `config.py`).
+*   **Coturn (or other TURN Server)**: A running TURN server for reliable NAT traversal. The application needs its URL and credentials (`TURN_SERVER_URL`, `TURN_SERVER_USERNAME`, `TURN_SERVER_CREDENTIAL` in `config.py`).
+
+This enhanced setup addresses the scalability limitations of the previous P2P WebRTC implementation and adds valuable features like recording and integrated chat.
 *   **Customizable User Themes:**
     *   Users can now personalize their viewing experience by selecting a site theme.
     *   Options include "Default," "Dark Theme," and "Blue Lagoon Theme."

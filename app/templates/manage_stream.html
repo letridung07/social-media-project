@@ -59,6 +59,10 @@
                     {{ form.go_live(class="form-check-input", id="goLiveCheckbox") }}
                     {{ form.go_live.label(class="form-check-label", for="goLiveCheckbox") }}
                 </div>
+                <div class="form-group form-check">
+                    {{ form.enable_recording(class="form-check-input", id="enableRecordingCheckbox") }}
+                    {{ form.enable_recording.label(class="form-check-label", for="enableRecordingCheckbox") }}
+                </div>
                 <div class="form-group">
                     {{ form.submit(class="btn btn-primary", id="goLiveButton", disabled=true) }}
                 </div>
@@ -84,6 +88,12 @@
 {{ super() }}
 <script>
     const currentUsername = "{{ current_user.username }}";
+    const turnConfig = {
+        urls: "{{ config.TURN_SERVER_URL }}",
+        username: "{{ config.TURN_SERVER_USERNAME }}",
+        credential: "{{ config.TURN_SERVER_CREDENTIAL }}"
+    };
+    const janusServerUrl = "{{ config.JANUS_SERVER_URL }}";
 </script>
 <script src="{{ url_for('static', filename='js/manage_stream.js') }}"></script>
 <script>

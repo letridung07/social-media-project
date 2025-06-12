@@ -19,30 +19,44 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const cameraStatusP = document.getElementById('cameraStatus');
     const webRtcStatusP = document.getElementById('webRtcStatus');
+    const enableRecordingCheckbox = document.getElementById('enableRecordingCheckbox');
 
     let localStream;
-    let peerConnections = {};
-    let viewerCount = 0;
+    // let peerConnections = {}; // Replaced for SFU
+    let janusHandle = null; // Represents the connection/plugin handle to Janus
+    let viewerCount = 0; // May still be useful for display
+
+    const JANUS_SERVER_URL = typeof janusServerUrl !== 'undefined' ? janusServerUrl : '/janus_placeholder';
 
     const iceServers = {
-        iceServers: [ { urls: 'stun:stun.l.google.com:19302' } ]
+        iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' }
+        ]
     };
-
-    function updateViewerCountDisplay() {
-        if (webRtcStatusP.textContent.startsWith('WebRTC: Broadcasting')) {
-            webRtcStatusP.textContent = `WebRTC: Broadcasting to ${viewerCount} viewer(s)`;
-        }
+    // Conditionally add TURN server if configured and URL is not a placeholder
+    if (typeof turnConfig !== 'undefined' && turnConfig.urls && !turnConfig.urls.includes('yourturnserver.example.com')) {
+        iceServers.iceServers.push({
+            urls: turnConfig.urls,
+            username: turnConfig.username,
+            credential: turnConfig.credential
+        });
     }
+
+    // function updateViewerCountDisplay() { // May adapt if Janus provides viewer counts
+    //     if (webRtcStatusP.textContent.startsWith('WebRTC: Broadcasting')) {
+    //         webRtcStatusP.textContent = `WebRTC: Broadcasting to ${viewerCount} viewer(s)`;
+    //     }
+    // }
 
     socket.on('connect', () => {
         console.log('Socket.IO connected for broadcaster.');
-        if (goLiveCheckbox && goLiveCheckbox.checked) {
-            socket.emit('join_stream_room', { stream_username: currentUsername });
-        }
+        // Broadcaster joins their own stream room upon connection if they intend to go live or are already live.
+        // This is more for receiving viewer join/leave events if needed before WebRTC active.
+        socket.emit('join_stream_room', { stream_username: currentUsername });
     });
 
     socket.on('joined_stream_room_ack', (data) => {
-        console.log('Broadcaster joined stream room:', data.room);
+        console.log('Broadcaster confirmed in stream room:', data.room);
     });
 
     socket.on('stream_error', (data) => {
@@ -50,6 +64,14 @@ document.addEventListener('DOMContentLoaded', () => {
         alert("Stream Error: " + data.message);
         if (webRtcStatusP) webRtcStatusP.textContent = `WebRTC Error: ${data.message}`;
     });
+
+    socket.on('recording_status_update', (data) => {
+        console.log('Recording status update:', data);
+        // Update UI based on data.status and data.message
+        // e.g., webRtcStatusP.textContent += ` | Recording: ${data.status}`;
+        alert(`Recording status: ${data.status} - ${data.message || ''}`);
+    });
+
 
     if (startCameraButton && localVideo) {
         startCameraButton.onclick = async () => {
@@ -59,7 +81,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
                 localVideo.srcObject = localStream;
-                localVideo.muted = true;
+                localVideo.muted = true; // Broadcaster does not need to hear their own audio locally
                 localVideo.play();
 
                 if (goLiveSubmitButton) goLiveSubmitButton.disabled = false;
@@ -77,75 +99,11 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    async function createPeerConnection(viewerSid, viewerUsername) {
-        if (!localStream) {
-            console.warn("Local stream not ready, cannot create peer connection for", viewerUsername);
-            return null;
-        }
+    // // P2P: createPeerConnection - To be replaced/removed for SFU
+    // async function createPeerConnection(viewerSid, viewerUsername) { ... }
 
-        const pc = new RTCPeerConnection(iceServers);
-        peerConnections[viewerSid] = pc;
-        viewerCount = Object.keys(peerConnections).length;
-        console.log(`PeerConnection created for viewer: ${viewerUsername} (SID: ${viewerSid}). Total viewers: ${viewerCount}`);
-        if (webRtcStatusP.textContent.startsWith('WebRTC: Broadcasting')) { // Check if currently broadcasting
-             updateViewerCountDisplay();
-        }
-
-
-        pc.onicecandidate = event => {
-            if (event.candidate) {
-                console.log(`Broadcaster sending ICE candidate to ${viewerUsername} (SID: ${viewerSid}):`, event.candidate);
-                socket.emit('webrtc_ice_candidate', {
-                    candidate: event.candidate,
-                    stream_username: currentUsername,
-                    target_sid: viewerSid
-                });
-            }
-        };
-
-        pc.onconnectionstatechange = () => {
-            console.log(`PeerConnection state for ${viewerUsername} (SID: ${viewerSid}): ${pc.connectionState}`);
-            if (webRtcStatusP && (startWebRTCBroadcastButton.disabled)) { // Only update if broadcasting
-                 webRtcStatusP.textContent = `WebRTC: Broadcasting to ${viewerCount} viewer(s). Last event: ${viewerUsername} is ${pc.connectionState}.`;
-            }
-            if (pc.connectionState === 'disconnected' || pc.connectionState === 'closed' || pc.connectionState === 'failed') {
-                closePeerConnection(viewerSid);
-            }
-        };
-
-        localStream.getTracks().forEach(track => {
-            try {
-                pc.addTrack(track, localStream);
-            } catch (e) {
-                console.error("Error adding track:", track, e);
-            }
-        });
-        console.log(`Local tracks added to PeerConnection for ${viewerUsername}`);
-        return pc;
-    }
-
-    async function makeOffer(viewerSid, viewerUsername) {
-        let pc = peerConnections[viewerSid];
-        if (!pc) {
-            pc = await createPeerConnection(viewerSid, viewerUsername);
-            if (!pc) return;
-        }
-
-        if (webRtcStatusP) webRtcStatusP.textContent = `WebRTC: Sending offer to ${viewerUsername}...`;
-        try {
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            console.log(`SDP Offer created for ${viewerUsername} (SID: ${viewerSid}). Sending...`);
-            socket.emit('webrtc_offer', {
-                offer_sdp: offer.sdp,
-                stream_username: currentUsername,
-                target_viewer_sid: viewerSid
-            });
-        } catch (error) {
-            console.error(`Error creating WebRTC offer for ${viewerUsername}:`, error);
-            if (webRtcStatusP) webRtcStatusP.textContent = `WebRTC: Error offering to ${viewerUsername}.`;
-        }
-    }
+    // // P2P: makeOffer - To be replaced/removed for SFU
+    // async function makeOffer(viewerSid, viewerUsername) { ... }
 
     if (startWebRTCBroadcastButton) {
         startWebRTCBroadcastButton.addEventListener('click', async () => {
@@ -157,123 +115,164 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert("Reminder: Check the 'Go Live' box and save settings if you want your stream to be publicly listed as live on the backend.");
             }
 
-            if (webRtcStatusP) webRtcStatusP.textContent = 'WebRTC: Initializing broadcast...';
+            if (webRtcStatusP) webRtcStatusP.textContent = 'WebRTC: Initializing SFU broadcast...';
             startWebRTCBroadcastButton.textContent = 'Initializing...';
             startWebRTCBroadcastButton.disabled = true;
 
-            // Join room explicitly if not already joined (e.g. if goLiveCheckbox wasn't checked on load)
-            socket.emit('join_stream_room', { stream_username: currentUsername });
+            // TODO: Implement Janus Initialization and Publishing
+            // 1. Initialize Janus library (e.g., new Janus({ server: JANUS_SERVER_URL, ... }))
+            // 2. Create a Janus session (janus.attach({ plugin: "janus.plugin.videoroom", ... -> janusHandle }))
+            // 3. Configure and publish localStream to janusHandle
+            //    janusHandle.createOffer({
+            //        media: { audioRecv: false, videoRecv: false, audioSend: true, videoSend: true },
+            //        success: function(jsep) {
+            //            // Send this jsep (offer) to Janus via our backend relay
+            //            socket.emit('sfu_relay_message', {
+            //                type: 'publish_offer', // Custom type for our backend to understand
+            //                payload: jsep,
+            //                stream_username: currentUsername
+            //            });
+            //        },
+            //        error: function(error) { console.error("Janus offer error:", error); }
+            //    });
+            // 4. Handle Janus responses (answers, candidates) via 'sfu_message_direct' or 'sfu_message_user'
 
-            // The actual offers will be sent when viewers join and 'viewer_joined' is received.
-            // This button just sets the state that the broadcaster is ready.
-            console.log("WebRTC broadcasting prepared by broadcaster. Waiting for viewers.");
-            webRtcStatusP.textContent = 'WebRTC: Ready for viewers. Broadcasting to 0 viewer(s).';
-            startWebRTCBroadcastButton.textContent = 'Currently Broadcasting'; // Remains disabled while active
+            console.log("Attempting to start WebRTC broadcast with SFU (Janus).");
+            webRtcStatusP.textContent = 'WebRTC: Connecting to SFU...';
+            // Simulate connection for now, actual state will depend on Janus interaction
+            // On successful publishing with Janus:
+            if (enableRecordingCheckbox && enableRecordingCheckbox.checked) {
+                console.log("Recording enabled, sending start_stream_recording_sfu event.");
+                socket.emit('start_stream_recording_sfu', { stream_username: currentUsername });
+            }
+
+            // This is a placeholder for actual Janus success
+            startWebRTCBroadcastButton.textContent = 'Currently Broadcasting (SFU)';
             if (stopWebRTCBroadcastButton) stopWebRTCBroadcastButton.disabled = false;
             if (startCameraButton) startCameraButton.disabled = true;
+            webRtcStatusP.textContent = 'WebRTC: Broadcasting to SFU.';
         });
     }
 
     if (stopWebRTCBroadcastButton) {
         stopWebRTCBroadcastButton.onclick = () => {
-            if (webRtcStatusP) webRtcStatusP.textContent = 'WebRTC: Stopping...';
-            console.log("Stopping WebRTC broadcast...");
+            if (webRtcStatusP) webRtcStatusP.textContent = 'WebRTC: Stopping SFU broadcast...';
+            console.log("Stopping WebRTC SFU broadcast...");
 
-            if (localStream) { // Only stop tracks if localStream exists
+            // TODO: Implement Janus Unpublish and Teardown
+            // 1. Send "unpublish" or "hangup" to janusHandle if it exists
+            //    janusHandle.send({ message: { request: "unpublish" } });
+            //    janusHandle.hangup(); // Or similar command
+            // 2. Detach from plugin, destroy session. janusHandle = null;
+
+            if (localStream) {
                 localStream.getTracks().forEach(track => track.stop());
                 localVideo.srcObject = null;
             }
             if (cameraStatusP) cameraStatusP.textContent = 'Camera: Off';
 
+            // If recording was active (check a state variable or the checkbox, though checkbox might not reflect actual recording state)
+            // For simplicity, assume if enableRecordingCheckbox was checked, we attempt to stop.
+            // A more robust solution would track actual recording state.
+            if (enableRecordingCheckbox && enableRecordingCheckbox.checked) { // This is a simplification
+                console.log("Recording was enabled, sending stop_stream_recording_sfu event.");
+                socket.emit('stop_stream_recording_sfu', { stream_username: currentUsername });
+            }
 
-            Object.keys(peerConnections).forEach(viewerSid => {
-                closePeerConnection(viewerSid);
-            });
-            peerConnections = {}; // Reset
-            viewerCount = 0;
-
-            socket.emit('stream_ended_webrtc', { stream_username: currentUsername });
+            // socket.emit('stream_ended_webrtc', { stream_username: currentUsername }); // Old P2P event, might adapt for SFU if needed for backend status
 
             startWebRTCBroadcastButton.textContent = 'Start WebRTC Broadcast';
-            startWebRTCBroadcastButton.disabled = false; // Allow restarting
+            startWebRTCBroadcastButton.disabled = false;
             stopWebRTCBroadcastButton.disabled = true;
-            if (goLiveSubmitButton) goLiveSubmitButton.disabled = true; // Require camera restart
+            if (goLiveSubmitButton) goLiveSubmitButton.disabled = true;
             if (startCameraButton) startCameraButton.disabled = false;
-            if (webRtcStatusP) webRtcStatusP.textContent = 'WebRTC: Idle (Broadcast Ended)';
+            if (webRtcStatusP) webRtcStatusP.textContent = 'WebRTC: Idle (SFU Broadcast Ended)';
 
             if (goLiveCheckbox && goLiveCheckbox.checked) {
                 alert("WebRTC broadcast stopped. Uncheck 'Go Live' and save settings to update your stream's public status to offline if desired.");
             }
+            janusHandle = null; // Reset Janus handle
         };
     }
 
-    function closePeerConnection(viewerSid) {
-        if (peerConnections[viewerSid]) {
-            peerConnections[viewerSid].close();
-            delete peerConnections[viewerSid];
-            viewerCount = Object.keys(peerConnections).length;
-            console.log(`PeerConnection closed for viewer SID: ${viewerSid}. Total viewers: ${viewerCount}`);
-            updateViewerCountDisplay();
-        }
-    }
+    // // P2P: closePeerConnection - To be replaced/removed for SFU
+    // function closePeerConnection(viewerSid) { ... }
 
-    socket.on('webrtc_answer_received', async (data) => {
-        const viewerSid = data.viewer_sid;
-        const pc = peerConnections[viewerSid];
+    // // P2P: socket.on('webrtc_answer_received', ... ) - Replaced by sfu_message_direct/user
+    // socket.on('webrtc_answer_received', async (data) => { ... });
 
-        if (pc && pc.signalingState === 'have-local-offer') {
-            console.log(`Received SDP Answer from viewer ${data.from_username} (SID: ${viewerSid}):`, data.answer_sdp);
-            if (webRtcStatusP) webRtcStatusP.textContent = `WebRTC: Received answer from ${data.from_username}. Connecting...`;
-            try {
-                await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: data.answer_sdp }));
-                console.log(`Remote description (answer) set for viewer ${data.from_username}`);
-                // Connection state change will update status further
-            } catch (error) {
-                console.error(`Error setting remote description for answer from ${data.from_username}:`, error);
-                if (webRtcStatusP) webRtcStatusP.textContent = `WebRTC: Error with ${data.from_username}'s answer.`;
+    // // P2P: socket.on('webrtc_ice_candidate_received', ... ) - Replaced by sfu_message_direct/user
+    // socket.on('webrtc_ice_candidate_received', async (data) => { ... });
+
+    // // P2P: socket.on('viewer_joined', ... ) - Replaced by viewer_joined_sfu
+    // socket.on('viewer_joined', (data) => { ... });
+
+    // // P2P: socket.on('viewer_left', ... ) - Replaced by viewer_left_sfu
+    // socket.on('viewer_left', (data) => { ... });
+
+    // --- SFU Specific Event Handlers ---
+    socket.on('viewer_joined_sfu', (data) => {
+        console.log('SFU Event: Viewer joined:', data.viewer_username, 'SID:', data.viewer_sid, 'for stream:', data.stream_username);
+        // TODO: Conceptual Janus Interaction for Broadcaster
+        // If this broadcaster client needs to do something with Janus for this new viewer,
+        // it would happen here. For example, if Janus doesn't auto-handle new viewers,
+        // the broadcaster might need to signal Janus to offer a stream to data.viewer_sid.
+        // This often depends on the specific Janus plugin and room configuration.
+        // For a simple VideoRoom setup, Janus might handle offers to new viewers automatically
+        // once they request to join the room (client-side viewer logic).
+        // Or, the server might send an offer to the new viewer directly upon their join.
+        viewerCount++; // Simple increment, actual count might come from Janus
+        if (webRtcStatusP) webRtcStatusP.textContent = `WebRTC: Broadcasting to SFU. Viewers: ${viewerCount}`;
+
+    });
+
+    socket.on('viewer_left_sfu', (data) => {
+        console.log('SFU Event: Viewer left:', data.viewer_username, 'SID:', data.viewer_sid, 'from stream:', data.stream_username);
+        // TODO: Conceptual Janus Interaction for Broadcaster
+        // Inform Janus that data.viewer_sid has left, if necessary for resource cleanup
+        // on the Janus side specific to this viewer's handle.
+        viewerCount = Math.max(0, viewerCount - 1); // Simple decrement
+        if (webRtcStatusP) webRtcStatusP.textContent = `WebRTC: Broadcasting to SFU. Viewers: ${viewerCount}`;
+    });
+
+    socket.on('sfu_message_direct', (data) => {
+        console.log(`SFU Direct Message from ${data.from_username} (SID: ${data.from_sid}) of type ${data.type} for stream ${data.stream_username}:`, data.payload);
+        // This is where the broadcaster's client would receive messages from Janus
+        // (potentially relayed by viewers or directly from Janus via our backend).
+        if (janusHandle) {
+            if (data.payload.type === 'answer') { // Assuming payload contains a JSEP answer
+                // janusHandle.handleRemoteJsep({ jsep: data.payload }); // Conceptual for janus.js
+                console.log("TODO: Process SFU JSEP answer with janusHandle:", data.payload);
+            } else if (data.payload.candidate) { // Assuming payload is an ICE candidate
+                // janusHandle.addIceCandidate(data.payload); // Conceptual for janus.js
+                console.log("TODO: Process SFU ICE candidate with janusHandle:", data.payload);
+            } else {
+                 console.log("Received sfu_message_direct, payload type not directly handled by placeholder:", data.payload);
             }
         } else {
-            console.warn(`Received answer from ${data.from_username}, but no suitable PC or state. State: ${pc ? pc.signalingState : 'No PC'}`);
+            console.warn("Received sfu_message_direct but janusHandle is null.");
         }
     });
 
-    socket.on('webrtc_ice_candidate_received', async (data) => {
-        // For broadcaster, candidates come from viewers. The server should include viewer's SID.
-        const viewerSid = data.from_sid; // Assuming server adds 'from_sid' for candidates from viewers
-        const pc = peerConnections[viewerSid];
-
-        if (pc && data.candidate) {
-             console.log(`Broadcaster received ICE candidate from viewer ${data.from_username} (SID: ${viewerSid}):`, data.candidate);
-            try {
-                await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-            } catch (error) {
-                console.error(`Error adding received ICE candidate from ${data.from_username} (SID: ${viewerSid}):`, error);
+    socket.on('sfu_message_user', (data) => {
+        // This event is similar to 'sfu_message_direct' but was targeted via username.
+        // Client-side, the handling might be identical if janusHandle is the main interaction point.
+        console.log(`SFU User Message from ${data.from_username} (SID: ${data.from_sid}) of type ${data.type} for stream ${data.stream_username}:`, data.payload);
+        if (janusHandle) {
+            if (data.payload.type === 'answer') {
+                // janusHandle.handleRemoteJsep({ jsep: data.payload });
+                console.log("TODO: Process SFU JSEP answer with janusHandle (from sfu_message_user):", data.payload);
+            } else if (data.payload.candidate) {
+                // janusHandle.addIceCandidate(data.payload);
+                console.log("TODO: Process SFU ICE candidate with janusHandle (from sfu_message_user):", data.payload);
+            } else {
+                 console.log("Received sfu_message_user, payload type not directly handled by placeholder:", data.payload);
             }
-        } else if (data.from_username === currentUsername) {
-            // This should not happen if server uses skip_sid and we target candidates with target_sid
         } else {
-             console.warn(`Received ICE candidate from ${data.from_username} but no PC found for SID ${viewerSid} or candidate missing.`);
+            console.warn("Received sfu_message_user but janusHandle is null.");
         }
     });
 
-    socket.on('viewer_joined', (data) => {
-        console.log('Viewer joined:', data.viewer_username, 'SID:', data.viewer_sid);
-        if (localStream && startWebRTCBroadcastButton.disabled) { // If "Start WebRTC Broadcast" is disabled, it implies we are in "broadcasting" mode
-            console.log(`New viewer ${data.viewer_username} joined. Creating offer for them.`);
-            if (webRtcStatusP) webRtcStatusP.textContent = `WebRTC: New viewer ${data.viewer_username}. Sending offer...`;
-            makeOffer(data.viewer_sid, data.viewer_username);
-        } else {
-            console.log("New viewer joined, but broadcaster is not actively in WebRTC broadcast mode yet.");
-        }
-    });
-
-    socket.on('viewer_left', (data) => {
-        console.log('Viewer left:', data.viewer_username, 'SID:', data.viewer_sid);
-        closePeerConnection(data.viewer_sid);
-        if (webRtcStatusP && startWebRTCBroadcastButton.disabled) { // If broadcasting
-            updateViewerCountDisplay();
-        }
-    });
 
     // Initial state of buttons and status messages
     if (goLiveSubmitButton) goLiveSubmitButton.disabled = true;

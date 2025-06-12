@@ -531,6 +531,13 @@ class LiveStream(db.Model):
     is_live = db.Column(db.Boolean, default=False, nullable=False, index=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
 
+    # New fields for recording and chat
+    recording_filename = db.Column(db.String(255), nullable=True)
+    media_server_url = db.Column(db.String(255), nullable=True)
+    stream_conversation_id = db.Column(db.Integer, db.ForeignKey('conversations.id'), nullable=True, unique=True)
+    stream_conversation = db.relationship('Conversation', backref=db.backref('live_stream_chat', uselist=False))
+    enable_recording = db.Column(db.Boolean, default=False, nullable=True) # Add this too
+
     user = db.relationship('User', backref=db.backref('live_streams', lazy='dynamic'))
 
     def __repr__(self):
