@@ -273,6 +273,28 @@ class Comment(db.Model):
     def __repr__(self):
         return f'<Comment {self.body[:50]}...>'
 
+class Mention(db.Model):
+    __tablename__ = 'mention'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)  # The user who is tagged
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=True, index=True)
+    comment_id = db.Column(db.Integer, db.ForeignKey('comments.id'), nullable=True, index=True)
+    actor_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)  # The user who made the mention
+    timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+
+    user = db.relationship('User', foreign_keys=[user_id], backref=db.backref('mentions_received', lazy='dynamic'))
+    actor = db.relationship('User', foreign_keys=[actor_id], backref=db.backref('mentions_made', lazy='dynamic'))
+    post = db.relationship('Post', backref=db.backref('mentions', lazy='dynamic', cascade='all, delete-orphan'))
+    comment = db.relationship('Comment', backref=db.backref('mentions', lazy='dynamic', cascade='all, delete-orphan'))
+
+    # Check constraint to ensure that either post_id or comment_id is not null can be added here if db supports it well
+    # For now, handling in application logic as per instructions.
+    # __table_args__ = (db.CheckConstraint('(post_id IS NOT NULL OR comment_id IS NOT NULL)'),)
+
+
+    def __repr__(self):
+        return f'<Mention id={self.id} user_id={self.user_id} actor_id={self.actor_id} post_id={self.post_id} comment_id={self.comment_id}>'
+
 class Hashtag(db.Model):
     __tablename__ = 'hashtag' # Explicit table name
     id = db.Column(db.Integer, primary_key=True)
@@ -286,9 +308,10 @@ class Notification(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     recipient_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True) # User receiving the notification
     actor_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True) # User who triggered the notification
-    type = db.Column(db.String(50), nullable=False)  # e.g., 'like', 'comment', 'follow'
+    type = db.Column(db.String(50), nullable=False)  # e.g., 'like', 'comment', 'follow', 'mention'
     related_post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=True)
     related_conversation_id = db.Column(db.Integer, db.ForeignKey('conversations.id'), nullable=True)
+    related_mention_id = db.Column(db.Integer, db.ForeignKey('mention.id'), nullable=True) # New field for mentions
     # related_comment_id could be added if direct linking to comments is desired
     timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
     is_read = db.Column(db.Boolean, default=False, nullable=False)
@@ -297,6 +320,7 @@ class Notification(db.Model):
     recipient = db.relationship('User', foreign_keys=[recipient_id], backref=db.backref('notifications_received', lazy='dynamic'))
     actor = db.relationship('User', foreign_keys=[actor_id], backref=db.backref('notifications_sent', lazy='dynamic'))
     related_post = db.relationship('Post', foreign_keys=[related_post_id], backref=db.backref('related_notifications', lazy='dynamic'))
+    related_mention = db.relationship('Mention', foreign_keys=[related_mention_id], backref=db.backref('notifications', lazy='dynamic')) # New relationship for mentions
     related_conversation = db.relationship('Conversation', foreign_keys=[related_conversation_id], lazy='joined')
     related_group_id = db.Column(db.Integer, db.ForeignKey('group.id'), nullable=True)
     related_group = db.relationship('Group', foreign_keys=[related_group_id], backref=db.backref('related_notifications', lazy='dynamic'))

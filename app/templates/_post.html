@@ -35,7 +35,7 @@
         </div>
     </div>
     <div class="card-body">
-        <p>{{ post.body }}</p>
+        <p>{{ post.body | linkify_mentions }}</p>
 
         {# Display post image if it exists #}
         {% if post.image_filename %}
@@ -185,7 +185,7 @@
                         <strong><a href="{{ url_for('main.profile', username=comment.author.username) }}" class="text-dark text-decoration-none">{{ comment.author.username }}</a></strong>
                         <small class="text-muted ml-2">{{ comment.timestamp.strftime('%Y-%m-%d %H:%M') }}</small>
                     </div>
-                    <div style="margin-left: 40px; white-space: pre-wrap;">{{ comment.body }}</div>
+                    <div style="margin-left: 40px; white-space: pre-wrap;">{{ comment.body | linkify_mentions }}</div>
                 </div>
             {% endfor %}
         {% else %}
@@ -199,7 +199,7 @@
                     <form method="POST" action="{{ url_for('main.add_comment', post_id=post.id) }}">
                         {{ comment_form.hidden_tag() }} {# Includes CSRF token #}
                         <div class="form-group">
-                            {{ comment_form.body(class="form-control form-control-sm", rows="2", placeholder="Add a comment...") }}
+                            {{ comment_form.body(class="form-control form-control-sm mentionable-textarea", rows="2", placeholder="Add a comment...") }}
                             {% for error in comment_form.body.errors %}
                                 <span class="text-danger d-block"><small>{{ error }}</small></span>
                             {% endfor %}

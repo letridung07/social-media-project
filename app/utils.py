@@ -3,10 +3,11 @@ import secrets
 from flask import current_app
 from PIL import Image # For image resizing - will need to install Pillow
 
+import re # For mention processing
 # Imports for recommendation functions
 from sqlalchemy import func, desc, not_, and_, or_, distinct
 from app import db # Assuming db instance is available in app package
-from app.models import User, Post, Like, Comment, Hashtag, Group, GroupMembership, followers
+from app.models import User, Post, Like, Comment, Hashtag, Group, GroupMembership, followers, Mention # Added Mention
 
 
 def save_picture(form_picture_field):
@@ -160,6 +161,77 @@ def save_story_media(form_media_file):
         form_media_file.save(media_full_path)
 
     return media_fn, media_type
+
+def process_mentions(text_content: str, owner_object, actor_user: User) -> list[User]:
+    """
+    Processes text_content to find mentions, creates Mention records,
+    and returns a list of users who were mentioned.
+    Does NOT commit to db.session.
+    """
+    mentioned_users_objects = []
+    if not text_content:
+        return mentioned_users_objects
+
+    # Use func.lower for case-insensitive username matching in query
+    # \w matches letters, numbers, and underscore.
+    potential_usernames = set(re.findall(r"@(\w+)", text_content))
+
+    for username in potential_usernames:
+        tagged_user = User.query.filter(func.lower(User.username) == username.lower()).first()
+
+        if tagged_user:
+            # Create Mention record even for self-tags.
+            # Notification logic will handle not sending notifications for self-tags.
+
+            mention = Mention(
+                user_id=tagged_user.id,
+                actor_id=actor_user.id
+                # timestamp is default
+            )
+
+            if isinstance(owner_object, Post):
+                mention.post_id = owner_object.id
+            elif isinstance(owner_object, Comment):
+                mention.comment_id = owner_object.id
+            else:
+                # Log warning or raise error if owner_object is not Post or Comment
+                current_app.logger.warning(f"process_mentions called with invalid owner_object type: {type(owner_object)}")
+                continue # Skip this mention if the owner object is not valid
+
+            db.session.add(mention)
+            mentioned_users_objects.append(tagged_user)
+
+    return mentioned_users_objects
+
+from flask import url_for
+from markupsafe import Markup, escape
+
+def linkify_mentions(text_content):
+    """
+    Converts @username patterns in text to HTML links to user profiles.
+    If username does not exist, it leaves the @username as plain text.
+    """
+    if not text_content:
+        return ""
+
+    def replace_username_with_link(match):
+        username = match.group(1)
+        # Query for user, case-insensitive
+        user = User.query.filter(func.lower(User.username) == username.lower()).first()
+        if user:
+            profile_url = url_for('main.profile', username=user.username)
+            # Use user.username for display to preserve original casing
+            return Markup(f'<a href="{escape(profile_url)}">@{escape(user.username)}</a>')
+        else:
+            # Return original match if user not found (e.g., "@nonexistentuser")
+            return match.group(0)
+
+    # Using re.sub to replace all occurrences
+    # The pattern r"@(\w+)" ensures we capture the username after @
+    # \w+ matches one or more alphanumeric characters (letters, numbers, and underscore)
+    processed_text = re.sub(r"@(\w+)", replace_username_with_link, text_content)
+    return Markup(processed_text)
+
 
 # Recommendation Functions
 
