@@ -47,8 +47,12 @@ def create_app(config_class=Config):
     def _inject_search_form():
         return inject_search_form()
 
-    with app.app_context():
-        db.create_all() # Create database tables if they don't exist
+    # Ensure models are imported so SQLAlchemy and Flask-Migrate are aware of them
+    from app import models # noqa
+
+    # Remove db.create_all() when using Flask-Migrate
+    # with app.app_context():
+    #     db.create_all() # Create database tables if they don't exist
 
     from app import events # noqa
     return app

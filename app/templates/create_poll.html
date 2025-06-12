@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block title %}Create Poll{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-8 offset-md-2">
+            <h2>Create a New Poll</h2>
+            <hr>
+
+            {% if linked_post %}
+                <div class="alert alert-info" role="alert">
+                    This poll will be associated with your post: "<em>{{ linked_post.body[:80] }}{% if linked_post.body|length > 80 %}...{% endif %}</em>"
+                </div>
+            {% elif linked_group %}
+                <div class="alert alert-info" role="alert">
+                    This poll will be associated with the group: <strong>{{ linked_group.name }}</strong>
+                </div>
+            {% endif %}
+
+            <form method="POST" novalidate>
+                {{ form.hidden_tag() }} {# CSRF token and any other hidden fields like post_id, group_id #}
+
+                {# Display general form errors if any (e.g. from custom validate_options) #}
+                {% if form.errors and not form.options.errors %} {# Show only non-field specific errors here #}
+                    <div class="alert alert-danger">
+                        {% for field, error_list in form.errors.items() %}
+                            {% if field != 'csrf_token' and field != 'options' and field != 'question' %} {# Avoid duplicating field-specific errors #}
+                                {% for error in error_list %}
+                                    <p>{{ error }}</p>
+                                {% endfor %}
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                {% endif %}
+
+                <div class="form-group mb-3">
+                    {{ form.question.label(class="form-label") }}
+                    {{ form.question(class="form-control" + (" is-invalid" if form.question.errors else ""), rows="3") }}
+                    {% if form.question.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.question.errors %}<span>{{ error }}</span><br>{% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+
+                <fieldset class="form-group mb-3">
+                    <legend class="col-form-label pt-0">Poll Options <small class="text-muted">(At least 2 required, up to {{ form.options.max_entries }})</small></legend>
+                    {# form.options.label is not typically used for FieldList directly, legend is better #}
+
+                    {% for option_entry_form in form.options %}
+                        <div class="form-group mb-2">
+                            {{ option_entry_form.option_text(class="form-control form-control-sm" + (" is-invalid" if option_entry_form.option_text.errors else ""), placeholder="Enter option " + loop.index|string) }}
+                            {% if option_entry_form.option_text.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {% for error in option_entry_form.option_text.errors %}<span>{{ error }}</span><br>{% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+
+                    {# Display errors specifically from the validate_options method or FieldList level errors #}
+                    {% if form.options.errors %}
+                        <div class="alert alert-danger mt-2 p-2">
+                            {% for error in form.options.errors %}
+                                <p class="mb-0">{{ error }}</p>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                </fieldset>
+
+                {# Hidden fields post_id and group_id are rendered by form.hidden_tag() or individually if needed, #}
+                {# but their values are set by the route. For clarity, they are part of hidden_tag() if using Flask-WTF defaults. #}
+                {# If you need to ensure they are there even if empty: #}
+                {# {{ form.post_id() }} #}
+                {# {{ form.group_id() }} #}
+
+
+                <div class="form-group mt-4">
+                    {{ form.submit(class="btn btn-primary") }}
+                    <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary ms-2">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,12 +1,13 @@
-import os # Ensure os is imported
+import os
 import re # For hashtag parsing
-from flask import Blueprint, render_template, redirect, url_for, flash, request, abort, current_app # Ensure current_app is imported
+from datetime import datetime, timezone
+from flask import Blueprint, render_template, redirect, url_for, flash, request, abort, current_app, jsonify # Import jsonify
 from flask_login import login_user, current_user, logout_user, login_required
 from sqlalchemy import or_
-from app import db, socketio # Import socketio
-from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm # Import new forms
-from app.models import User, Post, Like, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership # Import Hashtag # Group is already here
-from app.utils import save_picture, save_post_image, save_post_video, save_group_image
+from app import db, socketio
+from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm
+from app.models import User, Post, Like, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers # Import PollVote
+from app.utils import save_picture, save_post_image, save_post_video, save_group_image, save_story_media
 from app.email_utils import send_password_reset_email # Import email utility
 
 main = Blueprint('main', __name__)
@@ -798,6 +799,263 @@ def groups_list():
     # The template groups.html will be created in a subsequent step
     return render_template('groups.html', title='Browse Groups', groups=all_groups)
 
+
+# -------------------- Story Routes --------------------
+
+@main.route('/stories')
+@login_required
+def display_stories():
+    now = datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow()
+
+    followed_user_ids = [user.id for user in current_user.followed]
+    user_ids_to_show = followed_user_ids + [current_user.id]
+
+    active_stories = Story.query.filter(
+        Story.user_id.in_(user_ids_to_show),
+        Story.expires_at > now
+    ).order_by(Story.timestamp.desc()).all()
+
+    return render_template('stories.html', title='Stories', stories=active_stories)
+
+@main.route('/story/create', methods=['GET', 'POST'])
+@login_required
+def create_story():
+    form = StoryForm()
+    if form.validate_on_submit():
+        if form.media_file.data:
+            try:
+                filename, media_type = save_story_media(form.media_file.data)
+
+                story_data = {
+                    'user_id': current_user.id,
+                    'caption': form.caption.data
+                }
+                if media_type == 'image':
+                    story_data['image_filename'] = filename
+                elif media_type == 'video':
+                    story_data['video_filename'] = filename
+                else:
+                    # This case should ideally not be reached if FileAllowed and save_story_media are robust
+                    flash('Unsupported media type after saving.', 'danger')
+                    return render_template('create_story.html', title='Create Story', form=form)
+
+                story = Story(**story_data)
+                db.session.add(story)
+                db.session.commit()
+                flash('Your story has been posted!', 'success')
+                return redirect(url_for('main.index')) # Or a dedicated stories page later
+
+            except Exception as e:
+                current_app.logger.error(f"Story media upload/save error: {e}")
+                flash('An error occurred while processing your story media. Please try again.', 'danger')
+        else:
+            # This case should be caught by form.validate_on_submit() if media_file has DataRequired()
+            flash('No media file provided.', 'warning')
+
+    return render_template('create_story.html', title='Create Story', form=form)
+
+# -------------------- Poll Routes --------------------
+
+@main.route('/poll/create', methods=['GET', 'POST'])
+@login_required
+def create_poll():
+    post_id_arg = request.args.get('post_id', type=int)
+    group_id_arg = request.args.get('group_id', type=int)
+
+    linked_post = None
+    linked_group = None
+
+    form = PollForm() # Instantiate form first
+
+    if request.method == 'GET':
+        if post_id_arg:
+            linked_post = Post.query.get(post_id_arg)
+            if linked_post:
+                # Basic check: is current_user the author of the post?
+                # Or if it's a group post, is current_user a member of the group?
+                # For simplicity, let's assume for now if post_id is provided, it's valid for linking.
+                # More complex validation can be added (e.g. cannot attach poll to other's direct post).
+                form.post_id.data = post_id_arg
+            else:
+                flash('Linked post not found.', 'warning')
+        if group_id_arg:
+            linked_group = Group.query.get(group_id_arg)
+            if linked_group:
+                # Basic check: is current_user a member of the group?
+                # membership = GroupMembership.query.filter_by(user_id=current_user.id, group_id=linked_group.id).first()
+                # if not membership:
+                #     flash('You are not a member of this group, cannot create poll for it.', 'danger')
+                # else:
+                form.group_id.data = group_id_arg
+            else:
+                flash('Linked group not found.', 'warning')
+
+    if form.validate_on_submit():
+        new_poll = Poll(question=form.question.data, user_id=current_user.id)
+
+        # Process post_id and group_id from the form's hidden fields
+        form_post_id = form.post_id.data
+        form_group_id = form.group_id.data
+
+        if form_post_id:
+            # Re-verify post exists and user is authorized (e.g., author or group admin/member)
+            post_check = Post.query.get(int(form_post_id))
+            if post_check: # Add authorization checks if needed
+                new_poll.post_id = int(form_post_id)
+            else:
+                flash('Invalid post ID linked to poll.', 'danger')
+                # Need to reload context for rendering
+                if form_group_id: linked_group = Group.query.get(int(form_group_id))
+                return render_template('create_poll.html', title='Create Poll', form=form, linked_post=None, linked_group=linked_group)
+
+
+        if form_group_id:
+            # Re-verify group exists and user is authorized (e.g., member)
+            group_check = Group.query.get(int(form_group_id))
+            if group_check: # Add authorization checks if needed
+                new_poll.group_id = int(form_group_id)
+            else:
+                flash('Invalid group ID linked to poll.', 'danger')
+                # Need to reload context for rendering
+                if form_post_id: linked_post = Post.query.get(int(form_post_id))
+                return render_template('create_poll.html', title='Create Poll', form=form, linked_post=linked_post, linked_group=None)
+
+        # Prevent linking to both a post and a group simultaneously if that's a business rule
+        # For now, allowing both if data is provided, though UI might only provide one context.
+
+        db.session.add(new_poll)
+        db.session.flush() # Get new_poll.id for options
+
+        for entry in form.options.entries:
+            option_text = entry.form.option_text.data.strip()
+            if option_text: # Only save options with actual text
+                new_option = PollOption(poll_id=new_poll.id, option_text=option_text)
+                db.session.add(new_option)
+
+        db.session.commit() # This commits the poll and its options
+        flash('Poll created successfully!', 'success')
+
+        # --- Notification Logic Start ---
+        if new_poll.group_id:
+            group = Group.query.get(new_poll.group_id)
+            if group:
+                for membership in group.memberships:
+                    member_user = membership.user
+                    if member_user.id != current_user.id:
+                        notification = Notification(
+                            recipient_id=member_user.id,
+                            actor_id=current_user.id,
+                            type='new_group_poll',
+                            related_group_id=group.id
+                            # related_poll_id=new_poll.id # Would add this if model supported it
+                        )
+                        db.session.add(notification)
+                        socketio.emit('new_notification', {
+                            'message': f'New poll in group {group.name}: "{new_poll.question[:30]}{"..." if len(new_poll.question) > 30 else ""}"',
+                            'type': 'new_group_poll',
+                            'actor_username': current_user.username,
+                            'group_id': group.id,
+                            'group_name': group.name,
+                            'poll_question': new_poll.question[:70] # Slightly longer for direct display
+                        }, room=str(member_user.id))
+        else: # Not a group poll, so notify followers (user poll)
+            for follower in current_user.followers:
+                # No need to check if follower.id != current_user.id, as one cannot follow oneself.
+                notification = Notification(
+                    recipient_id=follower.id,
+                    actor_id=current_user.id,
+                    type='new_user_poll',
+                    related_post_id=new_poll.post_id if new_poll.post_id else None # Link to post if poll is tied to one
+                    # related_poll_id=new_poll.id # Would add this if model supported it
+                )
+                db.session.add(notification)
+                socketio.emit('new_notification', {
+                    'message': f'{current_user.username} created a new poll: "{new_poll.question[:30]}{"..." if len(new_poll.question) > 30 else ""}"',
+                    'type': 'new_user_poll',
+                    'actor_username': current_user.username,
+                    'poll_question': new_poll.question[:70] # Slightly longer for direct display
+                    # 'post_id': new_poll.post_id if new_poll.post_id else None # Optional: if want to link to post
+                }, room=str(follower.id))
+
+        db.session.commit() # Commit notifications
+        # --- Notification Logic End ---
+
+        if new_poll.post_id:
+            # Assuming a route like 'main.view_post' exists
+            # return redirect(url_for('main.view_post', post_id=new_poll.post_id))
+            # For now, redirect to index or a generic poll display page if that exists
+            return redirect(url_for('main.index'))
+        elif new_poll.group_id:
+            return redirect(url_for('main.view_group', group_id=new_poll.group_id))
+        else:
+            return redirect(url_for('main.index')) # Fallback, or a dedicated page for the poll itself
+
+    # If validation failed on POST, need to re-fetch context for template
+    if request.method == 'POST' and not form.validate_on_submit():
+        if form.post_id.data:
+            linked_post = Post.query.get(int(form.post_id.data))
+        if form.group_id.data:
+            linked_group = Group.query.get(int(form.group_id.data))
+
+    return render_template('create_poll.html', title='Create Poll', form=form, linked_post=linked_post, linked_group=linked_group)
+
+@main.route('/poll/<int:poll_id>/vote', methods=['POST'])
+@login_required
+def vote_on_poll(poll_id):
+    poll = Poll.query.get_or_404(poll_id)
+    selected_option_id = request.form.get('option_id', type=int)
+
+    # Default redirect location
+    # Fallback to index, but try to redirect to where the poll was (post or group page)
+    redirect_url = url_for('main.index')
+    if poll.post_id:
+        # Assuming a 'view_post' route exists that takes post_id
+        # redirect_url = url_for('main.view_post', post_id=poll.post_id)
+        pass # Placeholder, as view_post route is not defined yet. For now, will use request.referrer or index.
+    elif poll.group_id:
+        redirect_url = url_for('main.view_group', group_id=poll.group_id)
+
+    # Prefer request.referrer if available and seems safe, otherwise use constructed URL
+    # A more robust check for request.referrer might be needed in production (e.g., ensure it's on the same domain)
+    # final_redirect_url = request.referrer or redirect_url # Not needed for pure AJAX JSON response
+
+    if selected_option_id is None:
+        # flash('Please select an option to vote.', 'warning') # Replaced by JSON
+        return jsonify({'success': False, 'error': 'Please select an option to vote.'}), 400
+
+    chosen_option = PollOption.query.get(selected_option_id)
+
+    if not chosen_option or chosen_option.poll_id != poll.id:
+        # flash('Invalid option selected.', 'danger') # Replaced by JSON
+        return jsonify({'success': False, 'error': 'Invalid option selected.'}), 400
+
+    existing_vote = PollVote.query.filter_by(user_id=current_user.id, poll_id=poll.id).first()
+    message = ''
+    status_changed = False
+
+    if existing_vote:
+        if existing_vote.option_id == chosen_option.id:
+            message = 'You have already voted for this option.'
+            # No change in DB, but still success in terms of receiving the vote
+            return jsonify({'success': True, 'message': message, 'status_changed': status_changed})
+        else:
+            existing_vote.option_id = chosen_option.id
+            db.session.commit()
+            message = 'Your vote has been updated.'
+            status_changed = True
+    else:
+        new_vote = PollVote(user_id=current_user.id, option_id=chosen_option.id, poll_id=poll.id)
+        db.session.add(new_vote)
+        db.session.commit()
+        message = 'Your vote has been recorded.'
+        status_changed = True
+
+        # Optional: Notify poll creator about a new vote (if not self-vote)
+        if poll.author.id != current_user.id:
+            # Notification logic (as before, currently placeholder/skipped)
+            pass
+
+    return jsonify({'success': True, 'message': message, 'status_changed': status_changed})
 
 # -------------------- Group Management Routes --------------------
 

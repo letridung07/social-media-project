@@ -57,9 +57,18 @@ A social media platform built with Flask, featuring user authentication, profile
     *   Easily find content across the platform using the search bar located in the navigation header.
     *   Search results include relevant user profiles, posts, and groups.
     *   The search is case-insensitive, allowing for more flexible queries.
+*   **Stories**:
+    *   Share temporary photo or video updates that disappear after 24 hours.
+    *   Users can create new stories with media and captions via the `/story/create` page.
+    *   View a feed of active stories from followed users and own stories on the `/stories` page, styled with custom CSS and basic JS interaction.
+*   **Polls & Surveys**:
+    *   Create interactive polls to gather opinions. Polls include a question and multiple customizable options.
+    *   Users can vote on polls (AJAX-based), with logic to prevent multiple votes or allow changing a vote. Poll results are displayed with vote counts and percentages.
+    *   Polls can be standalone, contextually linked to groups (e.g., created from a group page or when creating a post for a group), or conceptually linked to posts.
+    *   Notifications are sent for new polls to relevant users (group members or followers).
 *   CSRF Protection for forms.
 *   Default profile picture for new users.
-*   Basic unit tests for authentication, profile management, posts, following, engagement (likes/comments), chat, and search.
+*   Unit tests for core features including authentication, profiles, posts, groups, chat, search, stories, and polls.
 
 ## Real-time Chat
 
@@ -155,6 +164,10 @@ Follow these instructions to get a copy of the project up and running on your lo
     *   A default `SECRET_KEY` is provided for development. For production, this should be set to a secure, random value, preferably via an environment variable.
     *   The database is configured to use SQLite (`app.db`) by default. The `SQLALCHEMY_DATABASE_URI` in `config.py` can be modified to use other databases like PostgreSQL or MySQL.
     *   The `UPLOAD_FOLDER` for profile pictures is set to `app/static/images/`.
+    *   `POST_IMAGES_UPLOAD_FOLDER` for images attached to posts is `app/static/post_images/`.
+    *   `VIDEO_UPLOAD_FOLDER` for videos attached to posts is `app/static/videos/`.
+    *   `UPLOAD_FOLDER_GROUP_IMAGES` for group images is `app/static/group_images/`.
+    *   `STORY_MEDIA_UPLOAD_FOLDER` for story media (images/videos) is `app/static/story_media/`. This path can be customized in `config.py` (defaults are provided).
 
 ### Running the Application
 
@@ -180,10 +193,18 @@ Follow these instructions to get a copy of the project up and running on your lo
 ├── app/                  # Main application package
 │   ├── static/           # Static files (CSS, JS, images)
 │   │   ├── css/
-│   │   ├── js/           # JavaScript files (e.g., chat_page.js, notifications.js)
-│   │   └── images/
+│   │   ├── js/           # JavaScript files (e.g., chat_page.js, notifications.js, stories.js, polls.js)
+│   │   ├── css/          # CSS files (e.g., style.css, stories.css)
+│   │   ├── images/       # User profile pictures
+│   │   ├── post_images/  # Images attached to posts
+│   │   ├── videos/       # Videos attached to posts
+│   │   ├── group_images/ # Group profile images
+│   │   └── story_media/  # Media for stories
 │   ├── templates/        # HTML templates
-│   │   └── chat/         # Chat specific templates
+│   │   ├── chat/         # Chat specific templates
+│   │   ├── create_story.html # Template for creating stories
+│   │   ├── stories.html    # Template for displaying stories
+│   │   └── create_poll.html  # Template for creating polls
 │   ├── __init__.py       # Application factory, initializes Flask app and extensions
 │   ├── forms.py          # WTForms definitions
 │   ├── models.py         # SQLAlchemy database models
@@ -199,7 +220,9 @@ Follow these instructions to get a copy of the project up and running on your lo
 │   ├── test_engagement.py # Tests for liking/unliking posts and adding/viewing comments
 │   ├── test_chat.py      # Chat functionality tests
     ├── test_groups.py    # Tests for group functionality
-    └── test_search.py    # Tests for search functionality
+    ├── test_search.py    # Tests for search functionality
+    ├── test_stories.py   # Tests for Stories feature
+    └── test_polls.py     # Tests for Polls feature
 ├── venv/                 # Python virtual environment (if created with this name)
 ├── .gitignore            # Specifies intentionally untracked files that Git should ignore
 ├── config.py             # Configuration settings (e.g., SECRET_KEY, database URI)
@@ -207,7 +230,16 @@ Follow these instructions to get a copy of the project up and running on your lo
 ├── requirements.txt      # Python package dependencies
 └── run.py                # Script to run the Flask development server
 ```
-*(Note: Project structure updated to reflect chat-related files like `events.py`, `js/chat_page.js`, and `templates/chat/`)*
+*(Note: Project structure updated to reflect chat-related files, new static asset folders, new templates, and new test files.)*
+
+## Usage Highlights
+
+*   **Creating a Story**: Navigate to `/story/create` (e.g., via the "Create a Story" button on the `/stories` page). Upload your media and add an optional caption.
+*   **Viewing Stories**: Visit the `/stories` page to see a feed of currently active stories from users you follow and your own.
+*   **Creating a Poll**:
+    *   **Standalone Poll**: On the "Create Post" page (when not targeting a specific group), you'll find a link "Create a Standalone Poll Instead?" which leads to `/poll/create`.
+    *   **Group-Specific Poll**: On a group's page, use the "Create Poll in this Group" button. Alternatively, when creating a post for a group, a link "Create a Poll in {{ group_name }} Instead?" will be available. Both will pre-fill the group context for the poll.
+*   **Voting on Polls**: Polls associated with posts will appear directly within the post's display. If you haven't voted, you can select an option and submit your vote via AJAX. Results update dynamically (currently on page reload after AJAX vote).
 
 ## Contributing
 

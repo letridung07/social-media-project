@@ -1,7 +1,7 @@
 from app import db
 from flask_login import UserMixin
 from passlib.hash import sha256_crypt
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 try:
     from itsdangerous import TimedJSONWebSignatureSerializer as Serializer
 except ImportError:
@@ -38,6 +38,9 @@ class User(db.Model, UserMixin):
 
     # Relationship to Post
     posts = db.relationship('Post', backref='author', lazy='dynamic')
+    stories = db.relationship('Story', backref='author', lazy='dynamic')
+    polls = db.relationship('Poll', backref='author', lazy='dynamic', foreign_keys='Poll.user_id')
+    poll_votes = db.relationship('PollVote', backref='user', lazy='dynamic')
 
     # Groups created by the user
     groups_created = db.relationship('Group', backref='creator', lazy='dynamic', foreign_keys='Group.creator_id')
@@ -133,6 +136,9 @@ class Post(db.Model):
     group_id = db.Column(db.Integer, db.ForeignKey('group.id'), nullable=True)
     # Relationship to Group
     group = db.relationship('Group', backref=db.backref('posts', lazy='dynamic'))
+
+    # Polls associated with this post
+    polls = db.relationship('Poll', backref='post', lazy='dynamic')
 
     def __repr__(self):
         return f'<Post {self.body[:50]}...>'
@@ -249,6 +255,8 @@ class Group(db.Model):
     # 'user' is the target attribute on the GroupMembership model.
     members = association_proxy('memberships', 'user', creator=lambda user_obj: GroupMembership(user=user_obj, role='member'))
 
+    # Polls associated with this group
+    polls = db.relationship('Poll', backref='group', lazy='dynamic')
 
     def __repr__(self):
         return f'<Group {self.name}>'
@@ -267,3 +275,78 @@ class GroupMembership(db.Model):
 
     def __repr__(self):
         return f'<GroupMembership User {self.user_id} in Group {self.group_id} as {self.role}>'
+
+class Story(db.Model):
+    __tablename__ = 'story'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    image_filename = db.Column(db.String(100), nullable=True)
+    video_filename = db.Column(db.String(100), nullable=True)
+    caption = db.Column(db.Text, nullable=True)
+    timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+    expires_at = db.Column(db.DateTime, index=True)
+
+    def __init__(self, **kwargs):
+        super(Story, self).__init__(**kwargs)
+        if self.timestamp is None:
+            self.timestamp = datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow()
+        self.expires_at = self.timestamp + timedelta(hours=24)
+
+    def __repr__(self):
+        return f'<Story {self.id} by User {self.user_id}>'
+
+# Poll Models
+class Poll(db.Model):
+    __tablename__ = 'poll'
+    id = db.Column(db.Integer, primary_key=True)
+    question = db.Column(db.Text, nullable=False)
+    timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False) # Creator of the poll
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=True) # Optional: Poll associated with a post
+    group_id = db.Column(db.Integer, db.ForeignKey('group.id'), nullable=True) # Optional: Poll associated with a group
+
+    options = db.relationship('PollOption', backref='poll', lazy='dynamic', cascade='all, delete-orphan')
+
+    def __repr__(self):
+        return f'<Poll {self.id} "{self.question[:30]}...">'
+
+    def user_has_voted(self, user):
+        if not user.is_authenticated:
+            return False
+        # PollVote is defined below in this file.
+        return PollVote.query.filter_by(user_id=user.id, poll_id=self.id).count() > 0
+
+    def total_votes(self):
+        # Summing up vote_count() from each option.
+        # vote_count() is defined in PollOption model.
+        return sum(option.vote_count() for option in self.options)
+
+class PollOption(db.Model):
+    __tablename__ = 'poll_option'
+    id = db.Column(db.Integer, primary_key=True)
+    option_text = db.Column(db.String(255), nullable=False)
+    poll_id = db.Column(db.Integer, db.ForeignKey('poll.id'), nullable=False)
+
+    votes = db.relationship('PollVote', backref='option', lazy='dynamic', cascade='all, delete-orphan')
+
+    def __repr__(self):
+        return f'<PollOption {self.id} "{self.option_text[:30]}..." for Poll {self.poll_id}>'
+
+    def vote_count(self):
+        # self.votes is the relationship to PollVote
+        return self.votes.count()
+
+class PollVote(db.Model):
+    __tablename__ = 'poll_vote'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    option_id = db.Column(db.Integer, db.ForeignKey('poll_option.id'), nullable=False)
+    # Adding poll_id here directly to make the UniqueConstraint straightforward
+    poll_id = db.Column(db.Integer, db.ForeignKey('poll.id'), nullable=False)
+    timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+
+    __table_args__ = (db.UniqueConstraint('user_id', 'poll_id', name='_user_poll_uc'),)
+
+    def __repr__(self):
+        return f'<PollVote by User {self.user_id} for Option {self.option_id} in Poll {self.poll_id}>'

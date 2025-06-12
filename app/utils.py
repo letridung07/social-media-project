@@ -104,3 +104,52 @@ def inject_unread_notification_count():
 def inject_search_form():
     form = SearchForm()
     return {'search_form': form}
+
+# Define allowed extensions more comprehensively at the top or import from a config
+ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+ALLOWED_VIDEO_EXTENSIONS = {'mp4', 'mov', 'avi', 'mkv'} # Added mkv as it's common
+
+def save_story_media(form_media_file):
+    random_hex = secrets.token_hex(12)
+    original_filename = form_media_file.filename
+    _, f_ext_with_dot = os.path.splitext(original_filename)
+    f_ext = f_ext_with_dot.lower().lstrip('.') # ensure lowercase and no dot
+
+    media_fn = random_hex + f_ext_with_dot.lower() # Keep the dot for the final filename
+
+    media_type = None
+    if f_ext in ALLOWED_IMAGE_EXTENSIONS:
+        media_type = 'image'
+    elif f_ext in ALLOWED_VIDEO_EXTENSIONS:
+        media_type = 'video'
+    else:
+        # This case should ideally be caught by FileAllowed validator in the form
+        raise ValueError(f"Unsupported file type for story media: .{f_ext}")
+
+    upload_folder = current_app.config.get('STORY_MEDIA_UPLOAD_FOLDER', os.path.join('app', 'static', 'story_media_default'))
+    # Construct full path relative to the application's root_path
+    media_full_path = os.path.join(current_app.root_path, upload_folder, media_fn)
+
+    # Ensure the target directory exists
+    os.makedirs(os.path.dirname(media_full_path), exist_ok=True)
+
+    if media_type == 'image':
+        img = Image.open(form_media_file)
+
+        # Define target dimensions for stories (e.g., 9:16 aspect ratio, common for stories)
+        # Max width 1080, max height 1920
+        output_max_width = 1080
+        output_max_height = 1920
+
+        # Resize while maintaining aspect ratio if it exceeds either dimension
+        # PIL's thumbnail method is good for this, it resizes in place
+        # It ensures the image fits within the (width, height) box.
+        img.thumbnail((output_max_width, output_max_height), Image.Resampling.LANCZOS)
+
+        # Could add logic here to convert to a specific format like WebP or optimize JPEG/PNG
+        # For now, save in original format (or PIL's default for the mode if conversion happened)
+        img.save(media_full_path)
+    elif media_type == 'video':
+        form_media_file.save(media_full_path)
+
+    return media_fn, media_type

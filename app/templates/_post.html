@@ -48,6 +48,58 @@
             </div>
         {% endif %}
 
+        {# Display associated polls #}
+        {% if post.polls %}
+            {% for poll_in_post in post.polls %}
+                <div class="poll-container mt-3 mb-3 p-3 border rounded">
+                    <h5>{{ poll_in_post.question }}</h5>
+                    {% set user_voted_on_this_poll = poll_in_post.user_has_voted(current_user) if current_user.is_authenticated else False %}
+                    {% set total_poll_votes = poll_in_post.total_votes() %}
+
+                    {% if user_voted_on_this_poll or not current_user.is_authenticated %}
+                        {# Display results if user has voted or is not authenticated #}
+                        <ul class="list-unstyled">
+                            {% for option in poll_in_post.options %}
+                                {% set vote_count = option.vote_count() %}
+                                {% set percentage = (vote_count * 100.0 / total_poll_votes) if total_poll_votes > 0 else 0 %}
+                                <li>
+                                    <div class="d-flex justify-content-between">
+                                        <span>{{ option.option_text }}</span>
+                                        <span>{{ vote_count }} vote{% if vote_count != 1 %}s{% endif %} ({{ "%.0f"|format(percentage) }}%)</span>
+                                    </div>
+                                    <div class="progress mt-1" style="height: 20px;">
+                                        <div class="progress-bar" role="progressbar" style="width: {{ "%.0f"|format(percentage) }}%;"
+                                             aria-valuenow="{{ "%.0f"|format(percentage) }}" aria-valuemin="0" aria-valuemax="100">
+                                            {{ "%.0f"|format(percentage) }}%
+                                        </div>
+                                    </div>
+                                </li>
+                            {% endfor %}
+                        </ul>
+                        {% if user_voted_on_this_poll %}
+                             <small class="text-muted">You have already voted.</small>
+                        {% endif %}
+                    {% else %}
+                        {# Display voting form if user is authenticated and has not voted #}
+                        <form method="POST" action="{{ url_for('main.vote_on_poll', poll_id=poll_in_post.id) }}" class="poll-vote-form" data-poll-id="{{ poll_in_post.id }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token else '' }}"/>
+                            {% for option in poll_in_post.options %}
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="option_id" id="optionPoll{{ poll_in_post.id }}Opt{{ option.id }}" value="{{ option.id }}" required>
+                                    <label class="form-check-label" for="optionPoll{{ poll_in_post.id }}Opt{{ option.id }}">
+                                        {{ option.option_text }}
+                                    </label>
+                                </div>
+                            {% endfor %}
+                            <button type="submit" class="btn btn-sm btn-outline-primary mt-2">Vote</button>
+                        </form>
+                    {% endif %}
+                     <small class="text-muted d-block mt-1">Total votes: {{ total_poll_votes }}</small>
+                </div>
+            {% endfor %}
+        {% endif %}
+        {# End of poll display section #}
+
         <div class="post-actions mb-2">
             <small class="text-muted">{{ post.like_count() }} like{% if post.like_count() != 1 %}s{% endif %}</small>
             {% if current_user.is_authenticated %}

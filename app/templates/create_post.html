@@ -14,7 +14,17 @@
                 </div>
                 {# The group_id will be part of the action URL if it was in the GET request #}
             {% endif %}
+
+            {# Link to create a poll #}
+            <div class="mb-3 text-center">
+                {% if group_id %}
+                    <a href="{{ url_for('main.create_poll', group_id=group_id) }}" class="btn btn-outline-info">Create a Poll in {{ group_name }} Instead?</a>
+                {% else %}
+                    <a href="{{ url_for('main.create_poll') }}" class="btn btn-outline-secondary">Create a Standalone Poll Instead?</a>
+                {% endif %}
+            </div>
             <hr>
+
             {# Using wtf.quick_form for consistency if desired, or keep manual rendering #}
             <form method="POST" action="{{ url_for('main.create_post', group_id=group_id if group_id else None) }}" enctype="multipart/form-data">
                 {{ form.hidden_tag() }} {# CSRF token #}
