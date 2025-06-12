@@ -53,9 +53,13 @@ A social media platform built with Flask, featuring user authentication, profile
     *   Typing indicators.
     *   Read receipts.
     *   Basic emoji support.
+*   **Search Functionality:**
+    *   Easily find content across the platform using the search bar located in the navigation header.
+    *   Search results include relevant user profiles, posts, and groups.
+    *   The search is case-insensitive, allowing for more flexible queries.
 *   CSRF Protection for forms.
 *   Default profile picture for new users.
-*   Basic unit tests for authentication, profile management, posts, following, engagement (likes/comments), and chat.
+*   Basic unit tests for authentication, profile management, posts, following, engagement (likes/comments), chat, and search.
 
 ## Real-time Chat
 
@@ -194,7 +198,8 @@ Follow these instructions to get a copy of the project up and running on your lo
 │   ├── test_follow.py    # Tests for following/unfollowing users and feed generation
 │   ├── test_engagement.py # Tests for liking/unliking posts and adding/viewing comments
 │   ├── test_chat.py      # Chat functionality tests
-│   └── test_groups.py    # Tests for group functionality
+    ├── test_groups.py    # Tests for group functionality
+    └── test_search.py    # Tests for search functionality
 ├── venv/                 # Python virtual environment (if created with this name)
 ├── .gitignore            # Specifies intentionally untracked files that Git should ignore
 ├── config.py             # Configuration settings (e.g., SECRET_KEY, database URI)
