@@ -56,9 +56,20 @@ A social media platform built with Flask, featuring user authentication, profile
 *   **Search Functionality (Enhanced):**
     *   Easily find content across the platform using the search bar.
     *   Search results include relevant user profiles, posts, groups, and hashtags.
+    *   **Personalized Recommendations:** Displays suggested posts, users, and groups on the search page based on user activity when no search query is active.
     *   **Advanced Filtering:** Filter search results by category (All, Users, Posts, Groups, Hashtags).
     *   **Sorting Options:** Sort results by Relevance, Date, or Popularity (varies by category, e.g., follower count for users, likes/comments for posts).
     *   The search is case-insensitive.
+
+### Personalized Recommendations
+To enhance content discovery, the search page now includes a "Recommended for You" section. When authenticated users visit the search page without typing a specific query, the system may suggest:
+
+*   **Recommended Posts**: Posts related to topics and hashtags you've previously engaged with (e.g., through likes and comments).
+*   **Suggested Users**: Users you might know or share interests with, based on mutual connections (e.g., people followed by users you follow) or shared group memberships.
+*   **Groups You Might Like**: Groups that align with your interests (derived from hashtags of posts you've liked) or are popular among users you follow.
+
+These recommendations are generated based on your activity on the platform and are cached to ensure quick loading. This feature aims to help you discover relevant content and connections more easily.
+
 *   **Stories**:
     *   Share temporary photo or video updates that disappear after 24 hours.
     *   Users can create new stories with media and captions via the `/story/create` page.

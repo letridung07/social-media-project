@@ -3,6 +3,12 @@ import secrets
 from flask import current_app
 from PIL import Image # For image resizing - will need to install Pillow
 
+# Imports for recommendation functions
+from sqlalchemy import func, desc, not_, and_, or_, distinct
+from app import db # Assuming db instance is available in app package
+from app.models import User, Post, Like, Comment, Hashtag, Group, GroupMembership, followers
+
+
 def save_picture(form_picture_field):
     random_hex = secrets.token_hex(8)
     _, f_ext = os.path.splitext(form_picture_field.filename)
@@ -98,7 +104,7 @@ def save_group_image(form_image_field):
     return image_fn
 
 from flask_login import current_user
-from app.models import Notification
+from app.models import Notification # Keep this specific import for Notification
 from app.forms import SearchForm # Import SearchForm
 
 def inject_unread_notification_count():
@@ -148,15 +154,188 @@ def save_story_media(form_media_file):
         output_max_width = 1080
         output_max_height = 1920
 
-        # Resize while maintaining aspect ratio if it exceeds either dimension
-        # PIL's thumbnail method is good for this, it resizes in place
-        # It ensures the image fits within the (width, height) box.
         img.thumbnail((output_max_width, output_max_height), Image.Resampling.LANCZOS)
-
-        # Could add logic here to convert to a specific format like WebP or optimize JPEG/PNG
-        # For now, save in original format (or PIL's default for the mode if conversion happened)
         img.save(media_full_path)
     elif media_type == 'video':
         form_media_file.save(media_full_path)
 
     return media_fn, media_type
+
+# Recommendation Functions
+
+def get_recommendations(user_id):
+    """
+    Main orchestrator for recommendations.
+    Fetches recommendations for posts, users, and groups for a given user.
+    """
+    user = User.query.get(user_id)
+    if not user:
+        return {'posts': [], 'users': [], 'groups': []}
+
+    recommended_posts = recommend_posts(user)
+    recommended_users = recommend_users(user)
+    recommended_groups = recommend_groups(user)
+
+    return {
+        'posts': recommended_posts,
+        'users': recommended_users,
+        'groups': recommended_groups
+    }
+
+def recommend_posts(user, limit=5):
+    """
+    Recommends posts to a user based on hashtags from their liked and commented posts.
+    """
+    if not user:
+        return []
+
+    # Collect hashtags from posts liked by the user
+    liked_hashtags_q = db.session.query(distinct(Hashtag.id)).select_from(Like)\
+        .join(Post, Like.post_id == Post.id)\
+        .join(Post.hashtags)\
+        .filter(Like.user_id == user.id)
+
+    # Collect hashtags from posts commented on by the user
+    # Assuming Comment model has a 'post_id' attribute/relationship to Post model
+    commented_hashtags_q = db.session.query(distinct(Hashtag.id)).select_from(Comment)\
+        .join(Post, Comment.post_id == Post.id) \
+        .join(Post.hashtags)\
+        .filter(Comment.user_id == user.id)
+
+    user_interest_hashtag_ids = set([h_id for (h_id,) in liked_hashtags_q.all()] + \
+                                    [h_id for (h_id,) in commented_hashtags_q.all()])
+
+    if not user_interest_hashtag_ids:
+        return []
+
+    # Posts already interacted with by the user
+    liked_post_ids = {like.post_id for like in user.likes if like.post_id is not None}
+    # Assuming Comment model has 'post_id'
+    commented_post_ids = {comment.post_id for comment in user.comments if hasattr(comment, 'post_id') and comment.post_id is not None}
+    authored_post_ids = {post.id for post in user.posts if post.id is not None}
+
+    excluded_post_ids = liked_post_ids.union(commented_post_ids).union(authored_post_ids)
+
+    # Subquery to count matching hashtags for each post
+    matching_hashtags_subquery = db.session.query(
+        Post.id.label('post_id'),
+        func.count(distinct(Hashtag.id)).label('score')
+    ).join(Post.hashtags).filter(Hashtag.id.in_(user_interest_hashtag_ids)).group_by(Post.id).subquery()
+
+    recommended_posts_query = db.session.query(Post, matching_hashtags_subquery.c.score).\
+        join(matching_hashtags_subquery, Post.id == matching_hashtags_subquery.c.post_id).\
+        filter(not_(Post.id.in_(excluded_post_ids))).\
+        filter(Post.user_id != user.id). # Ensure not to recommend user's own posts, covered by authored_post_ids but good for safety
+        order_by(desc(matching_hashtags_subquery.c.score), desc(Post.timestamp))
+
+    final_recommendations = recommended_posts_query.limit(limit).all()
+
+    return [post for post, score in final_recommendations]
+
+
+def recommend_users(user, limit=5):
+    """
+    Recommends users based on mutual connections and shared group memberships.
+    """
+    if not user:
+        return []
+
+    suggested_users_scores = {}
+    already_followed_ids = {followed.id for followed in user.followed}
+
+    # 1. Mutual Connections (Second-degree connections)
+    # Score by the number of users 'user' follows who also follow the suggested user.
+    if user.followed: # Check if user follows anyone
+        mutual_connections_query = db.session.query(
+            User, func.count(followers.c.follower_id).label('mutual_score')
+        ).select_from(User).join(followers, User.id == followers.c.followed_id)\
+         .filter(followers.c.follower_id.in_([f.id for f in user.followed])) \
+         .filter(User.id != user.id) \
+         .filter(not_(User.id.in_(already_followed_ids))) \
+         .group_by(User.id)
+
+        for u, score in mutual_connections_query.all():
+            suggested_users_scores[u.id] = suggested_users_scores.get(u.id, {'user': u, 'score': 0})
+            suggested_users_scores[u.id]['score'] += score
+
+    # 2. Shared Group Memberships
+    # Score by the number of shared groups.
+    user_group_ids = {membership.group_id for membership in user.group_memberships}
+    if user_group_ids:
+        shared_groups_query = db.session.query(
+            User, func.count(distinct(GroupMembership.group_id)).label('shared_group_score')
+        ).select_from(User).join(GroupMembership, User.id == GroupMembership.user_id)\
+         .filter(GroupMembership.group_id.in_(user_group_ids))\
+         .filter(User.id != user.id)\
+         .filter(not_(User.id.in_(already_followed_ids))) \
+         .group_by(User.id)
+
+        for u, score in shared_groups_query.all():
+            suggested_users_scores[u.id] = suggested_users_scores.get(u.id, {'user': u, 'score': 0})
+            suggested_users_scores[u.id]['score'] += score
+
+    # Filter out users with zero score if any accidentally got in
+    valid_suggestions = [s for s in suggested_users_scores.values() if s['score'] > 0]
+
+    # Sort users by score (desc) and then by username (asc)
+    # Python's sort is stable: sort by username first, then by score.
+    sorted_suggestions = sorted(valid_suggestions, key=lambda x: x['user'].username)
+    sorted_suggestions = sorted(sorted_suggestions, key=lambda x: x['score'], reverse=True)
+
+    return [item['user'] for item in sorted_suggestions[:limit]]
+
+
+def recommend_groups(user, limit=5):
+    """
+    Recommends groups based on user's liked post hashtags and groups joined by followed users.
+    """
+    if not user:
+        return []
+
+    suggested_groups_scores = {}
+    user_member_of_group_ids = {membership.group_id for membership in user.group_memberships}
+
+    # 1. Interest-Based (Hashtags from liked posts)
+    # Score by number of relevant hashtags found in group's posts
+    liked_post_hashtags_ids_q = db.session.query(distinct(Hashtag.id)).select_from(Like)\
+        .join(Post, Like.post_id == Post.id)\
+        .join(Post.hashtags)\
+        .filter(Like.user_id == user.id)
+    liked_post_hashtags_ids = {h_id for (h_id,) in liked_post_hashtags_ids_q.all()}
+
+    if liked_post_hashtags_ids:
+        interest_based_groups_query = db.session.query(
+            Group, func.count(distinct(Hashtag.id)).label('interest_score')
+        ).select_from(Group).join(Post, Post.group_id == Group.id)\
+         .join(Post.hashtags)\
+         .filter(Hashtag.id.in_(liked_post_hashtags_ids))\
+         .filter(not_(Group.id.in_(user_member_of_group_ids)))\
+         .group_by(Group.id)
+
+        for group, score in interest_based_groups_query.all():
+            suggested_groups_scores[group.id] = suggested_groups_scores.get(group.id, {'group': group, 'score': 0})
+            suggested_groups_scores[group.id]['score'] += score
+
+    # 2. Social-Based (Followed Users' Groups)
+    # Score by number of followed users who are members of the group.
+    followed_user_ids = {followed.id for followed in user.followed}
+    if followed_user_ids:
+        social_based_groups_query = db.session.query(
+            Group, func.count(distinct(GroupMembership.user_id)).label('social_score')
+        ).select_from(Group).join(GroupMembership, Group.id == GroupMembership.group_id)\
+         .filter(GroupMembership.user_id.in_(followed_user_ids))\
+         .filter(not_(Group.id.in_(user_member_of_group_ids)))\
+         .group_by(Group.id)
+
+        for group, score in social_based_groups_query.all():
+            suggested_groups_scores[group.id] = suggested_groups_scores.get(group.id, {'group': group, 'score': 0})
+            suggested_groups_scores[group.id]['score'] += score
+
+    # Filter out groups with zero score
+    valid_suggestions = [s for s in suggested_groups_scores.values() if s['score'] > 0]
+
+    # Sort groups by score (desc) and then by group name (asc)
+    sorted_suggestions = sorted(valid_suggestions, key=lambda x: x['group'].name)
+    sorted_suggestions = sorted(sorted_suggestions, key=lambda x: x['score'], reverse=True)
+
+    return [item['group'] for item in sorted_suggestions[:limit]]
