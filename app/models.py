@@ -92,6 +92,7 @@ class User(db.Model, UserMixin):
     # Relationship to Post
     posts = db.relationship('Post', backref='author', lazy='dynamic')
     stories = db.relationship('Story', backref='author', lazy='dynamic')
+    historical_analytics = db.relationship('HistoricalAnalytics', backref='user', lazy='dynamic')
     polls = db.relationship('Poll', backref='author', lazy='dynamic', foreign_keys='Poll.user_id')
     poll_votes = db.relationship('PollVote', backref='user', lazy='dynamic')
 
@@ -514,6 +515,18 @@ class Event(db.Model):
 
     def __repr__(self):
         return f'<Event {self.name}>'
+
+class HistoricalAnalytics(db.Model):
+    __tablename__ = 'historical_analytics'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    timestamp = db.Column(db.DateTime, nullable=False, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+    likes_received = db.Column(db.Integer, default=0)
+    comments_received = db.Column(db.Integer, default=0)
+    followers_count = db.Column(db.Integer, default=0)
+
+    def __repr__(self):
+        return f'<HistoricalAnalytics for User ID {self.user_id} at {self.timestamp}>'
 
 class UserAnalytics(db.Model):
     __tablename__ = 'user_analytics'

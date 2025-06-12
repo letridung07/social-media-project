@@ -1,14 +1,16 @@
 import os
 import re # For hashtag parsing
 from datetime import datetime, timezone
-from flask import Blueprint, render_template, redirect, url_for, flash, request, abort, current_app, jsonify # Import jsonify
+from flask import Blueprint, render_template, redirect, url_for, flash, request, abort, current_app, jsonify, make_response # Import jsonify, make_response
 from flask_login import login_user, current_user, logout_user, login_required
 from sqlalchemy import or_, func # Import func
+import io # For CSV export
+import csv # For CSV export
 from sqlalchemy.orm import joinedload # Import joinedload
 from app import db, socketio, cache # Import cache
 from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm
 from app.models import User, Post, Like, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus, Mention # Import UserAnalytics, MessageReadStatus, Mention
-from app.utils import save_picture, save_post_image, save_post_video, save_group_image, save_story_media, process_mentions # Added process_mentions
+from app.utils import save_picture, save_post_image, save_post_video, save_group_image, save_story_media, process_mentions, get_historical_engagement, get_top_performing_hashtags, get_top_performing_groups # Added process_mentions and analytics utils
 from app.email_utils import send_password_reset_email # Import email utility
 
 # Import for recommendations
@@ -1000,55 +1002,161 @@ from sqlalchemy import func
 
 @main.route('/analytics')
 @login_required
+@cache.cached(timeout=3600, make_cache_key=make_user_specific_cache_key) # Cache for 1 hour
 def analytics():
-    user_posts = current_user.posts.all() # Get all posts once
+    selected_period = request.args.get('period', '7days')
+    if selected_period not in ['7days', '30days', '90days', 'all']:
+        selected_period = '7days' # Default to 7days if invalid period is provided
 
-    total_posts_count = len(user_posts)
+    # Fetch data using utility functions
+    historical_engagement_data = get_historical_engagement(current_user.id, selected_period)
+    top_hashtags_data = get_top_performing_hashtags(current_user.id, limit=5)
+    top_groups_data = get_top_performing_groups(current_user.id, limit=5)
 
-    total_likes_received = 0
-    total_comments_received = 0
-    for post in user_posts:
-        total_likes_received += post.likes.count()
-        total_comments_received += post.comments.count()
+    # Prepare data for historical engagement chart (Chart.js)
+    timestamps = [record.timestamp.strftime('%Y-%m-%d') for record in historical_engagement_data]
+    likes_over_time = [record.likes_received for record in historical_engagement_data]
+    comments_over_time = [record.comments_received for record in historical_engagement_data]
+    followers_over_time = [record.followers_count for record in historical_engagement_data]
 
+    historical_chart_labels_json = json.dumps(timestamps)
+    historical_likes_json = json.dumps(likes_over_time)
+    historical_comments_json = json.dumps(comments_over_time)
+    historical_followers_json = json.dumps(followers_over_time)
+
+    # Existing analytics data (summary stats)
+    user_analytics_summary = UserAnalytics.query.filter_by(user_id=current_user.id).first()
+
+    # Follower/Following counts (can also come from HistoricalAnalytics if desired for the latest day)
+    # For consistency, let's use the direct counts for current snapshot
     follower_count = current_user.followers.count()
     following_count = current_user.followed.count()
+    total_posts_count = current_user.posts.count() # More direct way to get total posts
 
-    # Simpler method for top posts using Python's sorted()
-    # This is generally fine for a moderate number of posts per user.
-    # For users with extremely large numbers of posts, a DB-level query would be more performant.
-    sorted_posts = sorted(user_posts, key=lambda p: p.likes.count(), reverse=True)
-    top_5_posts = sorted_posts[:5]
+    # Top posts logic (can remain as is or be enhanced)
+    user_posts = current_user.posts.all() # Get all posts for sorting if needed by existing logic
+    sorted_posts = sorted(user_posts, key=lambda p: p.likes.count() + p.comments.count(), reverse=True) # Sort by total engagement
+    top_5_posts_list = sorted_posts[:5]
 
-    # Alternative DB-level query for top 5 posts (more performant for very large datasets)
-    # top_5_posts_query_result = db.session.query(
-    # Post, func.count(Like.id).label('total_likes')
-    # ).join(Like, Like.post_id == Post.id, isouter=True).filter(
-    # Post.user_id == current_user.id
-    # ).group_by(Post.id).order_by(func.count(Like.id).desc()).limit(5).all()
-    # top_5_posts = [post_obj for post_obj, _ in top_5_posts_query_result]
-
-    # Prepare data for "Likes per Post" chart
-    top_posts_chart_data = []
-    if top_5_posts:
-        top_posts_chart_data = json.dumps([
-            {'label': f"Post ID {post.id}: {post.body[:20]}..." if len(post.body) > 20 else f"Post ID {post.id}: {post.body}", 'value': post.likes.count()}
-            for post in top_5_posts
+    top_posts_chart_data_json = []
+    if top_5_posts_list:
+        top_posts_chart_data_json = json.dumps([
+            {'label': f"Post ID {post.id}: {post.body[:20]}..." if len(post.body) > 20 else f"Post ID {post.id}: {post.body}",
+             'likes': post.likes.count(),
+             'comments': post.comments.count()}
+            for post in top_5_posts_list
         ])
-
-    user_analytics = UserAnalytics.query.filter_by(user_id=current_user.id).first()
 
 
     return render_template('analytics.html', title='User Analytics',
                            user=current_user,
+                           # Summary Stats (from UserAnalytics or direct counts)
                            total_posts=total_posts_count,
-                           total_likes_received=user_analytics.total_likes_received if user_analytics else 0,
-                           total_comments_received=user_analytics.total_comments_received if user_analytics else 0,
-                           follower_count=follower_count,
-                           following_count=following_count,
-                           top_posts=top_5_posts,
-                           top_posts_chart_data=top_posts_chart_data,
-                           user_analytics=user_analytics)
+                           total_likes_received=user_analytics_summary.total_likes_received if user_analytics_summary else 0,
+                           total_comments_received=user_analytics_summary.total_comments_received if user_analytics_summary else 0,
+                           current_follower_count=follower_count, # Renamed to avoid clash if followers_over_time is also used directly
+                           current_following_count=following_count,
+                           user_analytics_summary=user_analytics_summary, # Pass the whole object for flexibility
+
+                           # Historical Engagement Data for Charts
+                           historical_engagement_raw_data=historical_engagement_data, # Pass raw for table display if needed
+                           historical_chart_labels_json=historical_chart_labels_json,
+                           historical_likes_json=historical_likes_json,
+                           historical_comments_json=historical_comments_json,
+                           historical_followers_json=historical_followers_json,
+
+                           # Top Performing Content
+                           top_hashtags_data=top_hashtags_data,
+                           top_groups_data=top_groups_data,
+                           top_posts_list=top_5_posts_list, # Renamed for clarity
+                           top_posts_chart_data_json=top_posts_chart_data_json, # Renamed for clarity
+
+                           # Control
+                           selected_period=selected_period)
+
+
+@main.route('/analytics/export', methods=['GET'])
+@login_required
+def analytics_export():
+    period_for_export = request.args.get('period', 'all') # Default to 'all' for export
+    if period_for_export not in ['7days', '30days', '90days', 'all']:
+        period_for_export = 'all'
+
+    # 1. Fetch Summary Statistics
+    user_analytics_summary = UserAnalytics.query.filter_by(user_id=current_user.id).first()
+    total_posts_count = Post.query.filter_by(user_id=current_user.id).count()
+    current_follower_count = current_user.followers.count()
+    current_following_count = current_user.followed.count()
+
+    summary_data = [
+        ("Total Posts", total_posts_count),
+        ("Total Likes Received", user_analytics_summary.total_likes_received if user_analytics_summary else 0),
+        ("Total Comments Received", user_analytics_summary.total_comments_received if user_analytics_summary else 0),
+        ("Current Followers", current_follower_count),
+        ("Current Following", current_following_count)
+    ]
+
+    # 2. Fetch Historical Engagement Data
+    historical_engagement_data = get_historical_engagement(current_user.id, period=period_for_export)
+
+    # 3. Fetch Top Performing Hashtags
+    top_hashtags_data = get_top_performing_hashtags(current_user.id, limit=10)
+
+    # 4. Fetch Top Performing Groups
+    top_groups_data = get_top_performing_groups(current_user.id, limit=10)
+
+    # Generate CSV
+    si = io.StringIO()
+    cw = csv.writer(si)
+
+    # Section 1: Summary Statistics
+    cw.writerow(["Summary Statistics"])
+    cw.writerow(["Metric", "Value"])
+    for row in summary_data:
+        cw.writerow(row)
+    cw.writerow([]) # Empty row for spacing
+
+    # Section 2: Historical Engagement
+    cw.writerow(["Historical Engagement Data"])
+    cw.writerow(["Date", "Likes Received", "Comments Received", "Followers Count"])
+    for record in historical_engagement_data:
+        cw.writerow([
+            record.timestamp.strftime('%Y-%m-%d'),
+            record.likes_received,
+            record.comments_received,
+            record.followers_count
+        ])
+    cw.writerow([]) # Empty row
+
+    # Section 3: Top Performing Hashtags
+    cw.writerow(["Top Performing Hashtags"])
+    cw.writerow(["Hashtag", "Total Engagement", "Likes", "Comments"])
+    for hashtag in top_hashtags_data:
+        cw.writerow([
+            hashtag['tag_text'],
+            hashtag['engagement'],
+            hashtag['likes'],
+            hashtag['comments']
+        ])
+    cw.writerow([]) # Empty row
+
+    # Section 4: Top Performing Groups
+    cw.writerow(["Top Performing Groups"])
+    cw.writerow(["Group Name", "Total Engagement", "Likes", "Comments"])
+    for group in top_groups_data:
+        cw.writerow([
+            group['group_name'],
+            group['engagement'],
+            group['likes'],
+            group['comments']
+        ])
+
+    # Create response
+    output = make_response(si.getvalue())
+    filename = f"analytics_export_{current_user.username}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}.csv"
+    output.headers["Content-Disposition"] = f"attachment; filename={filename}"
+    output.headers["Content-type"] = "text/csv"
+    return output
 
 
 @main.route('/update_analytics', methods=['POST'])
