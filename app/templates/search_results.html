@@ -33,6 +33,7 @@
                 {# Assuming _post.html can handle not having comment_form passed,
                    or we pass a new CommentForm instance if needed by _post.html.
                    The current _post.html has `{% if comment_form %}` check. #}
+                    {% set item_wrapper = {'type': 'post', 'item': post, 'timestamp': post.timestamp, 'sharer': None} %}
                 {% include "_post.html" %}
             {% endfor %}
         {% endif %}

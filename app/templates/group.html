@@ -59,6 +59,7 @@
 
             {% if posts %}
                 {% for post in posts %}
+                    {% set item_wrapper = {'type': 'post', 'item': post, 'timestamp': post.timestamp, 'sharer': None} %}
                     {% include '_post.html' %}
                 {% endfor %}
             {% else %}

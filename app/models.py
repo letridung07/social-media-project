@@ -9,6 +9,52 @@ except ImportError:
 from flask import current_app
 from sqlalchemy.ext.associationproxy import association_proxy
 
+
+# Add this class definition at an appropriate place, e.g., in app/models.py or a utils file.
+# If in a utils file, ensure it's imported in app/models.py.
+# For this subtask, placing it in app/models.py before the User class is fine.
+
+class ManualPagination:
+    def __init__(self, items, page, per_page, total):
+        self.items = items
+        self.page = page
+        self.per_page = per_page
+        self.total = total
+        self.pages = (total + per_page - 1) // per_page if total > 0 else 0
+        self.has_prev = page > 1
+        self.has_next = page < self.pages
+        self.prev_num = page - 1 if self.has_prev else None
+        self.next_num = page + 1 if self.has_next else None
+
+    @property
+    def prev(self):
+        # Compatibility with Flask-SQLAlchemy pagination's prev property
+        if not self.has_prev:
+            return None
+        # This should ideally return a new Pagination object for the prev page
+        # For template usage of prev_num, this simplified version is okay.
+        return {'page': self.prev_num}
+
+
+    @property
+    def next(self):
+        # Compatibility with Flask-SQLAlchemy pagination's next property
+        if not self.has_next:
+            return None
+        return {'page': self.next_num}
+
+    def iter_pages(self, left_edge=1, left_current=1, right_current=2, right_edge=1):
+        # Simplified iter_pages logic, good enough for most cases
+        last = 0
+        for num in range(1, self.pages + 1):
+            if num <= left_edge or \
+               (num > self.page - left_current - 1 and num < self.page + right_current) or \
+               num > self.pages - right_edge:
+                if last + 1 != num:
+                    yield None
+                yield num
+                last = num
+
 # Define the association table for followers
 followers = db.Table('followers',
     db.Column('follower_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
@@ -89,26 +135,54 @@ class User(db.Model, UserMixin):
     # Method to get posts from followed users (for the feed)
     @cache.cached(timeout=300)
     def followed_posts(self, page=1, per_page=10):
-        # Posts from users the current user is following
-        followed_join = db.join(Post, followers, (Post.user_id == followers.c.followed_id))
-        followed_posts_query = db.select(Post).select_from(followed_join).filter(followers.c.follower_id == self.id)
+        user_and_followed_ids = [f.id for f in self.followed] + [self.id]
 
-        # Current user's own posts
-        own_posts_query = db.select(Post).filter_by(user_id=self.id)
+        # Get current user's posts and posts by followed users
+        direct_posts = Post.query.filter(Post.user_id.in_(user_and_followed_ids)).all()
 
-        # Combine queries using union and order by timestamp
-        # Note: For union with pagination, it's often better to paginate the final combined query.
-        # However, SQLAlchemy's paginate function works directly on a Select object.
-        # We might need to execute the union and then paginate, or use a subquery if performance becomes an issue.
-        # For now, let's construct the union and then paginate.
-        # The `cache.cached` decorator might need to be aware of page and per_page args.
-        # This can be achieved by ensuring the generated cache key includes these args.
-        # Flask-Caching does this by default for function arguments.
+        # Get shares by current user and shares by followed users
+        shares = Share.query.options(
+            db.joinedload(Share.original_post).joinedload(Post.author),
+            db.joinedload(Share.user) # Eager load the sharer (User object)
+        ).filter(Share.user_id.in_(user_and_followed_ids)).all()
 
-        combined_query = followed_posts_query.union(own_posts_query).order_by(Post.timestamp.desc())
+        feed_items = []
+        processed_post_ids_in_feed = set() # To help avoid some forms of duplication
 
-        # Execute the query with pagination
-        return db.paginate(combined_query, page=page, per_page=per_page, error_out=False)
+        # Add direct posts
+        for post in direct_posts:
+            feed_items.append({'type': 'post', 'item': post, 'timestamp': post.timestamp, 'sharer': None})
+            processed_post_ids_in_feed.add((post.id, 'post', None))
+
+
+        # Add shared posts
+        for share in shares:
+            # Avoid showing a share if the viewer is the one who shared their own post on their main feed
+            if share.user_id == self.id and share.original_post.user_id == self.id and share.group_id is None:
+                continue
+
+            # Avoid adding a share if the original post by the same author is already in feed_items
+            # This simple check might not cover all nuanced duplication scenarios but is a start.
+            # A more sophisticated check might be needed if User A follows User B, User A posts P1, User B shares P1.
+            # Current logic will show both P1 by A, and P1 shared by B. This is generally acceptable.
+
+            # Key for this share instance
+            share_key = (share.original_post.id, 'share', share.user_id)
+            if share_key not in processed_post_ids_in_feed:
+                 feed_items.append({'type': 'share', 'item': share.original_post, 'timestamp': share.timestamp, 'sharer': share.user})
+                 processed_post_ids_in_feed.add(share_key)
+
+
+        # Sort items: newest first
+        feed_items.sort(key=lambda x: x['timestamp'], reverse=True)
+
+        # Manual pagination
+        start = (page - 1) * per_page
+        end = start + per_page
+        paginated_items = feed_items[start:end]
+
+        pagination_obj = ManualPagination(paginated_items, page, per_page, len(feed_items))
+        return pagination_obj
 
     def get_reset_password_token(self, expires_sec=1800):
         s = Serializer(current_app.config['SECRET_KEY'], expires_in=expires_sec)
@@ -404,3 +478,20 @@ class UserAnalytics(db.Model):
 
     def __repr__(self):
         return f'<UserAnalytics for User ID {self.user_id}>'
+
+
+class Share(db.Model):
+    __tablename__ = 'share'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False, index=True)
+    group_id = db.Column(db.Integer, db.ForeignKey('group.id'), nullable=True, index=True)
+    timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+
+    # Relationships
+    user = db.relationship('User', backref=db.backref('shares', lazy='dynamic'))
+    original_post = db.relationship('Post', backref=db.backref('shares', lazy='dynamic'))
+    group = db.relationship('Group', backref=db.backref('shares', lazy='dynamic'))
+
+    def __repr__(self):
+        return f'<Share user_id={self.user_id} post_id={self.post_id} group_id={self.group_id}>'

@@ -1,14 +1,34 @@
 {# app/templates/_post.html #}
+{% set post = item_wrapper.item %}
+{% set sharer = item_wrapper.sharer %}
 <article class="card mb-3 post">
     <div class="card-header">
+        {# Share attribution #}
+        {% if item_wrapper.type == 'share' and sharer %}
+            <div class="shared-by mb-2 alert alert-light p-2" role="alert" style="font-size: 0.9em;">
+                <small class="text-muted">
+                    <i class="fas fa-retweet"></i> {# Example icon, ensure FontAwesome is linked or use text #}
+                    Shared by <a href="{{ url_for('main.profile', username=sharer.username) }}">{{ sharer.username }}</a>
+                    on {{ item_wrapper.timestamp.strftime('%Y-%m-%d %H:%M') }} UTC
+                </small>
+            </div>
+        {% endif %}
+
+        {# Original author info - adjust timestamp display slightly #}
         <div class="d-flex align-items-center">
             <img src="{{ url_for('static', filename='images/' + post.author.profile_picture_url) }}" loading="lazy" alt="{{ post.author.username }}'s profile picture" class="rounded-circle mr-2" width="40" height="40">
             <div>
                 <a href="{{ url_for('main.profile', username=post.author.username) }}" class="font-weight-bold text-dark text-decoration-none">{{ post.author.username }}</a>
-                <small class="text-muted d-block">{{ post.timestamp.strftime('%Y-%m-%d %H:%M:%S') }} UTC</small>
+                <small class="text-muted d-block">
+                    {% if item_wrapper.type == 'share' %}
+                        Original post on {{ post.timestamp.strftime('%Y-%m-%d %H:%M') }} UTC
+                    {% else %}
+                        {{ post.timestamp.strftime('%Y-%m-%d %H:%M') }} UTC
+                    {% endif %}
+                </small>
                 {% if post.group %}
                 <small class="text-muted d-block">
-                    Posted in: <a href="{{ url_for('main.view_group', group_id=post.group.id) }}">{{ post.group.name }}</a>
+                    In group: <a href="{{ url_for('main.view_group', group_id=post.group.id) }}">{{ post.group.name }}</a>
                 </small>
                 {% endif %}
             </div>
@@ -114,6 +134,16 @@
                         <button type="submit" class="btn btn-link btn-sm p-0">Like</button>
                     </form>
                 {% endif %}
+            {% endif %}
+
+            {# Share Button/Form #}
+            {% if current_user.is_authenticated and post.author != current_user %}
+                <form action="{{ url_for('main.share_post', post_id=post.id) }}" method="post" class="d-inline ml-2">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token else '' }}"/>
+                    {# Add a hidden field for group_id if sharing to a group is an option from this button directly #}
+                    {# For now, this button will share to the user's own feed (group_id=None) #}
+                    <button type="submit" class="btn btn-link btn-sm p-0">Share</button>
+                </form>
             {% endif %}
 
             {# Edit and Delete buttons for post author #}
