@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Manage Your Live Stream{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h2>Manage Your Live Stream</h2>
+
+    {% if stream and stream.stream_key %}
+    <div class="alert alert-info">
+        Your Stream Key: <strong>{{ stream.stream_key }}</strong>
+        <p><small>Use this key in your broadcasting software (e.g., OBS) if you were using RTMP. For WebRTC, this key is less relevant for direct browser streaming but can be kept for user identification or future RTMP ingest options.</small></p>
+    </div>
+    {% endif %}
+
+    <div class="row">
+        <div class="col-md-8">
+            <h4>Live Preview & Control</h4>
+            <div class="video-preview-container mb-3" style="background-color: #000; min-height: 300px; display: flex; align-items: center; justify-content: center; position: relative;">
+                <video id="localVideo" width="100%" height="auto" playsinline style="display: block; max-height: 480px;"></video>
+                <p id="localVideoPlaceholder" class="text-white" style="position: absolute; display: block;">Camera Preview</p>
+            </div>
+            <div class="mb-2">
+                <button id="startCameraButton" class="btn btn-secondary">Start Camera</button>
+                <button id="startWebRTCBroadcastButton" class="btn btn-success" disabled>Start WebRTC Broadcast</button>
+                <button id="stopWebRTCBroadcastButton" class="btn btn-danger" disabled>Stop WebRTC Broadcast</button>
+            </div>
+            <div class="stream-status-indicators mb-3">
+                <p id="cameraStatus" class="mb-1">Camera: Off</p>
+                <p id="webRtcStatus" class="mb-0">WebRTC: Idle</p>
+            </div>
+
+            <hr>
+            <h4>Stream Settings (Backend Status)</h4>
+            <form method="POST" action="{{ url_for('main.manage_stream') }}">
+                {{ form.hidden_tag() }}
+                <div class="form-group">
+                    {{ form.title.label(class="form-control-label") }}
+                    {% if form.title.errors %}
+                        {{ form.title(class="form-control is-invalid", placeholder="My Awesome Live Stream") }}
+                        <div class="invalid-feedback">
+                            {% for error in form.title.errors %}<span>{{ error }}</span>{% endfor %}
+                        </div>
+                    {% else %}
+                        {{ form.title(class="form-control", placeholder="My Awesome Live Stream") }}
+                    {% endif %}
+                </div>
+                <div class="form-group">
+                    {{ form.description.label(class="form-control-label") }}
+                     {% if form.description.errors %}
+                        {{ form.description(class="form-control is-invalid", rows="3", placeholder="A brief description of what you'll be streaming.") }}
+                        <div class="invalid-feedback">
+                            {% for error in form.description.errors %}<span>{{ error }}</span>{% endfor %}
+                        </div>
+                    {% else %}
+                        {{ form.description(class="form-control", rows="3", placeholder="A brief description of what you'll be streaming.") }}
+                    {% endif %}
+                </div>
+                <div class="form-group form-check">
+                    {{ form.go_live(class="form-check-input", id="goLiveCheckbox") }}
+                    {{ form.go_live.label(class="form-check-label", for="goLiveCheckbox") }}
+                </div>
+                <div class="form-group">
+                    {{ form.submit(class="btn btn-primary", id="goLiveButton", disabled=true) }}
+                </div>
+            </form>
+        </div>
+        <div class="col-md-4">
+            <h4>Backend Status</h4>
+            <p>Current Status:
+                {% if stream and stream.is_live %}
+                    <span class="badge badge-success">● LIVE</span>
+                    <a href="{{ url_for('main.view_stream', username=current_user.username) }}" class="btn btn-sm btn-info ml-2" target="_blank">View My Stream</a>
+                {% else %}
+                    <span class="badge badge-secondary">Offline</span>
+                {% endif %}
+            </p>
+            <p><small>Note: "Go Live" via the form updates your stream's public status. The "Start/Stop WebRTC Broadcast" buttons control the actual browser-to-browser stream.</small></p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+    const currentUsername = "{{ current_user.username }}";
+</script>
+<script src="{{ url_for('static', filename='js/manage_stream.js') }}"></script>
+<script>
+    const localVideo = document.getElementById('localVideo');
+    const localVideoPlaceholder = document.getElementById('localVideoPlaceholder');
+    if (localVideo && localVideoPlaceholder) {
+        localVideo.onplaying = () => {
+            localVideoPlaceholder.style.display = 'none';
+        };
+        localVideo.onpause = () => {
+             if (!localVideo.srcObject || localVideo.srcObject.getTracks().length === 0 || localVideo.srcObject.getTracks().every(t => t.readyState === 'ended')) {
+                localVideoPlaceholder.style.display = 'block';
+            }
+        };
+        if (!localVideo.srcObject || localVideo.srcObject.getTracks().length === 0) {
+            localVideoPlaceholder.style.display = 'block';
+        } else {
+             localVideoPlaceholder.style.display = 'none';
+        }
+    }
+</script>
+{% endblock %}

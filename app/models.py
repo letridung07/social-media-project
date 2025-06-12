@@ -82,6 +82,13 @@ class User(db.Model, UserMixin):
     profile_picture_url = db.Column(db.String(200), nullable=True, default='default_profile_pic.png')
     is_admin = db.Column(db.Boolean, nullable=False, default=False)
 
+    # OAuth Tokens for external services
+    twitter_access_token = db.Column(db.String(255), nullable=True)
+    facebook_access_token = db.Column(db.String(255), nullable=True)
+
+    # User Theme Preference
+    theme_preference = db.Column(db.String(50), nullable=True, default='default')
+
     # Relationship to Post
     posts = db.relationship('Post', backref='author', lazy='dynamic')
     stories = db.relationship('Story', backref='author', lazy='dynamic')
@@ -320,13 +327,30 @@ class ChatMessage(db.Model):
     sender_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True) # Added index here as well, good for finding user's messages
     body = db.Column(db.Text, nullable=False)
     timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
-    is_read = db.Column(db.Boolean, default=False, nullable=False) # Can be used to track if a message is read by recipient(s)
+    read_at = db.Column(db.DateTime, nullable=True) # Stores when the message was first read by anyone or the recipient in a 1-1 chat
 
     # Relationship to the sender (User)
     sender = db.relationship('User', backref='sent_chat_messages', foreign_keys=[sender_id])
 
     def __repr__(self):
         return f'<ChatMessage {self.id} from User {self.sender_id} in Conv {self.conversation_id}>'
+
+class MessageReadStatus(db.Model):
+    __tablename__ = 'message_read_status'
+
+    id = db.Column(db.Integer, primary_key=True)
+    message_id = db.Column(db.Integer, db.ForeignKey('chat_messages.id'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    read_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+
+    __table_args__ = (db.UniqueConstraint('message_id', 'user_id', name='_message_user_read_uc'),)
+
+    # Relationships
+    message = db.relationship('ChatMessage', backref=db.backref('read_receipts', lazy='dynamic'))
+    user = db.relationship('User', backref=db.backref('messages_read_status', lazy='dynamic')) # Changed backref name for clarity
+
+    def __repr__(self):
+        return f'<MessageReadStatus message_id={self.message_id} user_id={self.user_id} read_at={self.read_at}>'
 
 # Group Model
 class Group(db.Model):
@@ -495,3 +519,19 @@ class Share(db.Model):
 
     def __repr__(self):
         return f'<Share user_id={self.user_id} post_id={self.post_id} group_id={self.group_id}>'
+
+
+class LiveStream(db.Model):
+    __tablename__ = 'live_streams'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    title = db.Column(db.String(150), nullable=True)
+    description = db.Column(db.Text, nullable=True)
+    stream_key = db.Column(db.String(64), unique=True, nullable=True) # Generated upon starting
+    is_live = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+
+    user = db.relationship('User', backref=db.backref('live_streams', lazy='dynamic'))
+
+    def __repr__(self):
+        return f'<LiveStream {self.id} by User {self.user_id} - Title: {self.title[:30] if self.title else "N/A"}>'

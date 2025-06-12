@@ -1,8 +1,8 @@
 from flask_wtf import FlaskForm
-from wtforms import StringField, PasswordField, SubmitField, BooleanField, TextAreaField, FieldList, FormField, HiddenField
+from wtforms import StringField, PasswordField, SubmitField, BooleanField, TextAreaField, FieldList, FormField, HiddenField, SelectField
 from wtforms.fields import FileField # Correct import for FileField
 from flask_wtf.file import FileAllowed # For validation
-from wtforms.validators import DataRequired, Length, Email, EqualTo, ValidationError, Optional
+from wtforms.validators import DataRequired, Length, Email, EqualTo, ValidationError, Optional, InputRequired
 from app.models import User
 
 class RegistrationForm(FlaskForm):
@@ -29,8 +29,13 @@ class LoginForm(FlaskForm):
     submit = SubmitField('Login')
 
 class EditProfileForm(FlaskForm):
-    bio = TextAreaField('Bio', validators=[Length(min=0, max=250)])
-    profile_picture = FileField('Update Profile Picture', validators=[FileAllowed(['jpg', 'png', 'jpeg'], 'Images only!')])
+    bio = TextAreaField('Bio', validators=[Optional(), Length(min=0, max=250)])
+    profile_picture = FileField('Update Profile Picture', validators=[Optional(), FileAllowed(['jpg', 'png', 'jpeg'], 'Images only!')])
+    theme = SelectField('Site Theme', choices=[
+        ('default', 'Default Theme'),
+        ('dark', 'Dark Theme'),
+        ('blue', 'Blue Lagoon Theme')
+    ], default='default', validators=[InputRequired()])
     submit = SubmitField('Submit Changes')
 
 class PostForm(FlaskForm):
@@ -136,3 +141,9 @@ class EventForm(FlaskForm):
         if self.start_datetime.data and field.data:
             if field.data <= self.start_datetime.data:
                 raise ValidationError('End time must be after start time.')
+
+class StreamSetupForm(FlaskForm):
+    title = StringField('Stream Title', validators=[Optional(), Length(max=150)])
+    description = TextAreaField('Stream Description', validators=[Optional()])
+    go_live = BooleanField('Go Live Now / Update Live Status')
+    submit = SubmitField('Update Stream Settings')

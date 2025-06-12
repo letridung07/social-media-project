@@ -1,6 +1,6 @@
 # Flask Social Platform
 
-A social media platform built with Flask, featuring user authentication, profiles, content posting, user following, likes, comments, and real-time chat. The application also features a refreshed, modern user interface for an enhanced experience.
+A social media platform built with Flask, featuring user authentication, profiles, content posting, user following, likes, comments, and real-time chat. The application also features a refreshed, modern user interface, advanced search, theme customization, and integrations for live streaming and external content sharing (currently in placeholder state).
 
 ## Features
 
@@ -50,13 +50,15 @@ A social media platform built with Flask, featuring user authentication, profile
 *   **Real-time Chat:** (See dedicated section below for more details)
     *   One-on-one conversations.
     *   Real-time messaging with Socket.IO.
-    *   Typing indicators.
-    *   Read receipts.
+    *   **Typing Indicators:** See when other users are typing.
+    *   **Read Receipts:** "Sent" and "Read" statuses for messages.
     *   Basic emoji support.
-*   **Search Functionality:**
-    *   Easily find content across the platform using the search bar located in the navigation header.
-    *   Search results include relevant user profiles, posts, and groups.
-    *   The search is case-insensitive, allowing for more flexible queries.
+*   **Search Functionality (Enhanced):**
+    *   Easily find content across the platform using the search bar.
+    *   Search results include relevant user profiles, posts, groups, and hashtags.
+    *   **Advanced Filtering:** Filter search results by category (All, Users, Posts, Groups, Hashtags).
+    *   **Sorting Options:** Sort results by Relevance, Date, or Popularity (varies by category, e.g., follower count for users, likes/comments for posts).
+    *   The search is case-insensitive.
 *   **Stories**:
     *   Share temporary photo or video updates that disappear after 24 hours.
     *   Users can create new stories with media and captions via the `/story/create` page.
@@ -284,6 +286,9 @@ Follow these instructions to get a copy of the project up and running on your lo
     ├── test_polls.py     # Tests for Polls feature
     ├── test_events.py    # Tests for Events/Calendar feature
     ├── test_analytics.py # Tests for Analytics Dashboard
+    ├── test_sharing.py   # Placeholder for external sharing tests
+    ├── test_livestream.py # Placeholder for live stream tests
+    ├── test_themes.py    # Placeholder for theme functionality tests
 ├── venv/                 # Python virtual environment (if created with this name)
 ├── .gitignore            # Specifies intentionally untracked files that Git should ignore
 ├── config.py             # Configuration settings (e.g., SECRET_KEY, database URI)
@@ -324,6 +329,38 @@ We welcome contributions to the Flask Social Platform! Here are some ways you ca
     9.  Open a pull request against our `main` (or `develop`) branch.
 
 We'll do our best to review contributions in a timely manner.
+
+## New and Enhanced Features Overview
+
+Beyond the core functionalities listed above, recent developments have introduced several advanced features:
+
+*   **Enhanced Direct Messaging:** The real-time chat system now includes typing indicators and read receipts, providing a more interactive messaging experience. (Details in the "Real-time Chat" section).
+*   **Advanced Search & Discovery:** The search functionality has been upgraded to allow filtering by specific categories (Users, Posts, Groups, Hashtags) and sorting results by relevance, date, or popularity, making it easier to find exactly what you're looking for.
+*   **External Content Sharing (Placeholder):**
+    *   Functionality to share posts to external platforms like Twitter and Facebook has been initiated.
+    *   Users can (simulate) connecting their Twitter/Facebook accounts via OAuth placeholders in their profile settings.
+    *   "Share on Twitter" and "Share on Facebook" buttons are available on posts.
+    *   *Note: Actual API integration for sharing is a placeholder and not yet functional.*
+*   **Live Streaming (WebRTC Implementation):**
+    *   The platform now includes a live streaming feature implemented using **WebRTC** for real-time, peer-to-peer (or small group) video and audio streaming.
+    *   **Key Functionalities:**
+        *   Users can manage their stream settings (title, description) and indicate their intent to go live via the "My Stream" page.
+        *   Broadcasters have a local camera preview and client-side controls to "Start Camera," "Start WebRTC Broadcast," and "Stop WebRTC Broadcast."
+        *   Viewers can watch active live streams on a streamer's dedicated public stream page.
+        *   Real-time signaling for WebRTC (exchanging SDP offers/answers and ICE candidates) is handled via SocketIO events, enabling connections between broadcaster and viewer(s).
+    *   **Current Limitations & Considerations:**
+        *   **Scalability:** The current WebRTC setup is primarily designed for 1-to-1 or very small group streaming as it directly connects peers. It does not include an SFU (Selective Forwarding Unit) or MCU (Multipoint Conferencing Unit), so broadcasting to a large number of concurrent viewers will significantly strain the broadcaster's internet connection and processing capabilities.
+        *   **STUN/TURN Servers:** For reliable operation across various network configurations (especially NATs and firewalls), a publicly accessible STUN server (e.g., Google's `stun:stun.l.google.com:19302`) is used for NAT traversal assistance. For more complex network scenarios and to ensure connectivity where STUN might fail (e.g., symmetric NATs), a TURN server would be necessary but is not currently configured.
+        *   **Browser Compatibility:** The live streaming functionality relies on WebRTC support, which is available in most modern web browsers (Chrome, Firefox, Safari, Edge).
+    *   **Future Enhancements (Potential):**
+        *   Integration of chat on the stream viewing page (current chat UI is a placeholder).
+        *   Stream recording capabilities.
+        *   More robust error handling and connection recovery.
+*   **Customizable User Themes:**
+    *   Users can now personalize their viewing experience by selecting a site theme.
+    *   Options include "Default," "Dark Theme," and "Blue Lagoon Theme."
+    *   Theme selection is available in the "Edit Profile" page.
+    *   The chosen theme is applied globally via theme-specific CSS files.
 
 ## Data Model for Groups Feature (Mermaid Diagram)
 

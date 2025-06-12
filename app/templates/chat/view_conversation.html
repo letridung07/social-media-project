@@ -1,36 +1,54 @@
 {% extends "base.html" %}
 
 {% block content %}
+{# Ensure current_user_id is available for chat_page.js which expects it on document.body.dataset.currentUserId #}
+{# Ideally, this data attribute is on the <body> tag in base.html. #}
+{# As a workaround if base.html cannot be changed now, set it on a main container for this page. #}
+{# Or, embed as a JS global variable. For now, let's assume chat_page.js can find it if set here. #}
+{# The JS currently uses document.body.dataset.currentUserId, so this change should ideally be in base.html #}
+{# For this exercise, I will place a script tag to set a global JS variable if document.body is not updated #}
+<script>
+    // Provide currentUserId to chat_page.js if not already on body.dataset
+    if (!document.body.dataset.currentUserId) {
+        // This is a fallback. Best practice is to have current_user_id in a data attribute on body or a main div.
+        // Or for the JS to expect it from a specific element within this template.
+        // For now, we'll make it globally available for the script.
+        window.currentChatUserId = {{ current_user_id }};
+    }
+    // And ensure the body has the attribute if possible (though JS might load before this if script is in head)
+    document.body.dataset.currentUserId = "{{ current_user_id }}";
+</script>
+
 <div class="container">
     <h2 class="mb-3">{{ title }}</h2>
 
     <div id="chat-messages-container" class="mb-3 p-3 border rounded" style="height: 400px; overflow-y: auto;">
         {% if messages %}
-            {% for message in messages %}
-                {% set show_sender = loop.first or message.sender_id != loop.previtem.sender_id %}
-                <div class="chat-message mb-2 {% if message.sender_id == current_user.id %}text-right{% else %}text-left{% endif %}"
-                     data-message-id="{{ message.id }}"
-                     data-sender-id="{{ message.sender_id }}"
-                     data-timestamp="{{ message.timestamp.isoformat() ~ 'Z' }}"> {# Add ISO timestamp for JS #}
+            {% for msg in messages %} {# Changed 'message' to 'msg' to match Python variable name for augmented messages #}
+                {% set show_sender = loop.first or msg.sender_id != loop.previtem.sender_id %}
+                <div class="chat-message mb-2 {% if msg.sender_id == current_user_id %}text-right{% else %}text-left{% endif %}"
+                     data-message-id="{{ msg.id }}"
+                     data-sender-id="{{ msg.sender_id }}"
+                     data-timestamp="{{ msg.timestamp.isoformat() ~ 'Z' }}"
+                     data-read-at="{{ msg.read_at.isoformat() ~ 'Z' if msg.read_at else '' }}"
+                     data-is-read-by-current-user="{{ 'true' if msg.is_read_by_current_user else 'false' }}"
+                     data-read-at-by-current-user="{{ msg.read_at_by_current_user.isoformat() ~ 'Z' if msg.read_at_by_current_user else '' }}">
 
                     {% if show_sender %}
-                    <small class="font-weight-bold">{{ message.sender.username }}</small>
+                    <small class="font-weight-bold">{{ msg.sender_username }}</small> {# Use sender_username from augmented msg #}
                     {% else %}
-                    {# Optionally add some visual cue for grouped message, e.g., smaller margin. Using a class is better. #}
                     <div class="grouped-message-spacer"></div>
                     {% endif %}
 
-                    <div class="message-body p-2 d-inline-block rounded {% if message.sender_id == current_user.id %}bg-primary text-white{% else %}bg-light{% endif %}">
-                        {{ message.body }}
+                    <div class="message-body p-2 d-inline-block rounded {% if msg.sender_id == current_user_id %}bg-primary text-white{% else %}bg-light{% endif %}">
+                        {{ msg.body }}
                     </div>
-                    <small class="d-block text-muted message-timestamp" data-utc-timestamp="{{ message.timestamp.isoformat() ~ 'Z' }}">
-                        {{ message.timestamp.strftime('%Y-%m-%d %H:%M:%S') }} UTC {# Placeholder, will be replaced by JS #}
+                    <small class="d-block text-muted message-timestamp" data-utc-timestamp="{{ msg.timestamp.isoformat() ~ 'Z' }}">
+                        {# JS will format this #}
                     </small>
-                    {% if message.sender_id == current_user.id %}
-                        <span class="read-receipt-status" data-message-id="{{ message.id }}">
-                            {% if message.is_read %}<small class="text-muted">✓ Read</small>{% else %}<small class="text-muted">✓ Sent</small>{% endif %}
-                            {% endif %}
-                        </span>
+                    {% if msg.sender_id == current_user_id %}
+                        {# Placeholder for JS to fill. JS (initializeMessageStatuses) will set initial status #}
+                        <span class="read-receipt-status ml-1" data-message-id="{{ msg.id }}"></span>
                     {% endif %}
                 </div>
             {% endfor %}
