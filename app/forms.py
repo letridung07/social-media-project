@@ -180,6 +180,15 @@ class ArticleForm(FlaskForm):
     body = TextAreaField('Body', validators=[DataRequired()])
     submit = SubmitField('Publish Article')
 
+class AudioPostForm(FlaskForm):
+    title = StringField('Title', validators=[DataRequired(), Length(min=3, max=150)])
+    description = TextAreaField('Description', validators=[Optional(), Length(max=500)])
+    audio_file = FileField('Audio File', validators=[
+        DataRequired(),
+        FileAllowed(['mp3', 'wav', 'ogg', 'aac'], 'Audio files only! (mp3, wav, ogg, aac)')
+    ])
+    submit = SubmitField('Upload Audio')
+
 class FriendListForm(FlaskForm):
     name = StringField('List Name', validators=[DataRequired(), Length(min=1, max=100)])
     submit = SubmitField('Save List')

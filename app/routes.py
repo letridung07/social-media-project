@@ -12,11 +12,12 @@ import csv # For CSV export
 from sqlalchemy.orm import joinedload # Import joinedload
 from werkzeug.utils import secure_filename
 from app import db, socketio, cache # Import cache
-from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm, FriendListForm, AddUserToFriendListForm, PRIVACY_CHOICES, ArticleForm # Added ArticleForm
-from app.models import User, Post, MediaItem, Like, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus, Mention, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE, FriendList, Article # Added Article
-from app.utils import save_picture, save_group_image, save_story_media, process_mentions, get_historical_engagement, get_top_performing_hashtags, get_top_performing_groups, save_media_file, slugify # Added process_mentions and analytics utils, save_media_file, slugify
+from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm, FriendListForm, AddUserToFriendListForm, PRIVACY_CHOICES, ArticleForm, AudioPostForm # Added AudioPostForm
+from app.models import User, Post, MediaItem, Like, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus, Mention, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE, FriendList, Article, AudioPost # Added AudioPost
+from app.utils import save_picture, save_group_image, save_story_media, process_mentions, get_historical_engagement, get_top_performing_hashtags, get_top_performing_groups, save_media_file, slugify, save_audio_file, get_audio_duration # Added save_audio_file, get_audio_duration
 from app.email_utils import send_password_reset_email # Import email utility
 import secrets # For slug generation
+from wtforms.validators import DataRequired # For dynamic validator modification
 
 # Import for recommendations
 from app.utils import get_recommendations
@@ -2574,3 +2575,143 @@ def user_articles(username):
     articles_pagination = user.articles.order_by(Article.timestamp.desc()).paginate(page=page, per_page=current_app.config.get('ARTICLES_PER_PAGE', 10), error_out=False)
     articles = articles_pagination.items
     return render_template('articles_list.html', title=f'Articles by {username}', articles=articles, pagination=articles_pagination, user=user)
+
+
+# -------------------- Audio Post Routes --------------------
+
+@main.route('/audio/upload', methods=['GET', 'POST'])
+@login_required
+def upload_audio():
+    form = AudioPostForm()
+    if form.validate_on_submit():
+        try:
+            # Assuming AUDIO_UPLOAD_FOLDER is configured in app.config
+            # e.g., current_app.config.get('AUDIO_UPLOAD_FOLDER', 'static/audio_uploads')
+            # save_audio_file utility will use this config.
+            upload_folder_config_name = current_app.config.get('AUDIO_UPLOAD_FOLDER_NAME', 'audio_uploads') # e.g. 'audio_uploads'
+            saved_filename = save_audio_file(form.audio_file.data, upload_folder_config_name)
+
+            duration_seconds = None
+            # Construct full path for duration extraction
+            # Assumes save_audio_file places it under 'static/audio_uploads_configured_name'
+            # And AUDIO_UPLOAD_FOLDER_NAME is just the last part of the path after 'static/'
+            base_static_path = current_app.config.get('MEDIA_UPLOAD_BASE_DIR', 'static')
+            full_file_path = os.path.join(current_app.root_path, base_static_path, upload_folder_config_name, saved_filename)
+
+            try:
+                duration_seconds = get_audio_duration(full_file_path)
+            except Exception as e:
+                current_app.logger.warning(f"Could not get duration for {saved_filename}: {e}")
+                # flash("Could not determine audio duration, but file uploaded.", "warning") # Optional
+
+            audio_post = AudioPost(
+                title=form.title.data,
+                description=form.description.data,
+                uploader=current_user,
+                audio_filename=saved_filename,
+                duration=duration_seconds
+            )
+            db.session.add(audio_post)
+            db.session.commit()
+            flash('Audio post uploaded successfully!', 'success')
+            return redirect(url_for('main.view_audio_post', audio_id=audio_post.id))
+        except Exception as e: # Catch errors from save_audio_file or other issues
+            current_app.logger.error(f"Audio upload error: {e}")
+            flash(f"An error occurred during audio upload: {e}", "danger")
+            # Potentially db.session.rollback() if add was attempted before error
+
+    return render_template('upload_audio.html', title='Upload New Audio', form=form)
+
+@main.route('/audio/<int:audio_id>')
+def view_audio_post(audio_id):
+    audio_post = AudioPost.query.get_or_404(audio_id)
+    # Assuming AUDIO_UPLOAD_FOLDER_NAME is like 'audio_uploads' and it's under 'static'
+    audio_folder_name = current_app.config.get('AUDIO_UPLOAD_FOLDER_NAME', 'audio_uploads')
+    audio_file_url = url_for('static', filename=f"{audio_folder_name}/{audio_post.audio_filename}")
+    return render_template('view_audio_post.html', title=audio_post.title, audio_post=audio_post, audio_file_url=audio_file_url)
+
+@main.route('/audio/<int:audio_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_audio_post(audio_id):
+    audio_post = AudioPost.query.get_or_404(audio_id)
+    if audio_post.uploader != current_user:
+        abort(403)
+
+    form = AudioPostForm(obj=audio_post) # Pre-populate for GET
+
+    original_audio_file_validator = None
+    # If it's a POST request and no new file is uploaded, make audio_file optional
+    if request.method == 'POST' and not form.audio_file.data:
+        # Store original validators and then remove DataRequired
+        original_audio_file_validator = form.audio_file.validators
+        form.audio_file.validators = [v for v in form.audio_file.validators if not isinstance(v, DataRequired)]
+
+    if form.validate_on_submit():
+        audio_post.title = form.title.data
+        audio_post.description = form.description.data
+
+        # Handle file replacement (optional, for now we're only editing metadata)
+        # If form.audio_file.data was provided, it would be validated by FileAllowed
+        # and then you would:
+        # 1. Delete old file: os.remove(os.path.join(...old_filename...))
+        # 2. Save new file: new_filename = save_audio_file(form.audio_file.data, ...)
+        # 3. Update audio_post.audio_filename = new_filename
+        # 4. Update audio_post.duration = get_audio_duration(...)
+
+        db.session.commit()
+        flash('Audio post updated successfully!', 'success')
+        return redirect(url_for('main.view_audio_post', audio_id=audio_post.id))
+
+    # If validation failed on POST and we removed validators, add them back for correct form rendering
+    if request.method == 'POST' and original_audio_file_validator is not None:
+        form.audio_file.validators = original_audio_file_validator
+
+    # For GET request, populate form fields (already done by obj=audio_post for title/desc)
+    # The audio_file field will be empty, which is fine as we're not requiring re-upload for edit.
+    return render_template('edit_audio_post.html', title=f'Edit Audio Post: {audio_post.title}', form=form, audio_post=audio_post)
+
+@main.route('/audio/<int:audio_id>/delete', methods=['POST'])
+@login_required
+def delete_audio_post(audio_id):
+    audio_post = AudioPost.query.get_or_404(audio_id)
+    if audio_post.uploader != current_user:
+        abort(403)
+
+    try:
+        # Construct file path for deletion
+        upload_folder_config_name = current_app.config.get('AUDIO_UPLOAD_FOLDER_NAME', 'audio_uploads')
+        base_static_path = current_app.config.get('MEDIA_UPLOAD_BASE_DIR', 'static')
+        file_path = os.path.join(current_app.root_path, base_static_path, upload_folder_config_name, audio_post.audio_filename)
+
+        if os.path.exists(file_path):
+            os.remove(file_path)
+    except Exception as e:
+        current_app.logger.error(f"Error deleting audio file {audio_post.audio_filename}: {e}")
+        flash(f"Error deleting physical audio file. Please contact support.", "warning")
+        # Decide if to proceed with DB deletion or not. For now, proceeding.
+
+    db.session.delete(audio_post)
+    db.session.commit()
+    flash('Audio post deleted successfully!', 'success')
+    return redirect(url_for('main.audio_list'))
+
+@main.route('/audio/list')
+def audio_list():
+    page = request.args.get('page', 1, type=int)
+    audio_posts_pagination = AudioPost.query.order_by(AudioPost.timestamp.desc()).paginate(
+        page=page, per_page=current_app.config.get('AUDIO_POSTS_PER_PAGE', 10), error_out=False
+    )
+    audios = audio_posts_pagination.items
+    return render_template('audio_list.html', title='All Audio Posts', audio_posts=audios, pagination=audio_posts_pagination)
+
+@main.route('/user/<username>/audio')
+def user_audio_list(username):
+    user = User.query.filter_by(username=username).first_or_404()
+    page = request.args.get('page', 1, type=int)
+    audio_posts_pagination = user.audio_posts.order_by(AudioPost.timestamp.desc()).paginate(
+        page=page, per_page=current_app.config.get('AUDIO_POSTS_PER_PAGE', 10), error_out=False
+    )
+    audios = audio_posts_pagination.items
+    # Need to pass audio_folder_name for constructing URLs in the template
+    audio_folder_name = current_app.config.get('AUDIO_UPLOAD_FOLDER_NAME', 'audio_uploads')
+    return render_template('audio_list.html', title=f'Audio Posts by {username}', audio_posts=audios, pagination=audio_posts_pagination, user=user, audio_folder_name=audio_folder_name)

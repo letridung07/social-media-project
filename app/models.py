@@ -124,6 +124,7 @@ class User(db.Model, UserMixin):
     posts = db.relationship('Post', backref='author', lazy='dynamic')
     stories = db.relationship('Story', backref='author', lazy='dynamic')
     articles = db.relationship('Article', backref='author', lazy='dynamic', cascade='all, delete-orphan') # New relationship for Articles
+    audio_posts = db.relationship('AudioPost', backref='uploader', lazy='dynamic', cascade='all, delete-orphan') # New relationship for AudioPosts
     historical_analytics = db.relationship('HistoricalAnalytics', backref='user', lazy='dynamic')
     polls = db.relationship('Poll', backref='author', lazy='dynamic', foreign_keys='Poll.user_id')
     poll_votes = db.relationship('PollVote', backref='user', lazy='dynamic')
@@ -644,3 +645,17 @@ class Article(db.Model):
 
     def __repr__(self):
         return f'<Article {self.title} by User {self.user_id}>'
+
+
+class AudioPost(db.Model):
+    __tablename__ = 'audio_post'
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(150), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    audio_filename = db.Column(db.String(255), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+    duration = db.Column(db.Integer, nullable=True)  # in seconds
+
+    def __repr__(self):
+        return f'<AudioPost {self.title} by User {self.user_id}>'

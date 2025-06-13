@@ -79,6 +79,19 @@
                 {% else %}
                     <p>{{ user.username }} has not published any articles yet.</p>
                 {% endif %}
+
+                <hr class="my-4"> {# Visual separator #}
+
+                <h3 class="mt-3">{{ user.username }}'s Audio Contributions:</h3>
+                {% if user.audio_posts and user.audio_posts.count() > 0 %}
+                    <p>
+                        <a href="{{ url_for('main.user_audio_list', username=user.username) }}" class="btn btn-outline-info btn-sm">
+                            View all audio by {{ user.username }} ({{ user.audio_posts.count() }})
+                        </a>
+                    </p>
+                {% else %}
+                    <p>{{ user.username }} has not uploaded any audio yet.</p>
+                {% endif %}
             {% endif %}
         </div>
     </div>

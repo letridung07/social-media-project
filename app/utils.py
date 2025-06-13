@@ -5,6 +5,22 @@ from PIL import Image # For image resizing - will need to install Pillow
 from werkzeug.utils import secure_filename # For secure filenames
 
 import re # For mention processing
+
+# Mutagen (for audio duration)
+try:
+    from mutagen.mp3 import MP3
+    from mutagen.wave import WAVE
+    from mutagen.oggvorbis import OggVorbis
+    from mutagen.aac import AAC
+    from mutagen.mp4 import MP4 # For M4A/MP4 AAC files
+    from mutagen.flac import FLAC
+    from mutagen.id3 import ID3NoHeaderError # Specific error for some MP3s
+    MUTAGEN_AVAILABLE = True
+except ImportError:
+    MUTAGEN_AVAILABLE = False
+    # Optionally log that mutagen is not available if it's considered important
+    # current_app.logger.info("Mutagen library not found. Audio duration extraction will be disabled.")
+
 # Imports for recommendation functions
 from sqlalchemy import func, desc, not_, and_, or_, distinct
 from app import db # Assuming db instance is available in app package
@@ -638,3 +654,74 @@ def get_top_performing_groups(user_id, limit=5):
     .limit(limit).all()
 
     return [{'group_id': r.group_id, 'group_name': r.group_name, 'engagement': r.total_engagement, 'likes': r.total_likes, 'comments': r.total_comments} for r in results]
+
+
+def save_audio_file(form_audio_file_data, upload_folder_name='audio_uploads'):
+    """
+    Saves an uploaded audio file to a specified folder.
+    Returns the generated filename.
+    Assumes 'upload_folder_name' is relative to the 'static' directory base.
+    """
+    random_hex = secrets.token_hex(12)
+    original_filename = secure_filename(form_audio_file_data.filename)
+    _, f_ext_with_dot = os.path.splitext(original_filename)
+
+    audio_fn = random_hex + f_ext_with_dot.lower()
+
+    # Get base static upload directory from config
+    base_static_dir = current_app.config.get('MEDIA_UPLOAD_BASE_DIR', 'static')
+    # Construct full save path directory
+    audio_save_dir = os.path.join(current_app.root_path, base_static_dir, upload_folder_name)
+
+    os.makedirs(audio_save_dir, exist_ok=True)
+
+    full_file_path = os.path.join(audio_save_dir, audio_fn)
+
+    form_audio_file_data.save(full_file_path)
+
+    return audio_fn
+
+def get_audio_duration(file_path):
+    """
+    Extracts the duration of an audio file in seconds using mutagen.
+    Returns an integer (duration in seconds) or None if duration cannot be determined.
+    'file_path' should be the absolute path to the audio file.
+    """
+    if not MUTAGEN_AVAILABLE:
+        current_app.logger.info("Mutagen library not available, cannot get audio duration.")
+        return None
+
+    try:
+        _, ext = os.path.splitext(file_path)
+        ext = ext.lower()
+        audio = None
+
+        if ext == '.mp3':
+            try:
+                audio = MP3(file_path)
+            except ID3NoHeaderError: # Handle MP3s that might lack a proper header for metadata
+                current_app.logger.warning(f"Mutagen ID3NoHeaderError for MP3: {file_path}. Duration might be unavailable.")
+                return None
+        elif ext == '.wav':
+            audio = WAVE(file_path)
+        elif ext == '.ogg': # Handles Ogg Vorbis, Ogg Speex, Ogg Opus, Ogg Flac
+            audio = OggVorbis(file_path) # OggVorbis can often handle various ogg types
+        elif ext == '.aac':
+            audio = AAC(file_path)
+        elif ext == '.m4a' or ext == '.mp4': # M4A is typically MP4 container
+            audio = MP4(file_path)
+        elif ext == '.flac':
+            audio = FLAC(file_path)
+        else:
+            current_app.logger.warning(f"Unsupported audio file type for duration check with mutagen: {ext} for file {file_path}")
+            return None
+
+        if audio and hasattr(audio, 'info') and hasattr(audio.info, 'length'):
+            return int(audio.info.length)
+        else:
+            current_app.logger.warning(f"Could not extract duration info from {file_path} (type: {ext}). Audio info: {audio.info if audio else 'N/A'}")
+            return None
+
+    except Exception as e:
+        current_app.logger.error(f"Error getting duration for {file_path} with mutagen: {e}")
+        return None

@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% import "bootstrap/wtf.html" as wtf %}
+
+{% block title %}Edit Audio Post: {{ audio_post.title }}{% endblock %}
+
+{% block app_content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-8 offset-md-2 col-lg-6 offset-lg-3">
+            <h2>Edit Audio Post: <small class="text-muted">{{ audio_post.title }}</small></h2>
+
+            <div class="card my-3">
+                <div class="card-body">
+                    <h5 class="card-title">Current Audio File</h5>
+                    <p class="card-text">{{ audio_post.audio_filename }}</p>
+                    {% if audio_post.duration %}
+                        <p class="card-text"><small class="text-muted">Duration: {{ (audio_post.duration // 60) }}:{{ "{:02d}".format(audio_post.duration % 60) }}</small></p>
+                    {% endif %}
+                    <audio controls preload="metadata" style="width: 100%;">
+                        <source src="{{ url_for('static', filename=(config.get('AUDIO_UPLOAD_FOLDER_NAME_FOR_URL', 'audio_uploads') + '/' + audio_post.audio_filename)) }}" type="audio/mpeg"> {# Adjust type as needed #}
+                        Your browser does not support the audio element.
+                    </audio>
+                    <small class.form-text text-muted mt-2>To replace the audio file, please delete this post and upload a new one. File replacement is not supported in this edit form.</small>
+                </div>
+            </div>
+
+            <form method="POST" action="{{ url_for('main.edit_audio_post', audio_id=audio_post.id) }}">
+                {{ form.hidden_tag() }} {# CSRF token #}
+
+                <div class="form-group mb-3">
+                    {{ form.title.label(class="form-label") }}
+                    {{ form.title(class="form-control form-control-lg", placeholder="Enter audio title") }}
+                    {% if form.title.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.title.errors %}{{ error }}{% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+
+                <div class="form-group mb-3">
+                    {{ form.description.label(class="form-label") }}
+                    {{ form.description(class="form-control", rows="3", placeholder="Brief description (optional)") }}
+                    {% if form.description.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.description.errors %}{{ error }}{% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+
+                {# The form.audio_file field is part of AudioPostForm but we are not rendering it here
+                   as per the plan to not support re-upload in this specific edit form.
+                   The route logic handles its DataRequired validator.
+                   If we wanted to allow optional replacement, we would render it:
+                #}
+                {#
+                <div class="form-group mb-3">
+                    {{ form.audio_file.label(class="form-label") }} (Optional: Upload new file to replace existing)
+                    {{ form.audio_file(class="form-control") }}
+                    {% if form.audio_file.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.audio_file.errors %}{{ error }}{% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+                #}
+
+                <div class="form-group mt-4">
+                    {{ form.submit(class="btn btn-primary w-100", value="Update Audio Post") }}
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

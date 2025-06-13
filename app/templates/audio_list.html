@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title if title else "Audio Posts" }}{% endblock %}
+
+{% block app_content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-10 offset-md-1 col-lg-8 offset-lg-2">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h2>{{ title if title else "Audio Posts" }}</h2>
+                {% if current_user.is_authenticated %}
+                    <a href="{{ url_for('main.upload_audio') }}" class="btn btn-success"><i class="fas fa-plus-circle"></i> Upload New Audio</a>
+                {% endif %}
+            </div>
+
+            {% if audio_posts %}
+                <div class="list-group">
+                    {% for audio in audio_posts %}
+                        <div class="list-group-item list-group-item-action flex-column align-items-start mb-3 shadow-sm audio-list-entry">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h5 class="mb-1 audio-title"><a href="{{ url_for('main.view_audio_post', audio_id=audio.id) }}" class="text-decoration-none">{{ audio.title }}</a></h5>
+                                <small class="text-muted">{{ audio.timestamp.strftime('%Y-%m-%d') }}</small>
+                            </div>
+                            {% if audio.description %}
+                                <p class="mb-1 audio-list-snippet">
+                                    {{ audio.description | truncate(150, True, '...') }}
+                                </p>
+                            {% endif %}
+                            <small class="text-muted audio-list-metadata">
+                                Uploaded by <a href="{{ url_for('main.profile', username=audio.uploader.username) }}">{{ audio.uploader.username }}</a>
+                                {% if audio.duration %}
+                                    <span class="mx-1">|</span> Duration: {{ (audio.duration // 60) }}:{{ "{:02d}".format(audio.duration % 60) }}
+                                {% endif %}
+                            </small>
+                        </div>
+                    {% endfor %}
+                </div>
+
+                {# Pagination #}
+                {% if pagination %}
+                    <nav aria-label="Audio post navigation" class="mt-4">
+                        <ul class="pagination justify-content-center">
+                            {% if pagination.has_prev %}
+                                <li class="page-item">
+                                    <a class="page-link" href="{{ url_for(request.endpoint, page=pagination.prev_num, username=user.username if user else None, **request.view_args) }}">Previous</a>
+                                </li>
+                            {% else %}
+                                <li class="page-item disabled">
+                                    <span class="page-link">Previous</span>
+                                </li>
+                            {% endif %}
+
+                            {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=2) %}
+                                {% if page_num %}
+                                    {% if pagination.page == page_num %}
+                                        <li class="page-item active" aria-current="page">
+                                            <span class="page-link">{{ page_num }}</span>
+                                        </li>
+                                    {% else %}
+                                        <li class="page-item">
+                                            <a class="page-link" href="{{ url_for(request.endpoint, page=page_num, username=user.username if user else None, **request.view_args) }}">{{ page_num }}</a>
+                                        </li>
+                                    {% endif %}
+                                {% else %}
+                                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                                {% endif %}
+                            {% endfor %}
+
+                            {% if pagination.has_next %}
+                                <li class="page-item">
+                                    <a class="page-link" href="{{ url_for(request.endpoint, page=pagination.next_num, username=user.username if user else None, **request.view_args) }}">Next</a>
+                                </li>
+                            {% else %}
+                                <li class="page-item disabled">
+                                    <span class="page-link">Next</span>
+                                </li>
+                            {% endif %}
+                        </ul>
+                    </nav>
+                {% endif %}
+
+            {% else %}
+                <p class="mt-3 text-muted">No audio posts found.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block styles %}
+{{ super() }}
+{# Custom styles moved to style.css #}
+{% endblock %}

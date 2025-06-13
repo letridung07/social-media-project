@@ -508,3 +508,73 @@ footer p {
     color: #555;
     line-height: 1.5;
 }
+
+/* === Audio Post Specific Styles === */
+
+/* Styles for view_audio_post.html */
+.audio-post-view .card-title { /* From existing inline style */
+    font-size: 2rem;
+}
+.audio-meta { /* From existing inline style & prompt */
+    font-size: 0.9em; /* Prompt version */
+    color: #777;      /* Prompt version */
+    margin-bottom: 1em;/* Prompt version */
+}
+.audio-description { /* From existing inline style & prompt */
+    font-size: 1.1rem;
+    color: #555;
+    white-space: pre-wrap;
+    margin-top: 1rem;
+    margin-bottom: 1.5rem; /* Prompt version */
+    line-height: 1.5;     /* Prompt version */
+}
+.audio-player-container { /* From existing inline style & prompt */
+    background-color: #f8f9fa;
+    padding: 15px;
+    border-radius: 4px;
+    margin: 15px 0; /* Prompt version */
+}
+.audio-player-container audio {
+    width: 100%;
+    max-width: 600px; /* From prompt */
+}
+.audio-actions { /* Container for edit/delete buttons, from prompt */
+    margin-top: 20px;
+    padding-top: 15px; /* Added from article example for consistency */
+    border-top: 1px solid #eee; /* Added from article example */
+}
+
+/* Styles for audio_list.html */
+.audio-list-entry { /* Combines inline and prompt example */
+    padding: 15px; /* Prompt example had 10px, inline had more via list-group-item default */
+    border: 1px solid #ddd; /* From prompt */
+    border-radius: 0.3rem; /* From inline */
+    margin-bottom: 15px; /* From prompt */
+    background-color: #fff; /* From prompt */
+    transition: box-shadow 0.2s ease-in-out; /* From inline */
+}
+.audio-list-entry:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08); /* From inline */
+}
+
+.audio-title a { /* Class used in audio_list.html, combines inline and prompt */
+    text-decoration: none; /* From prompt */
+    color: var(--theme-primary, #007bff); /* From inline */
+}
+.audio-title a:hover {
+    text-decoration: underline; /* From prompt */
+    color: var(--theme-secondary, #0056b3); /* From inline */
+}
+
+.audio-list-metadata { /* Class used in audio_list.html, combines inline and prompt */
+    font-size: 0.8em; /* From inline */
+    color: #888; /* From prompt */
+    margin-bottom: 5px; /* From prompt */
+    display: block; /* Ensure margin takes effect if needed */
+}
+
+.audio-list-snippet { /* Class used in audio_list.html, combines inline and prompt */
+    font-size: 0.9rem; /* From inline */
+    color: #666; /* From inline */
+    line-height: 1.5; /* From prompt */
+}
