@@ -237,17 +237,27 @@ class User(db.Model, UserMixin):
             return None
         return User.query.get(user_id)
 
+class MediaItem(db.Model):
+    __tablename__ = 'media_item'
+    id = db.Column(db.Integer, primary_key=True)
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False, index=True)
+    filename = db.Column(db.String(255), nullable=False)
+    media_type = db.Column(db.String(10), nullable=False)  # e.g., "image", "video"
+    alt_text = db.Column(db.String(500), nullable=True)
+    timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+
+    def __repr__(self):
+        return f'<MediaItem {self.filename} for Post {self.post_id}>'
+
 class Post(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    body = db.Column(db.Text, nullable=False)
+    body = db.Column(db.Text, nullable=False) # This will serve as the caption for the gallery
     # Use lambda for default to ensure it's called at insertion time
     timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
 
-    # New field for image filename
-    image_filename = db.Column(db.String(100), nullable=True)
-    video_filename = db.Column(db.String(100), nullable=True)
-    alt_text = db.Column(db.String(500), nullable=True) # <-- New field added here
+    # Relationship to MediaItem
+    media_items = db.relationship('MediaItem', backref='post_parent', lazy='dynamic', cascade='all, delete-orphan')
 
     # likes received by this post
     likes = db.relationship('Like', backref='post', lazy='dynamic', cascade='all, delete-orphan')

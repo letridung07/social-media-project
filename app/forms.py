@@ -1,6 +1,6 @@
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, SubmitField, BooleanField, TextAreaField, FieldList, FormField, HiddenField, SelectField
-from wtforms.fields import FileField # Correct import for FileField
+from wtforms.fields import FileField, MultipleFileField # Correct import for FileField and MultipleFileField
 from flask_wtf.file import FileAllowed # For validation
 from wtforms.validators import DataRequired, Length, Email, EqualTo, ValidationError, Optional, InputRequired
 from app.models import User, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE
@@ -65,16 +65,11 @@ class EditProfileForm(FlaskForm):
     submit = SubmitField('Submit Changes')
 
 class PostForm(FlaskForm):
-    body = TextAreaField('What\'s on your mind?', validators=[DataRequired(), Length(min=1, max=500)])
-    image_file = FileField('Upload Image (Optional)', validators=[
-        FileAllowed(['jpg', 'png', 'jpeg', 'gif'], 'Images only!')
-    ]) # New field
-    video_file = FileField('Upload Video (Optional)', validators=[FileAllowed(['mp4', 'mov', 'avi', 'mkv'], 'Videos only!')])
-    alt_text = TextAreaField(
-        'Alternative Text (for accessibility)',
-        description='Describe your image or video for users who cannot see it. This is optional but highly recommended.',
-        validators=[Length(max=500), Optional()] # Added Optional() validator
-    )
+    body = TextAreaField('What\'s on your mind?', validators=[DataRequired(), Length(min=1, max=500)]) # This will serve as the album caption
+    media_files = MultipleFileField('Upload Images or Videos (Select multiple files)', validators=[
+        Optional(), # Making it optional as per subtask description
+        FileAllowed(['jpg', 'png', 'jpeg', 'gif', 'mp4', 'mov', 'avi', 'mkv'], 'Images or videos only!')
+    ])
     privacy_level = SelectField('Visibility', choices=PRIVACY_CHOICES, default=PRIVACY_PUBLIC, validators=[DataRequired()])
     # custom_friend_list_id = HiddenField('Custom Friend List ID', validators=[Optional()]) # Consider adding later if needed directly in this form
     custom_friend_list_id = SelectField('Select Friend List', choices=[], coerce=int, validators=[Optional()]) # Added coerce=int and Optional

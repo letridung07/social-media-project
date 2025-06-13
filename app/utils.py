@@ -2,6 +2,7 @@ import os
 import secrets
 from flask import current_app
 from PIL import Image # For image resizing - will need to install Pillow
+from werkzeug.utils import secure_filename # For secure filenames
 
 import re # For mention processing
 # Imports for recommendation functions
@@ -9,6 +10,11 @@ from sqlalchemy import func, desc, not_, and_, or_, distinct
 from app import db # Assuming db instance is available in app package
 from app.models import User, Post, Like, Comment, Hashtag, Group, GroupMembership, followers, Mention, HistoricalAnalytics, post_hashtags # Added Mention, HistoricalAnalytics, post_hashtags
 from datetime import datetime, timedelta, timezone # Added datetime, timedelta, timezone
+
+
+# Define allowed extensions comprehensively at the top
+ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+ALLOWED_VIDEO_EXTENSIONS = {'mp4', 'mov', 'avi', 'mkv'}
 
 
 def save_picture(form_picture_field):
@@ -29,56 +35,59 @@ def save_picture(form_picture_field):
 
     return picture_fn
 
-def save_post_image(form_image_field):
-    random_hex = secrets.token_hex(12) # Potentially more images, so longer hex for less collision chance
-    _, f_ext = os.path.splitext(form_image_field.filename)
-    image_fn = random_hex + f_ext
-
-    # Use the configuration variable for the upload path
-    # POST_IMAGES_UPLOAD_FOLDER is 'app/static/post_images'
-    # current_app.root_path is the project root directory
-    upload_path_from_config = current_app.config.get('POST_IMAGES_UPLOAD_FOLDER', 'app/static/post_images_default') # Default fallback
-    picture_path = os.path.join(current_app.root_path, upload_path_from_config, image_fn)
-
-    # Ensure the target directory exists
-    # The directory path to create is os.path.dirname(picture_path)
-    # which would be project_root/app/static/post_images
-    os.makedirs(os.path.dirname(picture_path), exist_ok=True)
-
-    # Define output size or processing for post images.
-    # For posts, we might want larger images than profile thumbnails.
-    # Let's say max width of 800px, height auto-scaled to maintain aspect ratio.
-    output_max_width = 800
-    img = Image.open(form_image_field)
-
-    if img.width > output_max_width:
-        aspect_ratio = img.height / img.width
-        new_height = int(output_max_width * aspect_ratio)
-        img = img.resize((output_max_width, new_height), Image.Resampling.LANCZOS) # Use LANCZOS for quality
-
-    # Convert to RGB if it's a P or RGBA mode image
-    if img.mode in ("P", "RGBA"):
-        img = img.convert("RGB")
-    img.save(picture_path, optimize=True, quality=85)
-    return image_fn
-
-def save_post_video(form_video_file):
+def save_media_file(form_media_file, upload_folder_name='media_items'):
+    """
+    Saves an uploaded media file (image or video) to a specified folder,
+    performing resizing for images.
+    Returns a tuple (saved_filename, media_type).
+    Raises ValueError for unsupported file types.
+    """
     random_hex = secrets.token_hex(12)
-    _, f_ext = os.path.splitext(form_video_file.filename)
-    video_fn = random_hex + f_ext
+    # Use secure_filename to ensure the original filename is safe before extracting extension
+    original_filename = secure_filename(form_media_file.filename)
+    _, f_ext_with_dot = os.path.splitext(original_filename)
+    f_ext = f_ext_with_dot.lower().lstrip('.')
 
-    # Use the configuration variable for the upload path
-    upload_path_from_config = current_app.config.get('VIDEO_UPLOAD_FOLDER', 'app/static/videos_default') # Default fallback
-    video_full_path = os.path.join(current_app.root_path, upload_path_from_config, video_fn)
+    saved_filename = random_hex + f_ext_with_dot.lower()
+    media_type = None
 
-    # Ensure the target directory exists
-    os.makedirs(os.path.dirname(video_full_path), exist_ok=True)
+    if f_ext in ALLOWED_IMAGE_EXTENSIONS:
+        media_type = 'image'
+    elif f_ext in ALLOWED_VIDEO_EXTENSIONS:
+        media_type = 'video'
+    else:
+        raise ValueError(f"Unsupported file type: '.{f_ext}'. Allowed images: {ALLOWED_IMAGE_EXTENSIONS}, Allowed videos: {ALLOWED_VIDEO_EXTENSIONS}")
 
-    form_video_file.save(video_full_path)
-    return video_fn
+    # The 'upload_folder_name' parameter is expected to be the path relative to app.root_path
+    # e.g., 'static/media_items' or as retrieved by routes:
+    # current_app.config.get('MEDIA_ITEMS_UPLOAD_FOLDER', 'static/media_items')
+
+    # Construct the full save path directory
+    full_save_path_dir = os.path.join(current_app.root_path, upload_folder_name)
+
+    # Ensure the specific directory for the media type exists
+    os.makedirs(full_save_path_dir, exist_ok=True)
+
+    full_file_path = os.path.join(full_save_path_dir, saved_filename)
+
+    if media_type == 'image':
+        img = Image.open(form_media_file)
+        output_max_width = 1200 # Max width for general media items
+        if img.width > output_max_width:
+            aspect_ratio = img.height / img.width
+            new_height = int(output_max_width * aspect_ratio)
+            img = img.resize((output_max_width, new_height), Image.Resampling.LANCZOS)
+
+        if img.mode in ("P", "RGBA"): # Convert PNGs with palette or alpha to RGB for broader compatibility and smaller size
+            img = img.convert("RGB")
+        img.save(full_file_path, optimize=True, quality=85)
+    elif media_type == 'video':
+        form_media_file.save(full_file_path)
+
+    return saved_filename, media_type
 
 def save_group_image(form_image_field):
-    random_hex = secrets.token_hex(10) # Using 10 hex characters
+    random_hex = secrets.token_hex(10)
     _, f_ext = os.path.splitext(form_image_field.filename)
     image_fn = random_hex + f_ext
 
@@ -120,11 +129,13 @@ def inject_search_form():
     form = SearchForm()
     return {'search_form': form}
 
-# Define allowed extensions more comprehensively at the top or import from a config
-ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
-ALLOWED_VIDEO_EXTENSIONS = {'mp4', 'mov', 'avi', 'mkv'} # Added mkv as it's common
+# ALLOWED_IMAGE_EXTENSIONS and ALLOWED_VIDEO_EXTENSIONS are already defined at the top.
 
 def save_story_media(form_media_file):
+    # This function can potentially be refactored to use save_media_file
+    # by passing a specific upload_folder_name like 'story_media'
+    # and handling any story-specific resizing/processing if different.
+    # For now, keeping it separate as per subtask focus.
     random_hex = secrets.token_hex(12)
     original_filename = form_media_file.filename
     _, f_ext_with_dot = os.path.splitext(original_filename)

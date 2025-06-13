@@ -324,3 +324,59 @@ footer p {
   margin: -0.1em -0.2em; /* Counteract padding to maintain layout flow */
   border-radius: 3px; /* Optional: slightly rounded corners for the flash */
 }
+
+/* Basic Gallery Styling */
+.media-gallery, .existing-media-gallery {
+    display: flex;
+    flex-wrap: wrap; /* Allow wrapping for many items, or use overflow for carousel */
+    gap: 10px; /* Space between items */
+    margin-bottom: 15px;
+}
+
+.media-gallery-item, .media-item-container { /* .media-item-container from edit_post.html */
+    flex: 1 1 150px; /* Grow, shrink, basis for items in edit_post */
+    max-width: 200px; /* Max width for items in edit_post */
+}
+
+.media-gallery-item img, .media-gallery-item video,
+.media-item-container img, .media-item-container video {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    border-radius: 4px;
+}
+
+/* Carousel specific (if implementing) */
+.media-gallery.carousel { /* Add 'carousel' class to media-gallery if it's a carousel */
+    position: relative;
+    overflow: hidden;
+    width: 100%;
+    flex-wrap: nowrap; /* Prevent wrapping for carousel track */
+}
+
+.carousel-track {
+    display: flex;
+    transition: transform 0.3s ease-in-out;
+}
+
+.media-gallery.carousel .media-gallery-item {
+    min-width: 100%; /* Each item takes full width of the carousel viewport */
+    flex-shrink: 0;
+}
+
+.carousel-nav {
+    text-align: center;
+    margin-top: 10px;
+}
+
+.carousel-nav button {
+    background-color: #f0f0f0;
+    border: 1px solid #ccc;
+    padding: 5px 10px;
+    cursor: pointer;
+    margin: 0 5px;
+}
+.carousel-nav button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}

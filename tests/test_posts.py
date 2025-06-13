@@ -4,7 +4,7 @@ import os
 import io # For creating mock files
 from flask import current_app
 from app import create_app, db
-from app.models import User, Post, Mention, Comment, Notification # Added Mention, Comment, Notification
+from app.models import User, Post, MediaItem, Mention, Comment, Notification # Added MediaItem
 from app.utils import process_mentions, linkify_mentions # Added process_mentions and linkify_mentions
 from config import TestingConfig # Using TestingConfig for tests
 from werkzeug.datastructures import FileStorage # For creating mock FileStorage object
@@ -25,11 +25,12 @@ class PostModelCase(unittest.TestCase):
         db.session.add(self.user1)
         db.session.commit()
 
-        # Path for post images - ensure it's cleaned up
-        self.post_images_path = os.path.join(current_app.root_path, current_app.config['POST_IMAGES_UPLOAD_FOLDER'])
-        # Path for post videos
-        self.post_videos_path = os.path.join(current_app.root_path, current_app.config.get('VIDEO_UPLOAD_FOLDER', 'app/static/videos_test')) # Using a default for safety
-        os.makedirs(self.post_videos_path, exist_ok=True) # Ensure it exists for tests
+        # Path for media items - ensure it's cleaned up
+        # Assuming TestingConfig defines MEDIA_ITEMS_UPLOAD_FOLDER
+        # e.g., MEDIA_ITEMS_UPLOAD_FOLDER = 'app/static/media_items_test'
+        self.media_items_upload_folder_config = current_app.config.get('MEDIA_ITEMS_UPLOAD_FOLDER', 'static/media_items_test')
+        self.media_items_path = os.path.join(current_app.root_path, self.media_items_upload_folder_config)
+        os.makedirs(self.media_items_path, exist_ok=True)
 
 
     def tearDown(self):
@@ -37,25 +38,17 @@ class PostModelCase(unittest.TestCase):
         db.drop_all()
         self.app_context.pop()
 
-        # Clean up post_images directory
-        if os.path.exists(self.post_images_path):
-            for f in os.listdir(self.post_images_path):
+        # Clean up media_items_test directory
+        if os.path.exists(self.media_items_path):
+            for f in os.listdir(self.media_items_path):
                 try:
-                    os.remove(os.path.join(self.post_images_path, f))
+                    os.remove(os.path.join(self.media_items_path, f))
                 except OSError:
                     pass # Ignore if file is already removed or other issues
-            if not os.listdir(self.post_images_path):
-                 os.rmdir(self.post_images_path)
-
-        # Clean up post_videos directory
-        if os.path.exists(self.post_videos_path):
-            for f in os.listdir(self.post_videos_path):
-                try:
-                    os.remove(os.path.join(self.post_videos_path, f))
-                except OSError:
-                    pass # Ignore
-            if not os.listdir(self.post_videos_path):
-                os.rmdir(self.post_videos_path)
+            # Only remove if empty, to avoid error if another process/test has files there.
+            # However, for isolated tests, it should be empty.
+            if not os.listdir(self.media_items_path):
+                 os.rmdir(self.media_items_path)
 
 
     def _login(self, email, password):
@@ -73,168 +66,97 @@ class PostModelCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         post = Post.query.filter_by(body='This is a text-only post!').first()
         self.assertIsNotNone(post)
-        self.assertIsNone(post.image_filename) # Ensure no image
+        self.assertIsNone(post.media_items.first()) # Ensure no media items
 
         # Check if the post appears on the index page (where redirect goes)
         self.assertIn(b'This is a text-only post!', response.data)
-        self.assertNotIn(b'/static/post_images/', response.data) # Check that no post-specific image is shown
+        self.assertNotIn(b'media-gallery', response.data) # Check that no gallery is shown
 
         # Check profile page as well
         response_profile = self.client.get(f'/user/{self.user1.username}')
         self.assertIn(b'This is a text-only post!', response_profile.data)
-        self.assertNotIn(b'/static/post_images/', response_profile.data) # Check that no post-specific image is shown
+        self.assertNotIn(b'media-gallery', response_profile.data)
         self._logout()
 
-    def test_create_post_with_image(self):
+    def test_create_post_with_media_items(self):
         self._login('john@example.com', 'cat')
 
-        # Create a mock image file (1x1 transparent PNG)
-        # Base64 encoded: R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7
+        # Create mock image and video files
         png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
         mock_image_data = io.BytesIO(base64.b64decode(png_b64))
-        mock_file = FileStorage(stream=mock_image_data, filename="test_image.png", content_type="image/png")
+        mock_image_file = FileStorage(stream=mock_image_data, filename="test_image.png", content_type="image/png")
 
-        post_body_text = "This is a post with an image!"
-        alt_text_for_image = "This is the alt text for the test image."
+        mock_video_data = io.BytesIO(b"dummy video data")
+        mock_video_file = FileStorage(stream=mock_video_data, filename="test_video.mp4", content_type="video/mp4")
+
+        post_caption = "This is an album post with one image and one video!"
+
         response = self.client.post('/create_post', data={
-            'body': post_body_text,
-            'image_file': mock_file,
-            'alt_text': alt_text_for_image
+            'body': post_caption,
+            'media_files': [mock_image_file, mock_video_file]
         }, content_type='multipart/form-data', follow_redirects=True)
 
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'Your post is now live!', response.data)
 
-        post = Post.query.filter_by(body=post_body_text).first()
+        post = Post.query.filter_by(body=post_caption).first()
         self.assertIsNotNone(post)
-        self.assertIsNotNone(post.image_filename) # Check filename is stored
-        self.assertEqual(post.alt_text, alt_text_for_image)
+        self.assertEqual(post.body, post_caption)
 
-        # Verify image file exists
-        expected_image_path = os.path.join(self.post_images_path, post.image_filename)
+        # Verify MediaItems
+        media_items = post.media_items.all()
+        self.assertEqual(len(media_items), 2)
+
+        image_item = next((item for item in media_items if item.media_type == 'image'), None)
+        video_item = next((item for item in media_items if item.media_type == 'video'), None)
+
+        self.assertIsNotNone(image_item)
+        self.assertTrue(image_item.filename.endswith('.png'))
+        expected_image_path = os.path.join(self.media_items_path, image_item.filename)
         self.assertTrue(os.path.exists(expected_image_path))
+        self.assertIsNone(image_item.alt_text) # Alt text is not handled per item in create form yet
 
-        # Verify image is displayed on index page (where redirect goes)
-        expected_img_tag_html = f'<img src="/static/post_images/{post.image_filename}" alt="{alt_text_for_image}"'
-        self.assertIn(expected_img_tag_html.encode(), response.data)
-        self.assertIn(post_body_text.encode(), response.data)
-        self._logout()
-
-        # Test case for image without alt text
-        self._login('john@example.com', 'cat')
-        mock_image_data_no_alt = io.BytesIO(base64.b64decode(png_b64)) # Recreate stream
-        mock_file_no_alt = FileStorage(stream=mock_image_data_no_alt, filename="test_image_no_alt.png", content_type="image/png")
-        post_body_no_alt = "Image post without alt text"
-        response_no_alt = self.client.post('/create_post', data={
-            'body': post_body_no_alt,
-            'image_file': mock_file_no_alt
-            # No alt_text provided
-        }, content_type='multipart/form-data', follow_redirects=True)
-        self.assertEqual(response_no_alt.status_code, 200)
-        post_no_alt = Post.query.filter_by(body=post_body_no_alt).first()
-        self.assertIsNotNone(post_no_alt)
-        self.assertIsNone(post_no_alt.alt_text) # Should be None or empty
-
-        # Verify fallback alt text in rendered HTML
-        fallback_alt_text = f'Image for post by {self.user1.username}'
-        expected_img_tag_no_alt_html = f'<img src="/static/post_images/{post_no_alt.image_filename}" alt="{fallback_alt_text}"'
-        self.assertIn(expected_img_tag_no_alt_html.encode(), response_no_alt.data)
-        self._logout()
-
-
-    def test_create_post_with_video(self):
-        self._login('john@example.com', 'cat')
-
-        # Create a mock video file
-        video_data = io.BytesIO(b"dummy video content for a fake mp4")
-        mock_video_file = FileStorage(stream=video_data, filename="test_video.mp4", content_type="video/mp4")
-
-        post_body_text = "This is a post with a video!"
-        alt_text_for_video = "This is the alt text for the test video."
-        response = self.client.post('/create_post', data={
-            'body': post_body_text,
-            'video_file': mock_video_file,
-            'alt_text': alt_text_for_video
-        }, content_type='multipart/form-data', follow_redirects=True)
-
-        self.assertEqual(response.status_code, 200)
-        self.assertIn(b'Your post is now live!', response.data)
-
-        post = Post.query.filter_by(body=post_body_text).first()
-        self.assertIsNotNone(post)
-        self.assertIsNotNone(post.video_filename)
-        self.assertTrue(post.video_filename.endswith('.mp4'))
-        self.assertEqual(post.alt_text, alt_text_for_video)
-        self.assertIsNone(post.image_filename) # Ensure no image was inadvertently picked up
-
-        # Verify video file exists in the correct test upload folder
-        expected_video_path = os.path.join(self.post_videos_path, post.video_filename)
+        self.assertIsNotNone(video_item)
+        self.assertTrue(video_item.filename.endswith('.mp4'))
+        expected_video_path = os.path.join(self.media_items_path, video_item.filename)
         self.assertTrue(os.path.exists(expected_video_path))
+        self.assertIsNone(video_item.alt_text)
 
-        # Verify video is displayed with alt text on index page
-        expected_video_tag_html = f'<video width="100%" controls aria-describedby="video-alt-text-{post.id}"'
-        self.assertIn(expected_video_tag_html.encode(), response.data)
-        expected_alt_text_p_html = f'<p id="video-alt-text-{post.id}" class="visually-hidden">{alt_text_for_video}</p>'
-        self.assertIn(expected_alt_text_p_html.encode(), response.data)
-        self.assertIn(post_body_text.encode(), response.data)
+        # Verify gallery is displayed on index page (where redirect goes)
+        self.assertIn(b'<div class="media-gallery', response.data)
+        self.assertIn(f'src="/static/{self.media_items_upload_folder_config}/{image_item.filename}"'.encode(), response.data)
+        self.assertIn(f'src="/static/{self.media_items_upload_folder_config}/{video_item.filename}"'.encode(), response.data)
+        self.assertIn(post_caption.encode(), response.data)
+
+        # Check for carousel class if multiple items
+        if len(media_items) > 1:
+            self.assertIn(b'media-gallery mb-3 carousel', response.data) # Check for carousel class
+            self.assertIn(b'carousel-nav', response.data) # Check for nav buttons structure
+
         self._logout()
 
-        # Test case for video without alt text
-        self._login('john@example.com', 'cat')
-        video_data_no_alt = io.BytesIO(b"dummy video content no alt")
-        mock_video_file_no_alt = FileStorage(stream=video_data_no_alt, filename="test_video_no_alt.mp4", content_type="video/mp4")
-        post_body_no_alt_video = "Video post without alt text"
-        response_no_alt_video = self.client.post('/create_post', data={
-            'body': post_body_no_alt_video,
-            'video_file': mock_video_file_no_alt
-            # No alt_text
-        }, content_type='multipart/form-data', follow_redirects=True)
-        self.assertEqual(response_no_alt_video.status_code, 200)
-        post_no_alt_video_db = Post.query.filter_by(body=post_body_no_alt_video).first()
-        self.assertIsNotNone(post_no_alt_video_db)
-        self.assertIsNone(post_no_alt_video_db.alt_text)
-
-        # Verify video tag does not have aria-describedby and no hidden p for alt text
-        self.assertNotIn(b'aria-describedby="video-alt-text-', response_no_alt_video.data)
-        self.assertNotIn(f'class="visually-hidden">{alt_text_for_video}'.encode(), response_no_alt_video.data)
-        # Ensure the video tag itself is there
-        self.assertIn(f'<video width="100%" controls'.encode(), response_no_alt_video.data)
-        self.assertIn(post_no_alt_video_db.video_filename.encode(), response_no_alt_video.data)
-        self._logout()
-
-
-    def test_create_post_with_invalid_file_type(self):
+    def test_create_post_with_invalid_media_file_type(self):
         self._login('john@example.com', 'cat')
 
-        # Ensure post_images_path exists for listdir, or create it if it might not
-        if not os.path.exists(self.post_images_path):
-            os.makedirs(self.post_images_path)
+        if not os.path.exists(self.media_items_path):
+            os.makedirs(self.media_items_path)
 
-        mock_invalid_file_data = io.BytesIO(b"this is not an image")
+        mock_invalid_file_data = io.BytesIO(b"this is not an image or video")
         mock_file = FileStorage(stream=mock_invalid_file_data, filename="test.txt", content_type="text/plain")
 
         response = self.client.post('/create_post', data={
-            'body': 'Trying to upload a text file.',
-            'image_file': mock_file
-        }, content_type='multipart/form-data', follow_redirects=True) # Test with follow_redirects=False first if issues with form error display
+            'body': 'Trying to upload a text file to media_files.',
+            'media_files': [mock_file]
+        }, content_type='multipart/form-data', follow_redirects=True)
 
-        self.assertEqual(response.status_code, 200)
-        # Assuming FileAllowed validator stops processing before route attempts to save file,
-        # and re-renders the 'create_post.html' page with the form error.
-        # The create_post.html template needs to display form.image_file.errors for this to be visible.
-        # For now, we'll check for the flash message that the route *would* produce if an error happened during save_post_image
-        # OR we check that the post wasn't created.
-        # The FileAllowed validator error should be displayed by the form rendering logic.
-        # If create_post.html doesn't render form.image_file.errors, this specific assertIn might fail.
-        # However, the core logic is that the post should not be created with an invalid file.
-        self.assertIn(b'Images only!', response.data) # This expects the error to be in the response data
+        self.assertEqual(response.status_code, 200) # Form re-renders with error
+        # Check for the error message from FileAllowed validator
+        self.assertIn(b'Images or videos only!', response.data)
 
-        post = Post.query.filter_by(body='Trying to upload a text file.').first()
+        post = Post.query.filter_by(body='Trying to upload a text file to media_files.').first()
         self.assertIsNone(post) # Post should not be created
 
-        # Check that no files were saved to post_images
-        self.assertEqual(len(os.listdir(self.post_images_path)), 0, "A file was saved despite invalid type")
-
+        self.assertEqual(len(os.listdir(self.media_items_path)), 0, "A file was saved despite invalid type")
         self._logout()
 
     def test_view_posts_on_profile_and_index(self):
@@ -269,9 +191,10 @@ class PostModelCase(unittest.TestCase):
         response_index = self.client.get('/')
         self.assertIn(b'Post 1 by John', response_index.data)
         self.assertIn(b'Post 2 by John', response_index.data)
-        self.assertNotIn(b'Post by Susan', response_index.data) # John is not following Susan
+        # Assuming default privacy is public or John follows Susan for this to pass for Susan's post
+        # For this test, let's assume public posts from non-followed are not on feed by default.
+        self.assertNotIn(b'Post by Susan', response_index.data)
         self.assertIn(b'john', response_index.data) # Author username
-        # self.assertIn(b'susan', response_index.data) # Susan's username should not be on John's feed if not followed
         self._logout()
 
     def test_create_post_requires_login(self):
@@ -286,103 +209,6 @@ class PostModelCase(unittest.TestCase):
 
         post = Post.query.filter_by(body='Trying to post without login').first()
         self.assertIsNone(post)
-
-    def test_view_post_with_video_on_index_and_profile(self):
-        # Log in user
-        self._login('john@example.com', 'cat')
-
-        # Create a post with a video
-        video_data = io.BytesIO(b"dummy video content for test_view")
-        video_file = FileStorage(stream=video_data, filename="view_test_video.mp4", content_type="video/mp4")
-        post_body = "Video post for viewing test"
-
-        self.client.post('/create_post', data={
-            'body': post_body,
-            'video_file': video_file
-        }, content_type='multipart/form-data', follow_redirects=True)
-
-        # Retrieve the post from DB to get video_filename
-        post = Post.query.filter_by(body=post_body).first()
-        self.assertIsNotNone(post)
-        self.assertIsNotNone(post.video_filename)
-
-        # Test index page
-        response_index = self.client.get('/')
-        self.assertEqual(response_index.status_code, 200)
-        self.assertIn(post.video_filename.encode(), response_index.data)
-        self.assertIn(b'<video', response_index.data) # Check for <video tag
-        self.assertIn(b'controls', response_index.data) # Check for controls attribute
-        self.assertIn(f'src="/static/videos/{post.video_filename}"'.encode(), response_index.data)
-
-        # Test user's profile page
-        response_profile = self.client.get(f'/user/{self.user1.username}')
-        self.assertEqual(response_profile.status_code, 200)
-        self.assertIn(post.video_filename.encode(), response_profile.data)
-        self.assertIn(b'<video', response_profile.data)
-        self.assertIn(f'src="/static/videos/{post.video_filename}"'.encode(), response_profile.data)
-
-        self._logout()
-        # Video file cleanup is handled by tearDown
-
-    def test_edit_post_alt_text(self):
-        self._login('john@example.com', 'cat')
-
-        # Setup: Create an initial post with an image but without alt_text
-        png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
-        mock_image_data = io.BytesIO(base64.b64decode(png_b64))
-        mock_file = FileStorage(stream=mock_image_data, filename="edit_test_image.png", content_type="image/png")
-        initial_post_body = "Post for alt text editing test"
-
-        create_response = self.client.post('/create_post', data={
-            'body': initial_post_body,
-            'image_file': mock_file
-            # No alt_text initially
-        }, content_type='multipart/form-data', follow_redirects=True)
-        self.assertEqual(create_response.status_code, 200)
-
-        initial_post = Post.query.filter_by(body=initial_post_body).first()
-        self.assertIsNotNone(initial_post)
-        self.assertIsNone(initial_post.alt_text)
-        self.assertIsNotNone(initial_post.image_filename) # Ensure image was saved
-
-        initial_alt_text = "Initial alt text for edit test."
-        updated_alt_text = "Updated alt text after editing."
-
-        # First Edit (Add alt_text)
-        edit_response_1 = self.client.post(f'/edit_post/{initial_post.id}', data={
-            'body': initial_post_body, # Keep the body same or change if needed for test scope
-            'alt_text': initial_alt_text
-            # No image_file means we are not changing the image itself
-        }, content_type='multipart/form-data', follow_redirects=True)
-
-        self.assertEqual(edit_response_1.status_code, 200)
-        self.assertIn(b'Your post has been updated!', edit_response_1.data)
-
-        db.session.refresh(initial_post) # Refresh from DB
-        self.assertEqual(initial_post.alt_text, initial_alt_text)
-
-        # Second Edit (Change alt_text)
-        edit_response_2 = self.client.post(f'/edit_post/{initial_post.id}', data={
-            'body': initial_post_body,
-            'alt_text': updated_alt_text
-        }, content_type='multipart/form-data', follow_redirects=True)
-
-        self.assertEqual(edit_response_2.status_code, 200)
-        self.assertIn(b'Your post has been updated!', edit_response_2.data)
-
-        db.session.refresh(initial_post)
-        self.assertEqual(initial_post.alt_text, updated_alt_text)
-
-        # Verify Rendered HTML on user's profile page
-        profile_response = self.client.get(f'/user/{self.user1.username}')
-        self.assertEqual(profile_response.status_code, 200)
-
-        # Ensure the specific post's image is rendered with the updated alt text
-        # The image filename is initial_post.image_filename
-        expected_img_tag_html = f'<img src="/static/post_images/{initial_post.image_filename}" alt="{updated_alt_text}"'
-        self.assertIn(expected_img_tag_html.encode(), profile_response.data)
-
-        self._logout()
 
     # --- Tests for process_mentions utility ---
     def test_process_mentions_valid(self):
@@ -792,6 +618,204 @@ class PostModelCase(unittest.TestCase):
             # self.assertEqual(len(data_ap['users']), 2) # apple, apricot
 
             self._logout()
+
+    def test_edit_post_with_media_items(self):
+        self._login('john@example.com', 'cat')
+
+        # 1. Create initial post with one image and one video
+        png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+        initial_image_data = io.BytesIO(base64.b64decode(png_b64))
+        initial_image_file = FileStorage(stream=initial_image_data, filename="initial_image.png", content_type="image/png")
+        initial_video_data = io.BytesIO(b"initial video data")
+        initial_video_file = FileStorage(stream=initial_video_data, filename="initial_video.mp4", content_type="video/mp4")
+
+        initial_caption = "Initial album for edit test"
+        create_resp = self.client.post('/create_post', data={
+            'body': initial_caption,
+            'media_files': [initial_image_file, initial_video_file]
+        }, content_type='multipart/form-data', follow_redirects=True)
+        self.assertEqual(create_resp.status_code, 200)
+        post = Post.query.filter_by(body=initial_caption).first()
+        self.assertIsNotNone(post)
+        initial_media_items = post.media_items.all()
+        self.assertEqual(len(initial_media_items), 2)
+        initial_image_item = next(item for item in initial_media_items if item.media_type == 'image')
+        initial_video_item = next(item for item in initial_media_items if item.media_type == 'video')
+
+        # 2. Test Adding a new image
+        new_image_data = io.BytesIO(base64.b64decode(png_b64)) # fresh stream
+        new_image_file = FileStorage(stream=new_image_data, filename="new_image.png", content_type="image/png")
+        updated_caption = "Caption updated, new image added"
+
+        edit_resp_add = self.client.post(f'/edit_post/{post.id}', data={
+            'body': updated_caption,
+            'media_files': [new_image_file],
+            # No delete_media_ids[] means we keep existing ones
+        }, content_type='multipart/form-data', follow_redirects=True)
+        self.assertEqual(edit_resp_add.status_code, 200)
+        db.session.refresh(post)
+        self.assertEqual(post.body, updated_caption)
+        self.assertEqual(post.media_items.count(), 3) # 2 initial + 1 new
+        new_image_item_db = post.media_items.filter(MediaItem.filename.contains('new_image.png')).first()
+        self.assertIsNotNone(new_image_item_db)
+        self.assertTrue(os.path.exists(os.path.join(self.media_items_path, new_image_item_db.filename)))
+
+        # 3. Test Deleting the initial video
+        caption_after_delete = "Caption same, video deleted"
+        edit_resp_delete = self.client.post(f'/edit_post/{post.id}', data={
+            'body': caption_after_delete, # Can also test caption change here
+            'delete_media_ids[]': [initial_video_item.id]
+            # No new media_files
+        }, content_type='multipart/form-data', follow_redirects=True)
+        self.assertEqual(edit_resp_delete.status_code, 200)
+        db.session.refresh(post)
+        self.assertEqual(post.body, caption_after_delete)
+        self.assertEqual(post.media_items.count(), 2) # 3 - 1 deleted = 2
+        self.assertIsNone(MediaItem.query.get(initial_video_item.id))
+        self.assertFalse(os.path.exists(os.path.join(self.media_items_path, initial_video_item.filename)))
+        # Ensure the other two (initial image, new image) are still there
+        self.assertIsNotNone(MediaItem.query.get(initial_image_item.id))
+        self.assertIsNotNone(MediaItem.query.get(new_image_item_db.id))
+
+        self._logout()
+
+    def test_delete_post_with_media_items(self):
+        self._login('john@example.com', 'cat')
+        # 1. Create a post with media
+        img_data = io.BytesIO(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="))
+        vid_data = io.BytesIO(b"video data for delete test")
+        files_to_upload = [
+            FileStorage(stream=img_data, filename="del_img.png", content_type="image/png"),
+            FileStorage(stream=vid_data, filename="del_vid.mp4", content_type="video/mp4")
+        ]
+        create_resp = self.client.post('/create_post', data={
+            'body': "Post to be deleted with media",
+            'media_files': files_to_upload
+        }, content_type='multipart/form-data', follow_redirects=True)
+        self.assertEqual(create_resp.status_code, 200)
+        post_to_delete = Post.query.filter_by(body="Post to be deleted with media").first()
+        self.assertIsNotNone(post_to_delete)
+        media_items_to_delete = post_to_delete.media_items.all()
+        self.assertEqual(len(media_items_to_delete), 2)
+        media_filenames = [item.filename for item in media_items_to_delete]
+        for filename in media_filenames:
+             self.assertTrue(os.path.exists(os.path.join(self.media_items_path, filename)))
+
+        # 2. Delete the post
+        delete_resp = self.client.post(f'/delete_post/{post_to_delete.id}', follow_redirects=True)
+        self.assertEqual(delete_resp.status_code, 200)
+        self.assertIn(b'Your post and all its media have been deleted!', delete_resp.data)
+
+        # 3. Verify deletion from DB
+        self.assertIsNone(Post.query.get(post_to_delete.id))
+        self.assertEqual(MediaItem.query.filter_by(post_id=post_to_delete.id).count(), 0)
+
+        # 4. Verify physical files are deleted
+        for filename in media_filenames:
+            self.assertFalse(os.path.exists(os.path.join(self.media_items_path, filename)))
+
+        self._logout()
+
+    def test_gallery_display_in_post_view(self):
+        self._login('john@example.com', 'cat')
+
+        # Scenario 1: Post with 0 media items (text-only post)
+        self.client.post('/create_post', data={'body': 'Text only for gallery test'}, follow_redirects=True)
+        response_0_items = self.client.get(f'/user/{self.user1.username}')
+        self.assertNotIn(b'media-gallery', response_0_items.data)
+
+        # Scenario 2: Post with 1 media item
+        img_data_1 = io.BytesIO(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="))
+        file1 = FileStorage(stream=img_data_1, filename="single_img.png", content_type="image/png")
+        self.client.post('/create_post', data={'body': 'Post with one image', 'media_files': [file1]}, content_type='multipart/form-data', follow_redirects=True)
+
+        post_1_item = Post.query.filter_by(body='Post with one image').first()
+        media_item_1 = post_1_item.media_items.first()
+        response_1_item = self.client.get(f'/user/{self.user1.username}') # Assuming posts are on profile page
+
+        self.assertIn(b'<div class="media-gallery mb-3">', response_1_item.data) # Gallery div exists
+        self.assertNotIn(b'carousel', response_1_item.data) # No carousel class for single item
+        self.assertNotIn(b'carousel-nav', response_1_item.data) # No nav buttons
+        self.assertIn(f'src="/static/{self.media_items_upload_folder_config}/{media_item_1.filename}"'.encode(), response_1_item.data)
+        # Check that only one media item is rendered within a gallery item structure
+        # This depends on the exact HTML, but we can count occurrences of 'media-gallery-item'
+        # The class is inside the loop in _post.html, so this check is valid.
+        self.assertEqual(response_1_item.data.count(b'<div class="media-gallery-item">'), 1)
+
+
+        # Scenario 3: Post with 3 media items
+        img_data_2 = io.BytesIO(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="))
+        img_data_3 = io.BytesIO(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="))
+        vid_data_1 = io.BytesIO(b"video data for 3 item gallery")
+        files_3 = [
+            FileStorage(stream=img_data_2, filename="img_gallery_1.png", content_type="image/png"),
+            FileStorage(stream=vid_data_1, filename="vid_gallery_1.mp4", content_type="video/mp4"),
+            FileStorage(stream=img_data_3, filename="img_gallery_2.png", content_type="image/png")
+        ]
+        self.client.post('/create_post', data={'body': 'Post with three items', 'media_files': files_3}, content_type='multipart/form-data', follow_redirects=True)
+
+        post_3_items = Post.query.filter_by(body='Post with three items').first()
+        media_items_3 = post_3_items.media_items.order_by(MediaItem.id).all() # Ensure consistent order for checking src
+        response_3_items = self.client.get(f'/user/{self.user1.username}')
+
+        self.assertIn(b'<div class="media-gallery mb-3 carousel">', response_3_items.data) # Carousel class should be present
+        self.assertIn(b'<div class="carousel-track">', response_3_items.data)
+        self.assertIn(b'<div class="carousel-nav">', response_3_items.data)
+        self.assertIn(b'<button class="carousel-prev">', response_3_items.data)
+        self.assertIn(b'<button class="carousel-next">', response_3_items.data)
+        self.assertEqual(response_3_items.data.count(b'<div class="media-gallery-item">'), 3)
+        for item in media_items_3:
+            self.assertIn(f'src="/static/{self.media_items_upload_folder_config}/{item.filename}"'.encode(), response_3_items.data)
+
+        self._logout()
+
+    def test_edit_post_delete_all_media(self):
+        self._login('john@example.com', 'cat')
+        # 1. Create a post with 2 media items
+        img_data_1 = io.BytesIO(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="))
+        img_data_2 = io.BytesIO(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="))
+        files_to_create = [
+            FileStorage(stream=img_data_1, filename="img_to_del_1.png", content_type="image/png"),
+            FileStorage(stream=img_data_2, filename="img_to_del_2.png", content_type="image/png")
+        ]
+        create_resp = self.client.post('/create_post', data={
+            'body': "Post to delete all media from",
+            'media_files': files_to_create
+        }, content_type='multipart/form-data', follow_redirects=True)
+        self.assertEqual(create_resp.status_code, 200)
+        post = Post.query.filter_by(body="Post to delete all media from").first()
+        self.assertIsNotNone(post)
+        initial_media_ids = [item.id for item in post.media_items.all()]
+        media_filenames_to_delete = [item.filename for item in post.media_items.all()] # Store filenames for file system check
+        self.assertEqual(len(initial_media_ids), 2)
+
+        # 2. Edit post and mark all media for deletion
+        edit_resp = self.client.post(f'/edit_post/{post.id}', data={
+            'body': "Caption remains, all media deleted",
+            'delete_media_ids[]': initial_media_ids
+        }, content_type='multipart/form-data', follow_redirects=True)
+        self.assertEqual(edit_resp.status_code, 200)
+        self.assertIn(b'Your post has been updated!', edit_resp.data)
+
+        db.session.refresh(post)
+        self.assertEqual(post.body, "Caption remains, all media deleted")
+        self.assertEqual(post.media_items.count(), 0)
+
+        # Verify files are physically deleted
+        for filename in media_filenames_to_delete:
+            self.assertFalse(os.path.exists(os.path.join(self.media_items_path, filename)))
+
+        # Verify MediaItem records are gone from DB
+        for media_id in initial_media_ids:
+            self.assertIsNone(MediaItem.query.get(media_id))
+
+        # Verify rendered post on profile page shows no gallery
+        profile_resp = self.client.get(f'/user/{self.user1.username}')
+        self.assertNotIn(b'media-gallery', profile_resp.data)
+        self.assertIn(b"Caption remains, all media deleted", profile_resp.data)
+
+        self._logout()
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
