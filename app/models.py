@@ -562,9 +562,13 @@ event_attendees = db.Table('event_attendees',
     db.Column('event_id', db.Integer, db.ForeignKey('event.id'), primary_key=True)
 )
 
+import uuid # For generating unique calendar UIDs
+
 class Event(db.Model):
     __tablename__ = 'event'
     id = db.Column(db.Integer, primary_key=True)
+    calendar_uid = db.Column(db.String(36), unique=True, nullable=True, default=lambda: str(uuid.uuid4()))
+    is_synced = db.Column(db.Boolean, default=False, nullable=False)
     name = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text, nullable=True)
     start_datetime = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
@@ -576,6 +580,10 @@ class Event(db.Model):
     attendees = db.relationship('User', secondary=event_attendees,
                                 backref=db.backref('attended_events', lazy='dynamic'),
                                 lazy='dynamic')
+
+    # Ensure calendar_uid is indexed if it's frequently queried for uniqueness or lookup
+    __table_args__ = (db.Index('ix_event_calendar_uid', 'calendar_uid', unique=True),)
+
 
     def __repr__(self):
         return f'<Event {self.name}>'

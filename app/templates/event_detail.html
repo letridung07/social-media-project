@@ -13,20 +13,29 @@
                         <a href="{{ url_for('main.edit_event', event_id=event.id) }}" class="btn btn-sm btn-outline-secondary mr-2">Edit Event</a>
                         <form action="{{ url_for('main.delete_event', event_id=event.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this event?');">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-                            <button type="submit" class="btn btn-sm btn-danger">Delete Event</button>
+                            <button type="submit" class="btn btn-sm btn-danger mr-2">Delete Event</button>
                         </form>
                     {% else %}
                         {% if is_attending %}
-                            <form action="{{ url_for('main.leave_event', event_id=event.id) }}" method="POST" style="display: inline;">
+                            <form action="{{ url_for('main.leave_event', event_id=event.id) }}" method="POST" style="display: inline;" class="mr-2">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                                 <button type="submit" class="btn btn-sm btn-warning">Leave Event</button>
                             </form>
                         {% else %}
-                            <form action="{{ url_for('main.join_event', event_id=event.id) }}" method="POST" style="display: inline;">
+                            <form action="{{ url_for('main.join_event', event_id=event.id) }}" method="POST" style="display: inline;" class="mr-2">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                                 <button type="submit" class="btn btn-sm btn-success">Join Event</button>
                             </form>
                         {% endif %}
+                    {% endif %}
+                    {# "Add to Calendar" button visible to organizer or attendees #}
+                    {% if event.organizer_id == current_user.id or current_user in event.attendees %}
+                        <div style="display: inline-block; vertical-align: top;"> {# Wrapper div for button and text #}
+                            <a href="{{ url_for('main.export_calendar', event_id=event.id) }}" class="btn btn-sm btn-info" title="Download .ics file to import into your calendar">Add to Calendar</a>
+                            <div class="mt-1">
+                                <small class="text-muted">Downloads an .ics file. Open this file with your calendar application to add the event.</small>
+                            </div>
+                        </div>
                     {% endif %}
                 {% else %}
                     <a href="{{ url_for('main.login', next=request.url) }}" class="btn btn-sm btn-primary">Login to Join</a>
