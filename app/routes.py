@@ -19,6 +19,7 @@ from app.email_utils import send_password_reset_email # Import email utility
 import secrets # For slug generation
 from wtforms.validators import DataRequired # For dynamic validator modification
 from app.utils import generate_ics_file # For ICS export
+import stripe # For Stripe integration
 
 # Import for recommendations
 from app.utils import get_recommendations
@@ -2811,3 +2812,272 @@ def user_audio_list(username):
     # Need to pass audio_folder_name for constructing URLs in the template
     audio_folder_name = current_app.config.get('AUDIO_UPLOAD_FOLDER_NAME', 'audio_uploads')
     return render_template('audio_list.html', title=f'Audio Posts by {username}', audio_posts=audios, pagination=audio_posts_pagination, user=user, audio_folder_name=audio_folder_name)
+
+
+# -------------------- Stripe Checkout Session Route --------------------
+@main.route('/api/subscriptions/create-checkout-session', methods=['POST'])
+@login_required
+def create_checkout_session():
+    try:
+        stripe.api_key = current_app.config.get('STRIPE_SECRET_KEY')
+        if not stripe.api_key:
+            current_app.logger.error("Stripe secret key is not configured.")
+            return jsonify({'error': 'Payment provider not configured.'}), 500
+
+        data = request.get_json()
+        if not data or 'plan_id' not in data:
+            return jsonify({'error': 'Missing plan_id in request.'}), 400
+
+        plan_id = data['plan_id']
+        # Ensure plan_id is an integer if it comes as a string from JSON
+        try:
+            plan_id = int(plan_id)
+        except ValueError:
+            return jsonify({'error': 'Invalid plan_id format.'}), 400
+
+        plan = SubscriptionPlan.query.get(plan_id)
+
+        if not plan:
+            return jsonify({'error': 'Subscription plan not found.'}), 404
+
+        if not plan.stripe_price_id:
+            current_app.logger.error(f"SubscriptionPlan ID {plan.id} ('{plan.name}') is missing Stripe Price ID.")
+            return jsonify({'error': 'Subscription plan is not configured for payments.'}), 500
+
+        stripe_customer_id = current_user.stripe_customer_id
+        if not stripe_customer_id:
+            try:
+                customer = stripe.Customer.create(
+                    email=current_user.email,
+                    name=current_user.username
+                    # Add other metadata if needed, e.g., 'user_id': current_user.id
+                )
+                stripe_customer_id = customer.id
+                current_user.stripe_customer_id = stripe_customer_id
+                db.session.commit()
+            except stripe.error.StripeError as e:
+                current_app.logger.error(f"Stripe customer creation failed: {e}")
+                return jsonify({'error': str(e)}), 500
+            except Exception as e:
+                db.session.rollback()
+                current_app.logger.error(f"Database error after Stripe customer creation: {e}")
+                return jsonify({'error': 'Could not save customer information.'}), 500
+
+        base_url = request.url_root
+        if base_url.endswith('/'):
+            base_url = base_url[:-1]
+
+        # Using url_for for dynamic URL generation is safer and more flexible.
+        # Assuming 'main.index' is a valid route. Adjust if success/cancel pages are different.
+        success_url = url_for('main.index', _external=True, _anchor='subscription-success') + '&session_id={CHECKOUT_SESSION_ID}'
+        cancel_url = url_for('main.index', _external=True, _anchor='subscription-cancelled')
+
+        try:
+            checkout_session = stripe.checkout.Session.create(
+                customer=stripe_customer_id,
+                payment_method_types=['card'],
+                line_items=[{
+                    'price': plan.stripe_price_id,
+                    'quantity': 1,
+                }],
+                mode='subscription',
+                success_url=success_url,
+                cancel_url=cancel_url,
+                subscription_data={
+                    'metadata': {
+                        'user_id': str(current_user.id),
+                        'plan_id': str(plan.id)
+                    }
+                }
+            )
+            return jsonify({'sessionId': checkout_session.id})
+        except stripe.error.StripeError as e:
+            current_app.logger.error(f"Stripe Checkout Session creation failed: {e}")
+            return jsonify({'error': str(e)}), 500
+        except Exception as e:
+            current_app.logger.error(f"Generic error during Checkout Session creation: {e}")
+            return jsonify({'error': 'Could not initiate payment session.'}), 500
+
+    except Exception as e:
+        current_app.logger.error(f"Unexpected error in create_checkout_session: {e}")
+        return jsonify({'error': 'An unexpected error occurred.'}), 500
+
+
+# -------------------- Stripe Webhook Handler --------------------
+@main.route('/api/stripe-webhooks', methods=['POST'])
+def stripe_webhook():
+    payload = request.data
+    sig_header = request.headers.get('Stripe-Signature')
+    endpoint_secret = current_app.config.get('STRIPE_WEBHOOK_SECRET')
+
+    if not endpoint_secret:
+        current_app.logger.error("Stripe webhook secret is not configured.")
+        return jsonify({'error': 'Webhook secret not configured.'}), 500
+
+    event = None
+    try:
+        event = stripe.Webhook.construct_event(
+            payload, sig_header, endpoint_secret
+        )
+    except ValueError as e: # Invalid payload
+        current_app.logger.error(f"Webhook error while parsing payload: {str(e)}")
+        return jsonify({'error': 'Invalid payload'}), 400
+    except stripe.error.SignatureVerificationError as e: # Invalid signature
+        current_app.logger.error(f"Webhook signature verification failed: {str(e)}")
+        return jsonify({'error': 'Invalid signature'}), 400
+    except Exception as e: # Other construction errors
+        current_app.logger.error(f"Webhook event construction error: {str(e)}")
+        return jsonify({'error': 'Could not construct webhook event.'}), 500
+
+    # Initialize Stripe API key for any further API calls if needed
+    # Although for webhook event processing, usually the event object contains all necessary info.
+    # stripe.api_key = current_app.config.get('STRIPE_SECRET_KEY')
+
+    # Handle the event
+    if event['type'] == 'checkout.session.completed':
+        session = event['data']['object']
+        current_app.logger.info(f"Processing checkout.session.completed: {session.get('id')}")
+        stripe_subscription_id = session.get('subscription')
+        stripe_customer_id = session.get('customer') # For verification or logging
+
+        # Corrected metadata path based on Stripe's structure for subscription_data
+        subscription_data = session.get('subscription_data', {})
+        metadata = {}
+        if subscription_data: # subscription_data can be None if not a subscription mode checkout
+            metadata = subscription_data.get('metadata', {})
+
+        user_id = metadata.get('user_id')
+        plan_id = metadata.get('plan_id')
+
+        if user_id and plan_id and stripe_subscription_id:
+            user = User.query.get(user_id)
+            plan = SubscriptionPlan.query.get(plan_id)
+
+            if user and plan:
+                try:
+                    # Retrieve the subscription to get current period details
+                    stripe_sub = stripe.Subscription.retrieve(stripe_subscription_id)
+                    current_period_start = datetime.fromtimestamp(stripe_sub.current_period_start, tz=timezone.utc)
+                    current_period_end = datetime.fromtimestamp(stripe_sub.current_period_end, tz=timezone.utc)
+
+                    # Check for existing subscription to update, or create new
+                    user_subscription = UserSubscription.query.filter_by(stripe_subscription_id=stripe_subscription_id).first()
+                    if not user_subscription:
+                        user_subscription = UserSubscription.query.filter_by(subscriber_id=user.id, plan_id=plan.id, status='pending').first() # Example for pending
+                        if not user_subscription:
+                             user_subscription = UserSubscription()
+
+                    user_subscription.subscriber_id = user.id
+                    user_subscription.plan_id = plan.id
+                    user_subscription.stripe_subscription_id = stripe_subscription_id
+                    user_subscription.stripe_customer_id = stripe_customer_id # Save customer_id if not already linked
+                    user_subscription.status = 'active' # Or stripe_sub.status
+                    user_subscription.start_date = current_period_start
+                    user_subscription.end_date = current_period_end
+
+                    db.session.add(user_subscription)
+                    db.session.commit()
+                    current_app.logger.info(f"UserSubscription created/updated for user {user_id}, plan {plan_id}, stripe_sub {stripe_subscription_id}")
+                except stripe.error.StripeError as e:
+                    current_app.logger.error(f"Stripe API error processing checkout.session.completed: {e}")
+                    # Don't necessarily return 500 to Stripe, as they might retry. Log and investigate.
+                except Exception as e:
+                    db.session.rollback()
+                    current_app.logger.error(f"Database error processing checkout.session.completed: {e}")
+            else:
+                current_app.logger.warning(f"User or Plan not found for checkout.session.completed. User ID: {user_id}, Plan ID: {plan_id}")
+        else:
+            current_app.logger.warning(f"Missing metadata or subscription ID in checkout.session.completed: UserID-{user_id}, PlanID-{plan_id}, StripeSubID-{stripe_subscription_id}")
+
+    elif event['type'] == 'invoice.payment_succeeded':
+        invoice = event['data']['object']
+        current_app.logger.info(f"Processing invoice.payment_succeeded: {invoice.get('id')}")
+        stripe_subscription_id = invoice.get('subscription')
+        if stripe_subscription_id:
+            subscription = UserSubscription.query.filter_by(stripe_subscription_id=stripe_subscription_id).first()
+            if subscription:
+                try:
+                    stripe_sub = stripe.Subscription.retrieve(stripe_subscription_id)
+                    subscription.end_date = datetime.fromtimestamp(stripe_sub.current_period_end, tz=timezone.utc)
+                    subscription.status = 'active' # Ensure active on payment success
+                    db.session.commit()
+                    current_app.logger.info(f"UserSubscription {subscription.id} updated by invoice.payment_succeeded.")
+                except stripe.error.StripeError as e:
+                    current_app.logger.error(f"Stripe API error processing invoice.payment_succeeded: {e}")
+                except Exception as e:
+                    db.session.rollback()
+                    current_app.logger.error(f"Database error processing invoice.payment_succeeded: {e}")
+            else:
+                 current_app.logger.warning(f"UserSubscription not found for stripe_subscription_id {stripe_subscription_id} from invoice.payment_succeeded.")
+
+
+    elif event['type'] == 'invoice.payment_failed':
+        invoice = event['data']['object']
+        current_app.logger.info(f"Processing invoice.payment_failed: {invoice.get('id')}")
+        stripe_subscription_id = invoice.get('subscription')
+        if stripe_subscription_id:
+            subscription = UserSubscription.query.filter_by(stripe_subscription_id=stripe_subscription_id).first()
+            if subscription:
+                subscription.status = 'past_due' # Or a more specific status based on your needs
+                try:
+                    db.session.commit()
+                    current_app.logger.info(f"UserSubscription {subscription.id} status set to past_due.")
+                except Exception as e:
+                    db.session.rollback()
+                    current_app.logger.error(f"Database error processing invoice.payment_failed: {e}")
+            else:
+                current_app.logger.warning(f"UserSubscription not found for stripe_subscription_id {stripe_subscription_id} from invoice.payment_failed.")
+
+
+    elif event['type'] == 'customer.subscription.deleted':
+        stripe_sub_object = event['data']['object'] # This is a Stripe Subscription object
+        current_app.logger.info(f"Processing customer.subscription.deleted: {stripe_sub_object.get('id')}")
+        stripe_subscription_id = stripe_sub_object.get('id')
+        if stripe_subscription_id:
+            subscription = UserSubscription.query.filter_by(stripe_subscription_id=stripe_subscription_id).first()
+            if subscription:
+                subscription.status = 'cancelled'
+                if stripe_sub_object.get('canceled_at'):
+                    subscription.end_date = datetime.fromtimestamp(stripe_sub_object.canceled_at, tz=timezone.utc)
+                # else: end_date might remain as current_period_end or be set to now
+                try:
+                    db.session.commit()
+                    current_app.logger.info(f"UserSubscription {subscription.id} status set to cancelled.")
+                except Exception as e:
+                    db.session.rollback()
+                    current_app.logger.error(f"Database error processing customer.subscription.deleted: {e}")
+            else:
+                current_app.logger.warning(f"UserSubscription not found for stripe_subscription_id {stripe_subscription_id} from customer.subscription.deleted.")
+
+    elif event['type'] == 'customer.subscription.updated':
+        stripe_sub_object = event['data']['object'] # This is a Stripe Subscription object
+        current_app.logger.info(f"Processing customer.subscription.updated: {stripe_sub_object.get('id')}")
+        stripe_subscription_id = stripe_sub_object.get('id')
+        if stripe_subscription_id:
+            subscription = UserSubscription.query.filter_by(stripe_subscription_id=stripe_subscription_id).first()
+            if subscription:
+                # Map Stripe status to your application's status if necessary
+                # For example, Stripe 'trialing' could be 'active' or 'trialing' in your system
+                new_status = stripe_sub_object.status # e.g., active, past_due, trialing, canceled
+                subscription.status = new_status
+
+                # Update period end
+                if stripe_sub_object.current_period_end:
+                    subscription.end_date = datetime.fromtimestamp(stripe_sub_object.current_period_end, tz=timezone.utc)
+
+                # If canceled, ensure end_date reflects cancellation time if available and appropriate
+                if new_status == 'canceled' and stripe_sub_object.canceled_at:
+                    subscription.end_date = datetime.fromtimestamp(stripe_sub_object.canceled_at, tz=timezone.utc)
+
+                try:
+                    db.session.commit()
+                    current_app.logger.info(f"UserSubscription {subscription.id} updated by customer.subscription.updated. New status: {new_status}")
+                except Exception as e:
+                    db.session.rollback()
+                    current_app.logger.error(f"Database error processing customer.subscription.updated: {e}")
+            else:
+                current_app.logger.warning(f"UserSubscription not found for stripe_subscription_id {stripe_subscription_id} from customer.subscription.updated.")
+    else:
+        current_app.logger.info(f"Unhandled Stripe webhook event type: {event['type']}")
+
+    return jsonify({'status': 'success'}), 200

@@ -101,3 +101,4 @@ Flask-Caching==2.1.0
 bootstrap-flask==2.5.0
 APScheduler==3.10.4
 icalendar
+stripe
