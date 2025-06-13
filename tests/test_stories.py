@@ -7,6 +7,8 @@ from datetime import datetime, timedelta, timezone
 from app import create_app, db
 from app.models import User, Story
 from config import TestingConfig
+from flask import url_for # For route tests
+from werkzeug.datastructures import FileStorage # For mock file upload in route tests
 
 class StoryTests(unittest.TestCase):
     def setUp(self):
@@ -136,6 +138,124 @@ class StoryTests(unittest.TestCase):
 
         response_after_own_story = self.client.get('/stories')
         self.assertIn(b'My Own Active Story', response_after_own_story.data)
+
+    def test_story_creation_scheduled(self):
+        now = datetime.now(timezone.utc)
+        schedule_time = now + timedelta(days=1)
+        # User1 is used from setUp
+        story = Story(caption="Scheduled story", author=self.user1,
+                      scheduled_for=schedule_time, is_published=False, image_filename="schedule_test.jpg")
+        db.session.add(story)
+        db.session.commit()
+
+        retrieved_story = Story.query.filter_by(caption="Scheduled story").first()
+        self.assertIsNotNone(retrieved_story)
+        self.assertEqual(retrieved_story.scheduled_for, schedule_time)
+        self.assertFalse(retrieved_story.is_published)
+        self.assertIsNone(retrieved_story.expires_at) # expires_at should not be set if scheduled
+
+    def test_story_creation_published_immediately(self):
+        # User1 is used from setUp
+        story = Story(caption="Immediate story", author=self.user1, is_published=True, image_filename="immediate_test.jpg")
+        # __init__ should set expires_at based on current time + 24h if is_published=True
+        db.session.add(story)
+        db.session.commit()
+
+        retrieved_story = Story.query.filter_by(caption="Immediate story").first()
+        self.assertIsNotNone(retrieved_story)
+        self.assertIsNone(retrieved_story.scheduled_for)
+        self.assertTrue(retrieved_story.is_published)
+        self.assertIsNotNone(retrieved_story.expires_at)
+        # Check if expires_at is roughly 24 hours from creation (within a small delta)
+        # Need to fetch the timestamp from the object itself as it's set by default=utcnow
+        expected_expires_at = retrieved_story.timestamp + timedelta(hours=24)
+        self.assertAlmostEqual(retrieved_story.expires_at, expected_expires_at, delta=timedelta(seconds=10)) # Increased delta for potential DB save/retrieve delays
+
+    def test_story_is_published_defaults_to_false_and_expires_at_is_none(self):
+        # User1 is used from setUp
+        # The Story model's is_published field defaults to False.
+        # The __init__ method should not set expires_at if is_published is False.
+        story = Story(caption="Default published state story", author=self.user1, image_filename="default_pub_test.jpg")
+        db.session.add(story)
+        db.session.commit()
+        retrieved_story = Story.query.filter_by(caption="Default published state story").first()
+        self.assertIsNotNone(retrieved_story)
+        self.assertFalse(retrieved_story.is_published)
+        self.assertIsNone(retrieved_story.expires_at)
+
+    # --- Route Tests for Story Scheduling ---
+    def test_route_create_story_scheduled(self):
+        self.login('testuser1', 'password')
+        schedule_dt = datetime.now(timezone.utc) + timedelta(days=2)
+        schedule_dt_str = schedule_dt.strftime('%Y-%m-%d %H:%M')
+
+        mock_media_data = io.BytesIO(b"dummy story media content for schedule")
+        mock_media_file = FileStorage(stream=mock_media_data, filename="scheduled_story.jpg", content_type="image/jpeg")
+
+        response = self.client.post(url_for('main.create_story'), data={
+            'caption': 'This is a scheduled test story via route.',
+            'schedule_time': schedule_dt_str,
+            'media_file': mock_media_file,
+            'privacy_level': 'PUBLIC'
+        }, content_type='multipart/form-data', follow_redirects=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Your story has been scheduled', response.data)
+
+        story = Story.query.filter_by(caption='This is a scheduled test story via route.').first()
+        self.assertIsNotNone(story)
+        self.assertFalse(story.is_published)
+        self.assertIsNotNone(story.scheduled_for)
+        self.assertIsNone(story.expires_at) # expires_at should not be set for scheduled stories
+        form_dt_naive = datetime.strptime(schedule_dt_str, '%Y-%m-%d %H:%M')
+        self.assertAlmostEqual(story.scheduled_for, form_dt_naive, delta=timedelta(seconds=1))
+        self.logout()
+
+    def test_route_create_story_immediate(self):
+        self.login('testuser1', 'password')
+        mock_media_data = io.BytesIO(b"dummy story media content immediate")
+        mock_media_file = FileStorage(stream=mock_media_data, filename="immediate_story.jpg", content_type="image/jpeg")
+
+        response = self.client.post(url_for('main.create_story'), data={
+            'caption': 'This is an immediate test story via route.',
+            'media_file': mock_media_file,
+            'privacy_level': 'PUBLIC'
+            # No schedule_time provided
+        }, content_type='multipart/form-data', follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Your story has been posted!', response.data)
+
+        story = Story.query.filter_by(caption='This is an immediate test story via route.').first()
+        self.assertIsNotNone(story)
+        self.assertTrue(story.is_published)
+        self.assertIsNone(story.scheduled_for)
+        self.assertIsNotNone(story.expires_at) # Should be set by __init__
+        expected_expires_at = story.timestamp + timedelta(hours=24)
+        self.assertAlmostEqual(story.expires_at, expected_expires_at, delta=timedelta(seconds=10))
+        self.logout()
+
+    def test_route_create_story_schedule_time_in_past(self):
+        self.login('testuser1', 'password')
+        past_schedule_dt = datetime.now(timezone.utc) - timedelta(days=1)
+        past_schedule_dt_str = past_schedule_dt.strftime('%Y-%m-%d %H:%M')
+
+        mock_media_data = io.BytesIO(b"dummy story media content past")
+        mock_media_file = FileStorage(stream=mock_media_data, filename="past_schedule_story.jpg", content_type="image/jpeg")
+
+        response = self.client.post(url_for('main.create_story'), data={
+            'caption': 'Test story with past schedule time.',
+            'schedule_time': past_schedule_dt_str,
+            'media_file': mock_media_file,
+            'privacy_level': 'PUBLIC'
+        }, content_type='multipart/form-data', follow_redirects=True)
+
+        self.assertEqual(response.status_code, 200) # Form validation error should re-render the page
+        self.assertIn(b'Scheduled time must be in the future.', response.data)
+
+        story = Story.query.filter_by(caption='Test story with past schedule time.').first()
+        self.assertIsNone(story)
+        self.logout()
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

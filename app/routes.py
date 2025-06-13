@@ -63,49 +63,51 @@ def index():
     posts_pagination = None # Initialize to None
 
     if current_user.is_authenticated:
-        # Personalized feed for logged-in users
-        # Make sure 'followed_user_ids' is defined before this block if not already.
-        # It's usually part of the User model's followed_posts() method, which this replaces for now.
         followed_user_ids = [user.id for user in current_user.followed]
 
-        posts_query = Post.query.filter(
+        # Condition for posts from others (followed, public, or custom list they are part of)
+        # These must be published.
+        others_posts_condition = and_(
+            Post.is_published == True,
             or_(
-                Post.user_id == current_user.id, # User's own posts (all privacy levels visible to self)
                 and_( # Posts from followed users
                     Post.user_id.in_(followed_user_ids),
                     or_(
                         Post.privacy_level == PRIVACY_PUBLIC,
                         Post.privacy_level == PRIVACY_FOLLOWERS
-                        # PRIVACY_CUSTOM_LIST from followed users: only visible if current_user is in the specific list.
-                        # This requires joining with FriendList and FriendListMembers, deferred for now.
-                        # For now, CUSTOM_LIST posts from others won't appear in the main feed unless it's also their own.
                     )
                 ),
                 and_( # Posts from ANY user shared with a custom list current_user is on
                     Post.privacy_level == PRIVACY_CUSTOM_LIST,
                     Post.custom_friend_list_id.isnot(None),
-                    Post.custom_friend_list.has( # Check if the post's custom_friend_list...
-                        FriendList.members.any(User.id == current_user.id) # ...has current_user as a member
+                    Post.custom_friend_list.has(
+                        FriendList.members.any(User.id == current_user.id)
                     )
                 ),
-                and_( # Public posts from non-followed users (optional, but common for discovery)
-                    Post.privacy_level == PRIVACY_PUBLIC # This might be redundant if the goal is only followed + own + custom list items
-                    # If you want a feed of ONLY own posts, posts from followed (public/follower), and custom list posts,
-                    # then this additional public clause for non-followed might be removed.
-                    # For now, keeping it broad for public content.
-                )
+                Post.privacy_level == PRIVACY_PUBLIC # Public posts from anyone not followed
             )
-        ).distinct().order_by(Post.timestamp.desc()) # Added distinct() because a post could match multiple conditions (e.g. public and on a list)
+        )
+
+        # Condition for user's own posts (published or scheduled)
+        own_posts_condition = and_(Post.user_id == current_user.id)
+
+        posts_query = Post.query.filter(
+            or_(
+                others_posts_condition,
+                own_posts_condition
+            )
+        ).distinct().order_by(Post.timestamp.desc())
+
         posts_pagination = db.paginate(posts_query, page=page, per_page=per_page, error_out=False)
         posts = posts_pagination.items
     else:
         # Public feed for guests (e.g., most recent posts from all users)
-        # For guests, let's also paginate all posts
-        posts_query = Post.query.filter(Post.privacy_level == PRIVACY_PUBLIC).order_by(Post.timestamp.desc())
+        # Only show published posts
+        posts_query = Post.query.filter(Post.privacy_level == PRIVACY_PUBLIC, Post.is_published == True).order_by(Post.timestamp.desc())
         posts_pagination = db.paginate(posts_query, page=page, per_page=per_page, error_out=False)
         posts = posts_pagination.items
 
-    comment_form = CommentForm() # Instantiate the form
+    comment_form = CommentForm()
     return render_template('index.html', title='Home', posts=posts, comment_form=comment_form, pagination=posts_pagination)
 
 
@@ -332,13 +334,16 @@ def hashtag_feed(tag_text):
     title = f'No posts found for #{normalized_tag_text}'
 
     if hashtag:
-        posts = hashtag.posts.order_by(Post.timestamp.desc()).all()
+        # Only show published posts in hashtag feeds
+        posts = hashtag.posts.filter(Post.is_published == True).order_by(Post.timestamp.desc()).all()
         title = f'Posts tagged #{hashtag.tag_text}'
-        if not posts: # Hashtag exists but no posts are associated
-             title = f'No posts found for #{hashtag.tag_text}'
+        if not posts: # Hashtag exists but no posts are associated or published
+             title = f'No published posts found for #{hashtag.tag_text}'
+    else: # Hashtag does not exist
+        title = f'No posts found for #{normalized_tag_text}'
 
 
-    return render_template('hashtag_feed.html', title=title, hashtag=hashtag, posts=posts, query=tag_text) # Pass original tag_text as query for display
+    return render_template('hashtag_feed.html', title=title, hashtag=hashtag, posts=posts, query=tag_text)
 
 
 @main.route('/register', methods=['GET', 'POST'])
@@ -446,40 +451,39 @@ def profile(username):
     posts_query = user.posts.order_by(Post.timestamp.desc())
 
     # If profile is fully private to this viewer, no need to query posts.
-    if profile_is_private: # This flag is set above if non-owner views a PRIVATE profile
+    if profile_is_private:
         posts = []
-    elif getattr(current_user, 'id', None) == user.id: # Viewing own profile
-        posts = posts_query.all()
+    elif getattr(current_user, 'id', None) == user.id: # Viewing own profile - show all (published and scheduled)
+        posts = posts_query.all() # No is_published filter needed for own profile
     else: # Viewing another user's profile (and it's not fully private)
-        q_filters = [Post.privacy_level == PRIVACY_PUBLIC]
+        # Base filter for published posts
+        q_filters = [Post.is_published == True]
+
+        # Add privacy level filters for published posts
+        privacy_options = [Post.privacy_level == PRIVACY_PUBLIC]
         if current_user.is_authenticated and current_user.is_following(user):
-            # If profile_is_limited is true, this follower check has already failed,
-            # but an explicit check here for post visibility is still good.
-            q_filters.append(Post.privacy_level == PRIVACY_FOLLOWERS)
+            privacy_options.append(Post.privacy_level == PRIVACY_FOLLOWERS)
 
-        # PRIVACY_CUSTOM_LIST posts on other's profile:
-        # Only visible if current_user is in the specific list. Deferred for now.
-
-            if current_user.is_authenticated: # Authenticated users might see custom list posts
-                q_filters.append(
-                    and_(
-                        Post.privacy_level == PRIVACY_CUSTOM_LIST,
-                        Post.custom_friend_list_id.isnot(None),
-                        Post.user_id == user.id, # Ensure it's the profile owner's post
-                        Post.custom_friend_list.has(
-                            FriendList.members.any(User.id == current_user.id)
-                        )
+        if current_user.is_authenticated:
+            privacy_options.append(
+                and_(
+                    Post.privacy_level == PRIVACY_CUSTOM_LIST,
+                    Post.custom_friend_list_id.isnot(None),
+                    Post.user_id == user.id,
+                    Post.custom_friend_list.has(
+                        FriendList.members.any(User.id == current_user.id)
                     )
                 )
+            )
 
-        posts_query = posts_query.filter(or_(*q_filters)) # posts_query was user.posts.order_by(...)
-        posts = posts_query.distinct().all() # Added distinct()
+        q_filters.append(or_(*privacy_options))
+        posts_query = posts_query.filter(and_(*q_filters))
+        posts = posts_query.distinct().all()
 
-        # If profile is limited (follower only but not followed by current_user), posts should be empty.
-        if profile_is_limited: # This flag is set above
+        if profile_is_limited:
              posts = []
 
-    return render_template('profile.html', title=f"{user.username}'s Profile", user=user, posts=posts, comment_form=comment_form, profile_is_private=profile_is_private, profile_is_limited=profile_is_limited) # Pass to template
+    return render_template('profile.html', title=f"{user.username}'s Profile", user=user, posts=posts, comment_form=comment_form, profile_is_private=profile_is_private, profile_is_limited=profile_is_limited)
 
 @main.route('/edit_profile', methods=['GET', 'POST'])
 @login_required
@@ -549,11 +553,32 @@ def create_post():
             flash('Please select a friend list when choosing "Custom List" visibility.', 'warning')
             return render_template('create_post.html', title='Create Post', form=form, group_id=group_id_param, group_name=group_name_for_template)
 
+        scheduled_for_value = None
+        is_published_value = True # Default to immediate publish
+
+        if form.schedule_time.data:
+            # form.schedule_time.data is naive, from DateTimeField
+            # Compare with naive datetime.now() as per validator logic
+            if form.schedule_time.data > datetime.now():
+                # TODO: Convert form.schedule_time.data (user's local time) to UTC before storing.
+                # This is critical for the scheduler to work correctly if server timezone != user timezone.
+                # Example: scheduled_for_value = user_local_to_utc(form.schedule_time.data)
+                # For now, we assign the naive datetime directly.
+                scheduled_for_value = form.schedule_time.data
+                is_published_value = False
+                # Flash message for scheduling is now handled based on is_published_value at the end
+            else:
+                # If validation passed (e.g. future time) but time is now in past (e.g. due to server delay in processing), publish immediately
+                flash('Scheduled time is in the past. Publishing post now.', 'warning')
+                # is_published_value remains True, scheduled_for_value remains None
+
         post = Post(
             body=form.body.data, # Body now serves as caption for the album
             author=current_user,
             privacy_level=form.privacy_level.data,
-            custom_friend_list_id=form.custom_friend_list_id.data if form.privacy_level.data == PRIVACY_CUSTOM_LIST else None
+            custom_friend_list_id=form.custom_friend_list_id.data if form.privacy_level.data == PRIVACY_CUSTOM_LIST else None,
+            scheduled_for=scheduled_for_value,
+            is_published=is_published_value
         )
 
         if target_group:
@@ -606,43 +631,48 @@ def create_post():
             return render_template('create_post.html', title='Create Post', form=form, group_id=group_id_param, group_name=group_name_for_template)
 
 
-        # Create notifications for mentions in the post (post-commit)
-        if mentioned_users_in_post:
-            for tagged_user in mentioned_users_in_post:
-                if tagged_user.id != current_user.id:
-                    mention_obj = Mention.query.filter_by(
-                        user_id=tagged_user.id,
-                        post_id=post.id,
-                        actor_id=current_user.id
-                    ).order_by(Mention.timestamp.desc()).first()
-                    if mention_obj:
+        # Create notifications for mentions and group posts ONLY IF the post is immediately published
+        if post.is_published:
+            if mentioned_users_in_post:
+                for tagged_user in mentioned_users_in_post:
+                    if tagged_user.id != current_user.id:
+                        mention_obj = Mention.query.filter_by(
+                            user_id=tagged_user.id,
+                            post_id=post.id,
+                            actor_id=current_user.id
+                        ).order_by(Mention.timestamp.desc()).first()
+                        if mention_obj:
+                            notification = Notification(
+                                recipient_id=tagged_user.id,
+                                actor_id=current_user.id,
+                                type='mention',
+                                related_post_id=post.id,
+                                related_mention_id=mention_obj.id)
+                            db.session.add(notification)
+                            socketio.emit('new_notification', {
+                                'type': 'mention', 'message': f"{current_user.username} mentioned you in a post.",
+                                'actor_username': current_user.username, 'tagged_username': tagged_user.username,
+                                'post_id': post.id, 'post_body_preview': post.body[:50] + "..." if len(post.body) > 50 else post.body,
+                                'owner_username': post.author.username,
+                                'url': url_for('main.profile', username=post.author.username, _external=True) + f'#post-{post.id}'
+                            }, room=str(tagged_user.id))
+                db.session.commit() # Commit mention notifications
+
+            if target_group: # This implies post.group_id is set
+                for membership_assoc in target_group.memberships:
+                    member_user = membership_assoc.user
+                    if member_user.id != current_user.id:
                         notification = Notification(
-                            recipient_id=tagged_user.id,
-                            actor_id=current_user.id,
-                            type='mention',
-                            related_post_id=post.id,
-                            related_mention_id=mention_obj.id)
+                            recipient_id=member_user.id, actor_id=current_user.id,
+                            type='new_group_post', related_post_id=post.id, related_group_id=target_group.id)
                         db.session.add(notification)
-                        socketio.emit('new_notification', {
-                            'type': 'mention', 'message': f"{current_user.username} mentioned you in a post.",
-                            'actor_username': current_user.username, 'tagged_username': tagged_user.username,
-                            'post_id': post.id, 'post_body_preview': post.body[:50] + "..." if len(post.body) > 50 else post.body,
-                            'owner_username': post.author.username,
-                            'url': url_for('main.profile', username=post.author.username, _external=True) + f'#post-{post.id}'
-                        }, room=str(tagged_user.id))
-            db.session.commit() # Commit mention notifications
+                db.session.commit() # Commit group post notifications
 
-        if target_group:
-            for membership_assoc in target_group.memberships:
-                member_user = membership_assoc.user
-                if member_user.id != current_user.id:
-                    notification = Notification(
-                        recipient_id=member_user.id, actor_id=current_user.id,
-                        type='new_group_post', related_post_id=post.id, related_group_id=target_group.id)
-                    db.session.add(notification)
-            db.session.commit()
+        if post.is_published:
+            flash('Your post is now live!', 'success')
+        else:
+            flash(f'Your post has been scheduled for {post.scheduled_for.strftime("%Y-%m-%d %H:%M") if post.scheduled_for else "a future time"}.', 'info')
 
-        flash('Your post is now live!', 'success')
         if target_group:
             return redirect(url_for('main.view_group', group_id=target_group.id))
         else:
@@ -1526,32 +1556,34 @@ def view_group(group_id):
 
     feed_items = []
 
-    # 1. Query for direct posts to the group
-    direct_posts = Post.query.filter_by(group_id=group_id).order_by(Post.timestamp.desc()).all()
+    # 1. Query for direct posts to the group - only published ones
+    direct_posts = Post.query.filter_by(group_id=group_id, is_published=True).order_by(Post.timestamp.desc()).all()
     for post in direct_posts:
         feed_items.append({
             'type': 'post',
             'item': post,
             'timestamp': post.timestamp,
-            'sharer': None  # No sharer for direct posts
+            'sharer': None
         })
 
     # 2. Query for shared posts to the group
     shared_posts_query = Share.query.filter_by(group_id=group_id)\
         .options(
-            joinedload(Share.original_post).joinedload(Post.author), # Eager load original post and its author
-            joinedload(Share.user)  # Eager load the user who shared
+            joinedload(Share.original_post).joinedload(Post.author),
+            joinedload(Share.user)
         )\
         .order_by(Share.timestamp.desc())\
         .all()
 
     for share_item in shared_posts_query:
-        feed_items.append({
-            'type': 'share',
-            'item': share_item.original_post, # The actual Post object
-            'timestamp': share_item.timestamp, # Timestamp of the share
-            'sharer': share_item.user # User object of the sharer
-        })
+        # Only include if the original post is published
+        if share_item.original_post and share_item.original_post.is_published:
+            feed_items.append({
+                'type': 'share',
+                'item': share_item.original_post,
+                'timestamp': share_item.timestamp,
+                'sharer': share_item.user
+            })
 
     # 3. Sort the unified list by timestamp (descending)
     feed_items.sort(key=lambda x: x['timestamp'], reverse=True)
@@ -1642,34 +1674,43 @@ def display_stories():
     stories_query = Story.query.filter(Story.expires_at > now)
 
     if current_user.is_authenticated:
-        # It's good practice to define followed_user_ids inside this block if only used here.
         followed_user_ids = [user.id for user in current_user.followed]
-        stories_query = stories_query.filter(
-            or_(
-                Story.user_id == current_user.id, # Current user's own stories (all privacy levels)
-                and_( # Stories from followed users
-                    Story.user_id.in_(followed_user_ids),
-                    or_(
-                        Story.privacy_level == PRIVACY_PUBLIC,
-                        Story.privacy_level == PRIVACY_FOLLOWERS
-                        # CUSTOM_LIST/PRIVATE stories from others won't be shown here without specific checks.
-                    )
-                ),
-                and_( # Stories from ANY user shared with a custom list current_user is on
-                    Story.privacy_level == PRIVACY_CUSTOM_LIST,
-                    Story.custom_friend_list_id.isnot(None),
-                    Story.custom_friend_list.has(
-                        FriendList.members.any(User.id == current_user.id)
-                    )
+
+        # Base filter for active stories (published and not expired, or own scheduled)
+        active_filter = or_(
+            and_(Story.is_published == True, Story.expires_at > now), # Published and not expired
+            and_(Story.user_id == current_user.id, Story.is_published == False) # Own scheduled (expires_at is None or will be set on publish)
+        )
+        stories_query = stories_query.filter(active_filter)
+
+        # Privacy filters on top of the active_filter
+        privacy_filter = or_(
+            Story.user_id == current_user.id, # Own stories (already covered by active_filter for scheduled, this ensures published are also included)
+            and_( # Stories from followed users (must be published and not expired)
+                Story.user_id.in_(followed_user_ids),
+                Story.is_published == True, # Redundant if active_filter is perfect, but good for clarity
+                or_(
+                    Story.privacy_level == PRIVACY_PUBLIC,
+                    Story.privacy_level == PRIVACY_FOLLOWERS
                 )
+            ),
+            and_( # Stories from ANY user shared with a custom list current_user is on (must be published and not expired)
+                Story.privacy_level == PRIVACY_CUSTOM_LIST,
+                Story.custom_friend_list_id.isnot(None),
+                Story.is_published == True, # Redundant if active_filter is perfect
+                Story.custom_friend_list.has(
+                    FriendList.members.any(User.id == current_user.id)
+                )
+            ),
+            and_( # Public stories from anyone (must be published and not expired)
+                 Story.privacy_level == PRIVACY_PUBLIC,
+                 Story.is_published == True
             )
-        ).distinct() # Added distinct() before order_by
+        )
+        stories_query = stories_query.filter(privacy_filter).distinct()
+
     else: # Unauthenticated users
-        # Decide if unauthenticated users see any stories. If yes, only public.
-        stories_query = stories_query.filter(Story.privacy_level == PRIVACY_PUBLIC)
-        # If unauthenticated users should not see any stories, then:
-        # active_stories = [] # And skip the query
-        # For now, assuming they can see public stories.
+        stories_query = stories_query.filter(Story.privacy_level == PRIVACY_PUBLIC, Story.is_published == True, Story.expires_at > now)
 
     active_stories = stories_query.order_by(Story.timestamp.desc()).all()
 
@@ -1704,21 +1745,40 @@ def create_story():
                     'caption': form.caption.data,
                     'privacy_level': story_privacy_level,
                     'custom_friend_list_id': story_custom_list_id
+                    # scheduled_for and is_published will be added next
                 }
+
+                scheduled_for_value = None
+                is_published_value = True # Default to immediate publish
+
+                if form.schedule_time.data:
+                    if form.schedule_time.data > datetime.now(): # Naive comparison
+                        # TODO: Convert form.schedule_time.data (user's local time) to UTC before storing
+                        scheduled_for_value = form.schedule_time.data
+                        is_published_value = False
+                        # Flash message handled below
+                    else:
+                        flash('Scheduled time is in the past. Publishing story now.', 'warning')
+
+                story_data['scheduled_for'] = scheduled_for_value
+                story_data['is_published'] = is_published_value
 
                 if media_type == 'image':
                     story_data['image_filename'] = filename
                 elif media_type == 'video':
                     story_data['video_filename'] = filename
                 else:
-                    # This case should ideally not be reached if FileAllowed and save_story_media are robust
                     flash('Unsupported media type after saving.', 'danger')
                     return render_template('create_story.html', title='Create Story', form=form)
 
-                story = Story(**story_data)
+                story = Story(**story_data) # is_published is passed here, Story.__init__ handles expires_at
                 db.session.add(story)
                 db.session.commit()
-                flash('Your story has been posted!', 'success')
+
+                if is_published_value:
+                    flash('Your story has been posted!', 'success')
+                else:
+                    flash(f'Your story has been scheduled for {story.scheduled_for.strftime("%Y-%m-%d %H:%M") if story.scheduled_for else "a future time"}.', 'info')
                 return redirect(url_for('main.index')) # Or a dedicated stories page later
 
             except Exception as e:

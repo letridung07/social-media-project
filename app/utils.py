@@ -406,7 +406,7 @@ def recommend_posts(user, limit=5):
     recommended_posts_query = db.session.query(Post, matching_hashtags_subquery.c.score).\
         join(matching_hashtags_subquery, Post.id == matching_hashtags_subquery.c.post_id).\
         filter(not_(Post.id.in_(excluded_post_ids))).\
-        filter(Post.user_id != user.id). # Ensure not to recommend user's own posts, covered by authored_post_ids but good for safety
+        filter(Post.user_id != user.id).\
         order_by(desc(matching_hashtags_subquery.c.score), desc(Post.timestamp))
 
     final_recommendations = recommended_posts_query.limit(limit).all()
@@ -607,7 +607,7 @@ def get_top_performing_hashtags(user_id, limit=5):
     ).select_from(Hashtag)\
     .outerjoin(likes_subquery, Hashtag.id == likes_subquery.c.hashtag_id)\
     .outerjoin(comments_subquery, Hashtag.id == comments_subquery.c.hashtag_id)\
-    .filter(or_(likes_subquery.c.hashtag_id.isnot(None), comments_subquery.c.hashtag_id.isnot(None))) # Ensures only hashtags used by the user are considered
+    .filter(or_(likes_subquery.c.hashtag_id.isnot(None), comments_subquery.c.hashtag_id.isnot(None)))\
     .order_by(desc('total_engagement'), Hashtag.tag_text)\
     .limit(limit).all()
 
@@ -649,7 +649,7 @@ def get_top_performing_groups(user_id, limit=5):
     ).select_from(Group)\
     .outerjoin(likes_per_group_sq, Group.id == likes_per_group_sq.c.group_id)\
     .outerjoin(comments_per_group_sq, Group.id == comments_per_group_sq.c.group_id)\
-    .filter(or_(likes_per_group_sq.c.group_id.isnot(None), comments_per_group_sq.c.group_id.isnot(None))) # Ensures only groups the user posted in (and got engagement) are considered
+    .filter(or_(likes_per_group_sq.c.group_id.isnot(None), comments_per_group_sq.c.group_id.isnot(None)))\
     .order_by(desc('total_engagement'), Group.name)\
     .limit(limit).all()
 

@@ -96,6 +96,17 @@
                     {% endif %}
                 </div>
 
+                <div class="form-group mb-3"> {# Added schedule_time field #}
+                    {{ form.schedule_time.label(class="form-control-label") }}
+                    {{ form.schedule_time(class="form-control") }}
+                    {% if form.schedule_time.errors %}
+                        {% for error in form.schedule_time.errors %}
+                            <span class="text-danger">{{ error }}</span><br>
+                        {% endfor %}
+                    {% endif %}
+                    <small class="form-text text-muted">Optional. Format: YYYY-MM-DD HH:MM</small>
+                </div>
+
                 <div class="form-group mt-4">
                     {{ form.submit(class="btn btn-primary w-100") }}
                 </div>
@@ -126,6 +137,14 @@
              privacyLevelSelect.addEventListener('change', toggleCustomListDiv);
              toggleCustomListDiv();
         }
+
+        // Placeholder for Flatpickr or other datetime picker initialization
+        // Example:
+        // flatpickr("input[name='schedule_time']", {
+        // enableTime: true,
+        // dateFormat: "Y-m-d H:i",
+        // });
+        // Ensure the actual library (e.g., Flatpickr) is included in your base template or page.
     });
 </script>
 {% endblock %}

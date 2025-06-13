@@ -8,7 +8,7 @@ from flask_migrate import Migrate # Import Migrate
 from flask_caching import Cache # Import Cache
 from bootstrap_flask import Bootstrap # Import Bootstrap
 from config import Config
-from app.scheduler import init_scheduler # Import the scheduler initializer
+# from app.scheduler import init_scheduler # Import the scheduler initializer MOVED
 
 db = SQLAlchemy()
 cache = Cache() # Initialize Cache
@@ -59,6 +59,7 @@ def create_app(config_class=Config):
 
     # Initialize the scheduler
     if not app.config.get('TESTING', False): # Optionally disable scheduler during tests
+        from app.scheduler import init_scheduler # MOVED HERE
         with app.app_context(): # Ensure app context for scheduler init if it needs it
             init_scheduler(app)
 

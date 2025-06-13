@@ -1,9 +1,10 @@
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, SubmitField, BooleanField, TextAreaField, FieldList, FormField, HiddenField, SelectField
-from wtforms.fields import FileField, MultipleFileField # Correct import for FileField and MultipleFileField
+from wtforms.fields import FileField, MultipleFileField, DateTimeField # Added DateTimeField
 from flask_wtf.file import FileAllowed # For validation
 from wtforms.validators import DataRequired, Length, Email, EqualTo, ValidationError, Optional, InputRequired
 from app.models import User, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE
+from datetime import datetime # Added datetime
 
 PRIVACY_CHOICES = [
     (PRIVACY_PUBLIC, 'Public (visible to everyone)'),
@@ -73,7 +74,13 @@ class PostForm(FlaskForm):
     privacy_level = SelectField('Visibility', choices=PRIVACY_CHOICES, default=PRIVACY_PUBLIC, validators=[DataRequired()])
     # custom_friend_list_id = HiddenField('Custom Friend List ID', validators=[Optional()]) # Consider adding later if needed directly in this form
     custom_friend_list_id = SelectField('Select Friend List', choices=[], coerce=int, validators=[Optional()]) # Added coerce=int and Optional
+    schedule_time = DateTimeField('Schedule For (optional)', format='%Y-%m-%d %H:%M', validators=[Optional()])
     submit = SubmitField('Post')
+
+    def validate_schedule_time(self, field):
+        if field.data:
+            if field.data < datetime.now():
+                raise ValidationError('Scheduled time must be in the future.')
 
 class CommentForm(FlaskForm):
     body = TextAreaField('Your Comment', validators=[DataRequired(), Length(min=1, max=280)]) # Max length can be adjusted
@@ -111,7 +118,13 @@ class StoryForm(FlaskForm):
     caption = TextAreaField('Caption (Optional)', validators=[Optional(), Length(max=280)])
     privacy_level = SelectField('Visibility', choices=PRIVACY_CHOICES, default=PRIVACY_PUBLIC, validators=[DataRequired()])
     custom_friend_list_id = SelectField('Select Friend List', choices=[], coerce=int, validators=[Optional()]) # Added
+    schedule_time = DateTimeField('Schedule For (optional)', format='%Y-%m-%d %H:%M', validators=[Optional()])
     submit = SubmitField('Post Story')
+
+    def validate_schedule_time(self, field):
+        if field.data:
+            if field.data < datetime.now():
+                raise ValidationError('Scheduled time must be in the future.')
 
 # Auxiliary form for individual poll options
 class PollOptionEntryForm(FlaskForm):
@@ -119,6 +132,7 @@ class PollOptionEntryForm(FlaskForm):
     # if it were a standalone form rendered via its own <form> tag, it would need it.
     # For WTForms 3.x, CSRF is generally handled by the parent FlaskForm.
     option_text = StringField('Option Text', validators=[DataRequired(), Length(min=1, max=255)])
+
 
 class PollForm(FlaskForm):
     question = TextAreaField('Poll Question', validators=[DataRequired(), Length(min=5, max=500)])
@@ -153,7 +167,9 @@ class PollForm(FlaskForm):
         if len(option_texts_seen) != len(set(option_texts_seen)):
             raise ValidationError('Poll options must be unique (case-insensitive).')
 
-from wtforms.fields import DateTimeLocalField
+
+# DateTimeLocalField was already imported, ensure DateTimeField is also available (added at the top)
+# from wtforms.fields import DateTimeLocalField # This specific line can be removed if DateTimeField covers it.
 
 class EventForm(FlaskForm):
     name = StringField('Event Name', validators=[DataRequired(), Length(min=3, max=100)])

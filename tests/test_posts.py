@@ -8,8 +8,9 @@ from app.models import User, Post, MediaItem, Mention, Comment, Notification # A
 from app.utils import process_mentions, linkify_mentions # Added process_mentions and linkify_mentions
 from config import TestingConfig # Using TestingConfig for tests
 from werkzeug.datastructures import FileStorage # For creating mock FileStorage object
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone # Added timezone
 import base64 # For decoding the dummy image
+from flask import url_for # For route tests
 
 class PostModelCase(unittest.TestCase):
     def setUp(self):
@@ -814,6 +815,101 @@ class PostModelCase(unittest.TestCase):
         self.assertNotIn(b'media-gallery', profile_resp.data)
         self.assertIn(b"Caption remains, all media deleted", profile_resp.data)
 
+        self._logout()
+
+    def test_post_creation_scheduled(self):
+        now = datetime.now(timezone.utc)
+        schedule_time = now + timedelta(days=1)
+        post = Post(body="Scheduled content", author=self.user1,
+                    scheduled_for=schedule_time, is_published=False)
+        db.session.add(post)
+        db.session.commit()
+
+        retrieved_post = Post.query.order_by(Post.id.desc()).first() # Get the latest post
+        self.assertIsNotNone(retrieved_post)
+        self.assertEqual(retrieved_post.scheduled_for, schedule_time)
+        self.assertFalse(retrieved_post.is_published)
+        self.assertEqual(retrieved_post.body, "Scheduled content")
+
+    def test_post_creation_published_immediately(self):
+        post = Post(body="Immediate content", author=self.user1, is_published=True)
+        db.session.add(post)
+        db.session.commit()
+
+        retrieved_post = Post.query.order_by(Post.id.desc()).first()
+        self.assertIsNotNone(retrieved_post)
+        self.assertIsNone(retrieved_post.scheduled_for) # Should be None if not scheduled
+        self.assertTrue(retrieved_post.is_published)
+
+    def test_post_is_published_defaults_to_false(self):
+        # Note: The model sets default=False, nullable=False.
+        # When creating directly via constructor without specifying is_published, SQLAlchemy uses the default.
+        post = Post(body="Default published state", author=self.user1)
+        db.session.add(post)
+        db.session.commit()
+        retrieved_post = Post.query.order_by(Post.id.desc()).first()
+        self.assertFalse(retrieved_post.is_published)
+
+    # --- Route Tests for Post Scheduling ---
+    def test_route_create_post_scheduled(self):
+        self._login('john@example.com', 'cat')
+        schedule_dt = datetime.now(timezone.utc) + timedelta(days=2)
+        # Format for DateTimeField (which doesn't include seconds or timezone typically)
+        schedule_dt_str = schedule_dt.strftime('%Y-%m-%d %H:%M')
+
+        response = self.client.post(url_for('main.create_post'), data={
+            'body': 'This is a scheduled test post via route.',
+            'schedule_time': schedule_dt_str,
+            'privacy_level': 'PUBLIC' # Assuming privacy_level is required
+        }, follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Your post has been scheduled', response.data)
+
+        post = Post.query.filter_by(body='This is a scheduled test post via route.').first()
+        self.assertIsNotNone(post)
+        self.assertFalse(post.is_published)
+        self.assertIsNotNone(post.scheduled_for)
+        # Compare naive datetime from form with naive datetime from DB after potential conversion
+        # For this test, we assume direct storage of naive form datetime or consistent handling.
+        form_dt_naive = datetime.strptime(schedule_dt_str, '%Y-%m-%d %H:%M')
+        self.assertAlmostEqual(post.scheduled_for, form_dt_naive, delta=timedelta(seconds=1))
+        self._logout()
+
+    def test_route_create_post_immediate(self):
+        self._login('john@example.com', 'cat')
+        response = self.client.post(url_for('main.create_post'), data={
+            'body': 'This is an immediate test post via route.',
+            'privacy_level': 'PUBLIC'
+            # No schedule_time provided
+        }, follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Your post is now live!', response.data)
+
+        post = Post.query.filter_by(body='This is an immediate test post via route.').first()
+        self.assertIsNotNone(post)
+        self.assertTrue(post.is_published)
+        self.assertIsNone(post.scheduled_for)
+        self._logout()
+
+    def test_route_create_post_schedule_time_in_past(self):
+        self._login('john@example.com', 'cat')
+        past_schedule_dt = datetime.now(timezone.utc) - timedelta(days=1)
+        past_schedule_dt_str = past_schedule_dt.strftime('%Y-%m-%d %H:%M')
+
+        # Assuming WTF_CSRF_ENABLED is False for testing, or token would be needed.
+        # The PostForm requires 'body'.
+        response = self.client.post(url_for('main.create_post'), data={
+            'body': 'Test post with past schedule time.',
+            'schedule_time': past_schedule_dt_str,
+            'privacy_level': 'PUBLIC'
+        }, follow_redirects=True)
+
+        self.assertEqual(response.status_code, 200) # Form validation error should re-render the page
+        self.assertIn(b'Scheduled time must be in the future.', response.data) # Check for form error message
+
+        # Verify post was NOT created
+        post = Post.query.filter_by(body='Test post with past schedule time.').first()
+        self.assertIsNone(post)
         self._logout()
 
 
