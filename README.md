@@ -20,6 +20,16 @@ A social media platform built with Flask, featuring user authentication, profile
         *   **Albums/Galleries:** Create posts containing multiple images and/or videos, displayed as a swipeable gallery. The post's main text serves as the caption for the entire album.
         *   **Long-form Articles/Blogs:** Publish detailed articles with rich text formatting using an integrated editor, allowing for more structured and comprehensive content sharing. Articles have unique, viewable URLs.
         *   **Audio Posts/Podcasts:** Share audio content such as podcast episodes or individual audio clips. Uploaded audio files can be played directly on the platform using an HTML5 audio player.
+    *   **Content Scheduling:**
+        *   Users can schedule their posts and stories to be published at a future date and time. This allows for planning content in advance and automating its release.
+        *   **How to Use:**
+            *   When creating or editing a post or story, you will find an optional field labeled "Schedule For".
+            *   Enter the desired future date and time for publication using the format: `YYYY-MM-DD HH:MM`.
+            *   If you leave this field blank, the content will be published immediately.
+            *   If a valid future date and time are provided, your content will be automatically published at that time.
+        *   **Visibility:**
+            *   Scheduled content is not visible to other users until its scheduled publication time.
+            *   As the author, you will be able to see your own scheduled content (e.g., on your profile page).
     *   **Hashtag Support:**
         *   Posts can be tagged with hashtags (e.g., `#Flask`, `#PythonTips`) to improve content discoverability.
         *   Hashtags are automatically parsed from the post body.

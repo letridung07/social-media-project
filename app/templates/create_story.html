@@ -61,6 +61,17 @@
                     {% endif %}
                 </div>
 
+                <div class="form-group mb-3"> {# Added schedule_time field #}
+                    {{ form.schedule_time.label(class="form-control-label") }}
+                    {{ form.schedule_time(class="form-control") }}
+                    {% if form.schedule_time.errors %}
+                        {% for error in form.schedule_time.errors %}
+                            <span class="text-danger">{{ error }}</span><br>
+                        {% endfor %}
+                    {% endif %}
+                    <small class="form-text text-muted">Optional. Format: YYYY-MM-DD HH:MM</small>
+                </div>
+
                 <div class="form-group mt-4">
                     {{ form.submit(class="btn btn-primary") }}
                     <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary ms-2">Cancel</a>
@@ -98,6 +109,14 @@
         } else {
             // console.warn("Story privacy script: Could not find privacy_level select or custom_list_select_div_story.");
         }
+
+        // Placeholder for Flatpickr or other datetime picker initialization
+        // Example:
+        // flatpickr("input[name='schedule_time']", {
+        // enableTime: true,
+        // dateFormat: "Y-m-d H:i",
+        // });
+        // Ensure the actual library (e.g., Flatpickr) is included in your base template or page.
     });
 </script>
 {% endblock %}

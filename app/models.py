@@ -286,6 +286,9 @@ class Post(db.Model):
     # Relationship to a specific FriendList (if privacy_level is CUSTOM_LIST)
     custom_friend_list = db.relationship('FriendList', foreign_keys=[custom_friend_list_id])
 
+    scheduled_for = db.Column(db.DateTime, nullable=True, index=True)
+    is_published = db.Column(db.Boolean, default=False, nullable=False, index=True)
+
     def __repr__(self):
         return f'<Post {self.body[:50]}...>'
 
@@ -480,11 +483,19 @@ class Story(db.Model):
     # Relationship to a specific FriendList
     custom_friend_list = db.relationship('FriendList', foreign_keys=[custom_friend_list_id])
 
+    scheduled_for = db.Column(db.DateTime, nullable=True, index=True)
+    is_published = db.Column(db.Boolean, default=False, nullable=False, index=True)
+
     def __init__(self, **kwargs):
         super(Story, self).__init__(**kwargs)
         if self.timestamp is None:
             self.timestamp = datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow()
-        self.expires_at = self.timestamp + timedelta(hours=24)
+        # Only set expires_at if it's not a scheduled story being created without immediate publishing
+        # If is_published is False (because it's scheduled), expires_at will be set upon publishing.
+        if kwargs.get('is_published', True): # Default to True if not provided (immediate publish)
+             self.expires_at = self.timestamp + timedelta(hours=24)
+        # If it's a new story instance and is_published is explicitly False (scheduled),
+        # expires_at will remain None until the scheduler publishes it.
 
     def __repr__(self):
         return f'<Story {self.id} by User {self.user_id}>'
