@@ -407,5 +407,128 @@ class EventTestCase(unittest.TestCase):
         self.assertIsNotNone(Event.query.get(event_id)) # Event should still exist
 
 
+# --- Test Class for Event Calendar Export ---
+from flask import url_for # Already imported globally in routes.py but good practice for test files
+import icalendar # For parsing ICS content
+import uuid # For generating calendar_uid for test event
+
+class TestEventCalendarExportRoutes(unittest.TestCase):
+    def setUp(self):
+        self.app_instance = create_app(TestingConfig)
+        self.app = self.app_instance.test_client()
+        self.app_context = self.app_instance.app_context()
+        self.app_context.push()
+        db.create_all()
+
+        # Create users
+        self.organizer = User(username='organizer', email='organizer@example.com')
+        self.organizer.set_password('password')
+        self.attendee1 = User(username='attendee1', email='attendee1@example.com')
+        self.attendee1.set_password('password')
+        self.other_user = User(username='otheruser', email='other@example.com')
+        self.other_user.set_password('password')
+
+        db.session.add_all([self.organizer, self.attendee1, self.other_user])
+        db.session.commit()
+
+        # Create an event
+        self.test_event = Event(
+            name="Test Export Event",
+            description="Event for ICS export testing.",
+            start_datetime=datetime.utcnow() + timedelta(days=5),
+            end_datetime=datetime.utcnow() + timedelta(days=5, hours=3),
+            location="Test Location",
+            organizer_id=self.organizer.id,
+            calendar_uid=str(uuid.uuid4())
+        )
+        self.test_event.attendees.append(self.attendee1)
+        db.session.add(self.test_event)
+        db.session.commit()
+
+    def tearDown(self):
+        db.session.remove()
+        db.drop_all()
+        self.app_context.pop()
+
+    def _login(self, email, password):
+        return self.app.post('/login', data=dict(
+            email=email,
+            password=password
+        ), follow_redirects=True)
+
+    def _logout(self):
+        return self.app.get('/logout', follow_redirects=True)
+
+    def test_export_calendar_by_organizer(self):
+        self._login('organizer@example.com', 'password')
+        with self.app_instance.app_context(): # Ensure url_for has app context
+            response = self.app.get(url_for('main.export_calendar', event_id=self.test_event.id))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers['Content-Type'], 'text/calendar; charset=utf-8')
+        self.assertIn('attachment; filename=', response.headers['Content-Disposition'])
+        self.assertIn('.ics', response.headers['Content-Disposition'])
+
+        # Check flash message
+        # To check flash messages, we need to follow redirects if the route flashes and then returns a response
+        # However, this route directly returns a file response, so flash messages might not be processed in the same way
+        # by the test client unless the response is then fed into another request or the session is inspected.
+        # For now, we'll assume the flash message is set. A more involved test could capture it.
+
+        try:
+            cal = icalendar.Calendar.from_ical(response.data)
+            self.assertEqual(len(cal.walk('VEVENT')), 1)
+            event_component = cal.walk('VEVENT')[0]
+            self.assertEqual(str(event_component.get('uid')), self.test_event.calendar_uid)
+            self.assertEqual(str(event_component.get('summary')), self.test_event.name)
+        except Exception as e:
+            self.fail(f"ICS content parsing failed: {e}")
+        self._logout()
+
+    def test_export_calendar_by_attendee(self):
+        self._login('attendee1@example.com', 'password')
+        with self.app_instance.app_context():
+            response = self.app.get(url_for('main.export_calendar', event_id=self.test_event.id))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers['Content-Type'], 'text/calendar; charset=utf-8')
+        self.assertIn('.ics', response.headers['Content-Disposition'])
+
+        try:
+            cal = icalendar.Calendar.from_ical(response.data)
+            event_component = cal.walk('VEVENT')[0]
+            self.assertEqual(str(event_component.get('uid')), self.test_event.calendar_uid)
+        except Exception as e:
+            self.fail(f"ICS content parsing failed for attendee: {e}")
+        self._logout()
+
+    def test_export_calendar_unauthorized_non_attendee(self):
+        self._login('other@example.com', 'password')
+        with self.app_instance.app_context():
+            response = self.app.get(url_for('main.export_calendar', event_id=self.test_event.id), follow_redirects=True)
+
+        # The route flashes and redirects. Status code after redirect might be 200.
+        # We should check for the flash message content.
+        self.assertIn(b'You are not authorized to export this event.', response.data)
+        # Check if it redirected to the event view page or index (depends on route logic)
+        # For this test, checking the flash message is a good indicator.
+        self._logout()
+
+    def test_export_calendar_anonymous_user(self):
+        with self.app_instance.app_context():
+            response = self.app.get(url_for('main.export_calendar', event_id=self.test_event.id), follow_redirects=True)
+
+        self.assertIn(b'Sign In', response.data) # Should redirect to login page
+        self.assertNotIn(b'event_Test_Export_Event.ics', response.data) # ICS content should not be there
+
+    def test_export_calendar_event_not_found(self):
+        self._login('organizer@example.com', 'password')
+        non_existent_event_id = 99999
+        with self.app_instance.app_context():
+            response = self.app.get(url_for('main.export_calendar', event_id=non_existent_event_id))
+
+        self.assertEqual(response.status_code, 404)
+        self._logout()
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

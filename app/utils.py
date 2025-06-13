@@ -24,8 +24,11 @@ except ImportError:
 # Imports for recommendation functions
 from sqlalchemy import func, desc, not_, and_, or_, distinct
 from app import db # Assuming db instance is available in app package
-from app.models import User, Post, Like, Comment, Hashtag, Group, GroupMembership, followers, Mention, HistoricalAnalytics, post_hashtags, Article # Added Article
-from datetime import datetime, timedelta, timezone # Added datetime, timedelta, timezone
+from app.models import User, Post, Like, Comment, Hashtag, Group, GroupMembership, followers, Mention, HistoricalAnalytics, post_hashtags, Article, Event as AppEvent # Added Article and AppEvent
+from datetime import datetime, timedelta, timezone # Ensure timezone is imported
+
+# Imports for iCalendar generation
+from icalendar import Calendar, Event as IcsEvent
 
 
 def slugify(text_to_slugify: str, model_to_check=None, target_column_name: str = 'slug', max_slug_length: int = 200) -> str:
@@ -725,3 +728,42 @@ def get_audio_duration(file_path):
     except Exception as e:
         current_app.logger.error(f"Error getting duration for {file_path} with mutagen: {e}")
         return None
+
+def generate_ics_file(event_obj: AppEvent) -> bytes:
+    """
+    Generates an iCalendar (.ics) file content for a given Event object.
+    """
+    cal = Calendar()
+    cal.add('prodid', '-//My App//Event Calendar//EN')
+    cal.add('version', '2.0')
+
+    ics_event = IcsEvent()
+    ics_event.add('uid', event_obj.calendar_uid)
+    ics_event.add('summary', event_obj.name)
+
+    if event_obj.description:
+        ics_event.add('description', event_obj.description)
+
+    # Ensure dtstart and dtend are timezone-aware (UTC)
+    # If naive, assume UTC. If aware, ensure it's UTC (icalendar might handle this, but explicit is better)
+    dtstart = event_obj.start_datetime
+    if dtstart.tzinfo is None:
+        dtstart = dtstart.replace(tzinfo=timezone.utc)
+    else:
+        dtstart = dtstart.astimezone(timezone.utc) # Convert to UTC if already aware but different timezone
+
+    dtend = event_obj.end_datetime
+    if dtend.tzinfo is None:
+        dtend = dtend.replace(tzinfo=timezone.utc)
+    else:
+        dtend = dtend.astimezone(timezone.utc) # Convert to UTC
+
+    ics_event.add('dtstart', dtstart)
+    ics_event.add('dtend', dtend)
+    ics_event.add('dtstamp', datetime.now(timezone.utc)) # Timestamp for when the iCalendar object was created
+
+    if event_obj.location:
+        ics_event.add('location', event_obj.location)
+
+    cal.add_component(ics_event)
+    return cal.to_ical()

@@ -124,6 +124,10 @@ To enhance interactivity, poll results now update in real-time. When a user vote
     *   Users can join events they are interested in and leave events they can no longer attend.
     *   Event organizers have the ability to edit or delete the events they've created.
     *   Attendees and organizers receive notifications for important event updates, cancellations, and when new users join an event.
+    *   **External Calendar Integration:**
+        *   Users can easily export event details to their preferred external calendar application (e.g., Google Calendar, Outlook, Apple Calendar).
+        *   This is done by downloading an industry-standard .ics file directly from the event's detail page.
+        *   To use, simply click the "Add to Calendar" button on an event page. This will download the .ics file, which can then be imported into most calendar programs.
 
 ## Advanced Analytics Dashboard
 

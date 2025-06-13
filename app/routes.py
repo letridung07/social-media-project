@@ -18,6 +18,7 @@ from app.utils import save_picture, save_group_image, save_story_media, process_
 from app.email_utils import send_password_reset_email # Import email utility
 import secrets # For slug generation
 from wtforms.validators import DataRequired # For dynamic validator modification
+from app.utils import generate_ics_file # For ICS export
 
 # Import for recommendations
 from app.utils import get_recommendations
@@ -1464,6 +1465,41 @@ def edit_event(event_id):
         flash('Event updated successfully! Attendees have been notified.', 'success')
         return redirect(url_for('main.view_event', event_id=event.id))
     return render_template('edit_event.html', title='Edit Event', form=form, event=event)
+
+@main.route('/event/<int:event_id>/export_calendar')
+@login_required
+def export_calendar(event_id):
+    event = Event.query.get_or_404(event_id)
+
+    # Authorization check: User must be organizer or an attendee
+    is_attendee = current_user in event.attendees
+    if event.organizer_id != current_user.id and not is_attendee:
+        flash('You are not authorized to export this event.', 'danger')
+        return redirect(url_for('main.view_event', event_id=event.id)) # Or abort(403)
+
+    ics_content = generate_ics_file(event)
+
+    # Simple slugification for the filename
+    event_name_slug = re.sub(r'[^\w]+', '_', event.name.lower())
+    if not event_name_slug: # handle case where name is all special chars
+        event_name_slug = "event"
+
+    filename = f"event_{event.id}_{event_name_slug[:50]}.ics" # Truncate slug part if too long
+
+    response = make_response(ics_content)
+    response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+    response.headers['Content-Type'] = 'text/calendar; charset=utf-8'
+
+    # Update is_synced status (optional, based on previous discussion for UI feedback)
+    # This assumes that exporting means it's "synced" or an attempt was made.
+    # If event.is_synced is a field, uncomment and adjust:
+    # if not event.is_synced:
+    #     event.is_synced = True
+    #     db.session.add(event)
+    #     db.session.commit()
+
+    flash('Event calendar file (.ics) downloaded. Open it with your calendar application to add this event to your schedule.', 'success')
+    return response
 
 @main.route('/event/<int:event_id>/delete', methods=['POST'])
 @login_required

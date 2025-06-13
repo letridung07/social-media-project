@@ -174,8 +174,8 @@ class PollForm(FlaskForm):
 class EventForm(FlaskForm):
     name = StringField('Event Name', validators=[DataRequired(), Length(min=3, max=100)])
     description = TextAreaField('Description', validators=[Optional(), Length(max=500)])
-    start_datetime = DateTimeLocalField('Start Time', format='%Y-%m-%dT%H:%M', validators=[DataRequired()])
-    end_datetime = DateTimeLocalField('End Time', format='%Y-%m-%dT%H:%M', validators=[DataRequired()])
+    start_datetime = DateTimeField('Start Time', format='%Y-%m-%dT%H:%M', validators=[DataRequired()])
+    end_datetime = DateTimeField('End Time', format='%Y-%m-%dT%H:%M', validators=[DataRequired()])
     location = StringField('Location', validators=[Optional(), Length(max=255)])
     submit = SubmitField('Create Event')
 
