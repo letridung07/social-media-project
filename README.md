@@ -16,7 +16,10 @@ A social media platform built with Flask, featuring user authentication, profile
     *   Improved visual styling for enhanced readability and aesthetics.
     *   Intuitive navigation and user flows.
 *   **Content Posting & Organization:**
-    *   Users can create and share text-based posts, optionally including images and videos.
+    *   Users can create and share text-based posts.
+        *   **Albums/Galleries:** Create posts containing multiple images and/or videos, displayed as a swipeable gallery. The post's main text serves as the caption for the entire album.
+        *   **Long-form Articles/Blogs:** Publish detailed articles with rich text formatting using an integrated editor, allowing for more structured and comprehensive content sharing. Articles have unique, viewable URLs.
+        *   **Audio Posts/Podcasts:** Share audio content such as podcast episodes or individual audio clips. Uploaded audio files can be played directly on the platform using an HTML5 audio player.
     *   **Hashtag Support:**
         *   Posts can be tagged with hashtags (e.g., `#Flask`, `#PythonTips`) to improve content discoverability.
         *   Hashtags are automatically parsed from the post body.
@@ -249,6 +252,8 @@ Follow these instructions to get a copy of the project up and running on your lo
     *   The `UPLOAD_FOLDER` for profile pictures is set to `app/static/images/`.
     *   `POST_IMAGES_UPLOAD_FOLDER` for images attached to posts is `app/static/post_images/`.
     *   `VIDEO_UPLOAD_FOLDER` for videos attached to posts is `app/static/videos/`.
+    *   `MEDIA_ITEMS_UPLOAD_FOLDER` for media files in albums/galleries (e.g., `app/static/media_items/`). This path can be customized in `config.py`.
+    *   `AUDIO_UPLOAD_FOLDER` for audio post files (e.g., `app/static/audio_uploads/`). This path can be customized in `config.py`.
     *   `UPLOAD_FOLDER_GROUP_IMAGES` for group images is `app/static/group_images/`.
     *   `STORY_MEDIA_UPLOAD_FOLDER` for story media (images/videos) is `app/static/story_media/`. This path can be customized in `config.py` (defaults are provided).
 
@@ -280,13 +285,23 @@ Follow these instructions to get a copy of the project up and running on your lo
 │   │   ├── images/       # User profile pictures (corrected path, was listed under js/ before)
 │   │   ├── post_images/  # Images attached to posts
 │   │   ├── videos/       # Videos attached to posts
+│   │   ├── media_items/  # Files for album/gallery posts
+│   │   ├── audio_uploads/ # Uploaded audio files
 │   │   ├── group_images/ # Group profile images
 │   │   └── story_media/  # Media for stories
 │   ├── templates/        # HTML templates
 │   │   ├── chat/         # Chat specific templates
 │   │   ├── create_story.html # Template for creating stories
 │   │   ├── stories.html    # Template for displaying stories
-│   │   └── create_poll.html  # Template for creating polls
+│   │   ├── create_poll.html  # Template for creating polls
+│   │   ├── create_article.html
+│   │   ├── edit_article.html
+│   │   ├── view_article.html
+│   │   ├── articles_list.html
+│   │   ├── upload_audio.html
+│   │   ├── edit_audio_post.html
+│   │   ├── view_audio_post.html
+│   │   ├── audio_list.html
 │   ├── __init__.py       # Application factory, initializes Flask app and extensions
 │   ├── forms.py          # WTForms definitions
 │   ├── models.py         # SQLAlchemy database models
@@ -297,7 +312,7 @@ Follow these instructions to get a copy of the project up and running on your lo
 │   ├── __init__.py
 │   ├── test_auth.py      # Authentication tests
 │   ├── test_profile.py   # Profile management tests
-│   ├── test_posts.py     # Tests for posts, comments, likes, hashtags, and mentions
+│   ├── test_posts.py     # Tests for posts (including albums/galleries), comments, likes, hashtags, and mentions
 │   ├── test_follow.py    # Tests for following/unfollowing users and feed generation
 │   ├── test_engagement.py # Tests for liking/unliking posts and adding/viewing comments (can be merged or specialized)
 │   ├── test_chat.py      # Chat functionality tests
@@ -307,6 +322,8 @@ Follow these instructions to get a copy of the project up and running on your lo
     ├── test_polls.py     # Tests for Polls feature
     ├── test_events.py    # Tests for Events/Calendar feature
     ├── test_analytics.py # Tests for Analytics Dashboard
+    ├── test_articles.py  # Tests for Article functionality
+    ├── test_audio_posts.py # Tests for AudioPost functionality
     ├── test_sharing.py   # Placeholder for external sharing tests
     ├── test_livestream.py # Placeholder for live stream tests
     ├── test_themes.py    # Placeholder for theme functionality tests
@@ -420,13 +437,10 @@ classDiagram
     }
     class Post {
         id: Integer
-        body: Text
+        body: Text  // Now serves as album caption
         user_id: Integer
         group_id: Integer (nullable)
         timestamp: DateTime
-        image_filename: String (nullable)
-        video_filename: String (nullable)
-        alt_text: String (nullable)
         +author: User
         +group: Group
         +comments: Comment[]
@@ -435,6 +449,7 @@ classDiagram
         +mentions: Mention[]
         +related_notifications: Notification[]
         +polls: Poll[]
+        +media_items: MediaItem[] // New relationship
     }
     class Comment {
         id: Integer
@@ -560,6 +575,34 @@ classDiagram
         +attendees: User[]
         +related_notifications: Notification[]
     }
+    class MediaItem {
+        id: Integer
+        post_id: Integer
+        filename: String
+        media_type: String
+        alt_text: String (nullable)
+        timestamp: DateTime
+        +post_parent: Post
+    }
+    class Article {
+        id: Integer
+        title: String
+        body: Text
+        user_id: Integer
+        slug: String
+        timestamp: DateTime
+        +author: User
+    }
+    class AudioPost {
+        id: Integer
+        title: String
+        description: Text (nullable)
+        audio_filename: String
+        user_id: Integer
+        duration: Integer (nullable)
+        timestamp: DateTime
+        +uploader: User
+    }
 
 
     User "1" -- "*" Post : authors
@@ -597,6 +640,10 @@ classDiagram
 
     Event "1"--"1" User : organized_by
     Event "*" -- "*" User : attended_by
+
+    Post "1" -- "*" MediaItem : contains
+    User "1" -- "*" Article : authors_articles
+    User "1" -- "*" AudioPost : uploads_audio
 
 
     note for GroupMembership "Intermediary table defining user roles within groups."

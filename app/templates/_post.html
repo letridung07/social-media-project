@@ -41,28 +41,41 @@
         </div>
     </div>
     <div class="card-body">
-        <p>{{ post.body | linkify_mentions }}</p>
-
-        {# Display post image if it exists #}
-        {% if post.image_filename %}
-            <div class="post-image-container my-2">
-                <img src="{{ url_for('static', filename='post_images/' + post.image_filename) }}" loading="lazy"
-                     alt="{{ post.alt_text if post.alt_text else ('Image for post by ' + post.author.username) }}"
-                     class="img-fluid rounded" style="display: block;">
-            </div>
-        {% endif %}
-
-        {% if post.video_filename %}
-            <div class="post-video-container mt-2 mb-2">
-                <video width="100%" controls class="rounded" {% if post.alt_text %}aria-describedby="video-alt-text-{{ post.id }}"{% endif %}>
-                    <source src="{{ url_for('static', filename='videos/' + post.video_filename) }}" type="video/mp4">
-                    Your browser does not support the video tag.
-                </video>
-                {% if post.alt_text %}
-                    <p id="video-alt-text-{{ post.id }}" class="sr-only">{{ post.alt_text }}</p>
+        {# Display media gallery #}
+        {% if post.media_items and post.media_items.count() > 0 %}
+            <div class="media-gallery mb-3 {% if post.media_items.count() > 1 %}carousel{% endif %}">
+                <div class="carousel-track">
+                    {% for item in post.media_items %}
+                        <div class="media-gallery-item"> {# Removed col-md- classes, carousel item takes full width #}
+                            {% if item.media_type == 'image' %}
+                                <img src="{{ url_for('static', filename=(config.MEDIA_ITEMS_UPLOAD_FOLDER + '/' + item.filename) if config.MEDIA_ITEMS_UPLOAD_FOLDER else ('media_items/' + item.filename) ) }}"
+                                     alt="{{ item.alt_text or ('Gallery image ' ~ loop.index ~ ' for post by ' ~ post.author.username) }}"
+                                     class="img-fluid rounded" loading="lazy">
+                            {% elif item.media_type == 'video' %}
+                                <video controls class="img-fluid rounded" {% if item.alt_text %}aria-describedby="video-alt-text-{{ post.id }}-{{ item.id }}"{% endif %}>
+                                    <source src="{{ url_for('static', filename=(config.MEDIA_ITEMS_UPLOAD_FOLDER + '/' + item.filename) if config.MEDIA_ITEMS_UPLOAD_FOLDER else ('media_items/' + item.filename) ) }}" type="video/mp4"> {# Adjust type as needed based on actual video types #}
+                                    Your browser does not support the video tag.
+                                </video>
+                                {% if item.alt_text %}
+                                    <p id="video-alt-text-{{ post.id }}-{{ item.id }}" class="sr-only">{{ item.alt_text }}</p>
+                                {% endif %}
+                            {% else %}
+                                <p class="text-muted">Unsupported media: {{ item.filename }}</p>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+                {% if post.media_items.count() > 1 %}
+                <div class="carousel-nav">
+                    <button class="carousel-prev">&lt; Previous</button>
+                    <button class="carousel-next">Next &gt;</button>
+                </div>
                 {% endif %}
             </div>
         {% endif %}
+
+        {# Post body serves as the caption for the album/gallery #}
+        <p class="card-text post-body-caption">{{ post.body | linkify_mentions }}</p>
 
         {% if post.hashtags %}
             <div class="post-hashtags mt-2 mb-2">

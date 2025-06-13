@@ -2,13 +2,116 @@ import os
 import secrets
 from flask import current_app
 from PIL import Image # For image resizing - will need to install Pillow
+from werkzeug.utils import secure_filename # For secure filenames
 
 import re # For mention processing
+
+# Mutagen (for audio duration)
+try:
+    from mutagen.mp3 import MP3
+    from mutagen.wave import WAVE
+    from mutagen.oggvorbis import OggVorbis
+    from mutagen.aac import AAC
+    from mutagen.mp4 import MP4 # For M4A/MP4 AAC files
+    from mutagen.flac import FLAC
+    from mutagen.id3 import ID3NoHeaderError # Specific error for some MP3s
+    MUTAGEN_AVAILABLE = True
+except ImportError:
+    MUTAGEN_AVAILABLE = False
+    # Optionally log that mutagen is not available if it's considered important
+    # current_app.logger.info("Mutagen library not found. Audio duration extraction will be disabled.")
+
 # Imports for recommendation functions
 from sqlalchemy import func, desc, not_, and_, or_, distinct
 from app import db # Assuming db instance is available in app package
-from app.models import User, Post, Like, Comment, Hashtag, Group, GroupMembership, followers, Mention, HistoricalAnalytics, post_hashtags # Added Mention, HistoricalAnalytics, post_hashtags
+from app.models import User, Post, Like, Comment, Hashtag, Group, GroupMembership, followers, Mention, HistoricalAnalytics, post_hashtags, Article # Added Article
 from datetime import datetime, timedelta, timezone # Added datetime, timedelta, timezone
+
+
+def slugify(text_to_slugify: str, model_to_check=None, target_column_name: str = 'slug', max_slug_length: int = 200) -> str:
+    """
+    Generates a URL-friendly slug from a string, ensuring uniqueness.
+    """
+    if model_to_check is None:
+        model_to_check = Article # Default to Article model
+
+    if not text_to_slugify or not text_to_slugify.strip():
+        # If input is empty, generate a purely random slug
+        base_slug = secrets.token_hex(8)
+    else:
+        # Convert to lowercase
+        slug = text_to_slugify.lower()
+        # Remove non-alphanumeric characters (except spaces and hyphens)
+        slug = re.sub(r'[^\w\s-]', '', slug).strip()
+        # Replace spaces with hyphens
+        slug = re.sub(r'\s+', '-', slug)
+        # Consolidate multiple hyphens
+        slug = re.sub(r'-+', '-', slug)
+        # Remove leading/trailing hyphens
+        slug = slug.strip('-')
+        base_slug = slug
+
+        if not base_slug: # If all characters were special chars and removed
+            base_slug = secrets.token_hex(8)
+
+    # Truncate base_slug to ensure space for potential suffixes
+    # Max length for suffix like "-xxxxxx" (1 hyphen + 6 hex chars) is 7
+    # Initial truncation to leave space for this
+    effective_max_base_length = max_slug_length - 8
+    if len(base_slug) > effective_max_base_length:
+        base_slug = base_slug[:effective_max_base_length]
+
+    # Ensure base_slug is not empty after truncation, and re-strip hyphens
+    base_slug = base_slug.strip('-')
+    if not base_slug: # If truncation made it empty or just hyphens
+         base_slug = secrets.token_hex(min(8, effective_max_base_length if effective_max_base_length > 0 else 8))
+
+
+    current_slug_candidate = base_slug
+    attempt_counter = 0
+    max_attempts = 15 # Max attempts before switching to fully random slug
+
+    while True:
+        existing_record = model_to_check.query.filter(getattr(model_to_check, target_column_name) == current_slug_candidate).first()
+        if not existing_record:
+            return current_slug_candidate # Slug is unique
+
+        attempt_counter += 1
+        if attempt_counter > max_attempts:
+            # Fallback to a highly random slug if too many collisions
+            # Ensure this random slug also fits max_slug_length
+            random_len = min(max_slug_length, 16) # e.g. 16 hex chars
+            current_slug_candidate = secrets.token_hex(random_len // 2)
+            # One last check for this highly random slug (extremely unlikely to collide)
+            if not model_to_check.query.filter(getattr(model_to_check, target_column_name) == current_slug_candidate).first():
+                return current_slug_candidate
+            else:
+                # This case is astronomically rare. Could raise an error or log.
+                # For now, we'll just return it and assume it's okay, or let DB constraint catch it.
+                current_app.logger.error(f"Slugify: Extremely rare collision with fully random slug {current_slug_candidate}")
+                return current_slug_candidate # Or raise Exception("Could not generate unique slug after max attempts and random fallback.")
+
+
+        # Generate suffix
+        suffix = secrets.token_hex(3) # 6 characters long
+
+        # Calculate max length for the base part of the slug to accommodate the suffix
+        max_len_for_base_with_suffix = max_slug_length - len(suffix) - 1 # -1 for the hyphen
+
+        # Truncate the original base_slug if necessary
+        truncated_base = base_slug
+        if len(base_slug) > max_len_for_base_with_suffix:
+            truncated_base = base_slug[:max_len_for_base_with_suffix]
+
+        current_slug_candidate = f"{truncated_base}-{suffix}"
+        # Ensure the final slug with suffix does not exceed max_slug_length
+        if len(current_slug_candidate) > max_slug_length:
+             current_slug_candidate = current_slug_candidate[:max_slug_length]
+
+
+# Define allowed extensions comprehensively at the top
+ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+ALLOWED_VIDEO_EXTENSIONS = {'mp4', 'mov', 'avi', 'mkv'}
 
 
 def save_picture(form_picture_field):
@@ -29,56 +132,59 @@ def save_picture(form_picture_field):
 
     return picture_fn
 
-def save_post_image(form_image_field):
-    random_hex = secrets.token_hex(12) # Potentially more images, so longer hex for less collision chance
-    _, f_ext = os.path.splitext(form_image_field.filename)
-    image_fn = random_hex + f_ext
-
-    # Use the configuration variable for the upload path
-    # POST_IMAGES_UPLOAD_FOLDER is 'app/static/post_images'
-    # current_app.root_path is the project root directory
-    upload_path_from_config = current_app.config.get('POST_IMAGES_UPLOAD_FOLDER', 'app/static/post_images_default') # Default fallback
-    picture_path = os.path.join(current_app.root_path, upload_path_from_config, image_fn)
-
-    # Ensure the target directory exists
-    # The directory path to create is os.path.dirname(picture_path)
-    # which would be project_root/app/static/post_images
-    os.makedirs(os.path.dirname(picture_path), exist_ok=True)
-
-    # Define output size or processing for post images.
-    # For posts, we might want larger images than profile thumbnails.
-    # Let's say max width of 800px, height auto-scaled to maintain aspect ratio.
-    output_max_width = 800
-    img = Image.open(form_image_field)
-
-    if img.width > output_max_width:
-        aspect_ratio = img.height / img.width
-        new_height = int(output_max_width * aspect_ratio)
-        img = img.resize((output_max_width, new_height), Image.Resampling.LANCZOS) # Use LANCZOS for quality
-
-    # Convert to RGB if it's a P or RGBA mode image
-    if img.mode in ("P", "RGBA"):
-        img = img.convert("RGB")
-    img.save(picture_path, optimize=True, quality=85)
-    return image_fn
-
-def save_post_video(form_video_file):
+def save_media_file(form_media_file, upload_folder_name='media_items'):
+    """
+    Saves an uploaded media file (image or video) to a specified folder,
+    performing resizing for images.
+    Returns a tuple (saved_filename, media_type).
+    Raises ValueError for unsupported file types.
+    """
     random_hex = secrets.token_hex(12)
-    _, f_ext = os.path.splitext(form_video_file.filename)
-    video_fn = random_hex + f_ext
+    # Use secure_filename to ensure the original filename is safe before extracting extension
+    original_filename = secure_filename(form_media_file.filename)
+    _, f_ext_with_dot = os.path.splitext(original_filename)
+    f_ext = f_ext_with_dot.lower().lstrip('.')
 
-    # Use the configuration variable for the upload path
-    upload_path_from_config = current_app.config.get('VIDEO_UPLOAD_FOLDER', 'app/static/videos_default') # Default fallback
-    video_full_path = os.path.join(current_app.root_path, upload_path_from_config, video_fn)
+    saved_filename = random_hex + f_ext_with_dot.lower()
+    media_type = None
 
-    # Ensure the target directory exists
-    os.makedirs(os.path.dirname(video_full_path), exist_ok=True)
+    if f_ext in ALLOWED_IMAGE_EXTENSIONS:
+        media_type = 'image'
+    elif f_ext in ALLOWED_VIDEO_EXTENSIONS:
+        media_type = 'video'
+    else:
+        raise ValueError(f"Unsupported file type: '.{f_ext}'. Allowed images: {ALLOWED_IMAGE_EXTENSIONS}, Allowed videos: {ALLOWED_VIDEO_EXTENSIONS}")
 
-    form_video_file.save(video_full_path)
-    return video_fn
+    # The 'upload_folder_name' parameter is expected to be the path relative to app.root_path
+    # e.g., 'static/media_items' or as retrieved by routes:
+    # current_app.config.get('MEDIA_ITEMS_UPLOAD_FOLDER', 'static/media_items')
+
+    # Construct the full save path directory
+    full_save_path_dir = os.path.join(current_app.root_path, upload_folder_name)
+
+    # Ensure the specific directory for the media type exists
+    os.makedirs(full_save_path_dir, exist_ok=True)
+
+    full_file_path = os.path.join(full_save_path_dir, saved_filename)
+
+    if media_type == 'image':
+        img = Image.open(form_media_file)
+        output_max_width = 1200 # Max width for general media items
+        if img.width > output_max_width:
+            aspect_ratio = img.height / img.width
+            new_height = int(output_max_width * aspect_ratio)
+            img = img.resize((output_max_width, new_height), Image.Resampling.LANCZOS)
+
+        if img.mode in ("P", "RGBA"): # Convert PNGs with palette or alpha to RGB for broader compatibility and smaller size
+            img = img.convert("RGB")
+        img.save(full_file_path, optimize=True, quality=85)
+    elif media_type == 'video':
+        form_media_file.save(full_file_path)
+
+    return saved_filename, media_type
 
 def save_group_image(form_image_field):
-    random_hex = secrets.token_hex(10) # Using 10 hex characters
+    random_hex = secrets.token_hex(10)
     _, f_ext = os.path.splitext(form_image_field.filename)
     image_fn = random_hex + f_ext
 
@@ -120,11 +226,13 @@ def inject_search_form():
     form = SearchForm()
     return {'search_form': form}
 
-# Define allowed extensions more comprehensively at the top or import from a config
-ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
-ALLOWED_VIDEO_EXTENSIONS = {'mp4', 'mov', 'avi', 'mkv'} # Added mkv as it's common
+# ALLOWED_IMAGE_EXTENSIONS and ALLOWED_VIDEO_EXTENSIONS are already defined at the top.
 
 def save_story_media(form_media_file):
+    # This function can potentially be refactored to use save_media_file
+    # by passing a specific upload_folder_name like 'story_media'
+    # and handling any story-specific resizing/processing if different.
+    # For now, keeping it separate as per subtask focus.
     random_hex = secrets.token_hex(12)
     original_filename = form_media_file.filename
     _, f_ext_with_dot = os.path.splitext(original_filename)
@@ -546,3 +654,74 @@ def get_top_performing_groups(user_id, limit=5):
     .limit(limit).all()
 
     return [{'group_id': r.group_id, 'group_name': r.group_name, 'engagement': r.total_engagement, 'likes': r.total_likes, 'comments': r.total_comments} for r in results]
+
+
+def save_audio_file(form_audio_file_data, upload_folder_name='audio_uploads'):
+    """
+    Saves an uploaded audio file to a specified folder.
+    Returns the generated filename.
+    Assumes 'upload_folder_name' is relative to the 'static' directory base.
+    """
+    random_hex = secrets.token_hex(12)
+    original_filename = secure_filename(form_audio_file_data.filename)
+    _, f_ext_with_dot = os.path.splitext(original_filename)
+
+    audio_fn = random_hex + f_ext_with_dot.lower()
+
+    # Get base static upload directory from config
+    base_static_dir = current_app.config.get('MEDIA_UPLOAD_BASE_DIR', 'static')
+    # Construct full save path directory
+    audio_save_dir = os.path.join(current_app.root_path, base_static_dir, upload_folder_name)
+
+    os.makedirs(audio_save_dir, exist_ok=True)
+
+    full_file_path = os.path.join(audio_save_dir, audio_fn)
+
+    form_audio_file_data.save(full_file_path)
+
+    return audio_fn
+
+def get_audio_duration(file_path):
+    """
+    Extracts the duration of an audio file in seconds using mutagen.
+    Returns an integer (duration in seconds) or None if duration cannot be determined.
+    'file_path' should be the absolute path to the audio file.
+    """
+    if not MUTAGEN_AVAILABLE:
+        current_app.logger.info("Mutagen library not available, cannot get audio duration.")
+        return None
+
+    try:
+        _, ext = os.path.splitext(file_path)
+        ext = ext.lower()
+        audio = None
+
+        if ext == '.mp3':
+            try:
+                audio = MP3(file_path)
+            except ID3NoHeaderError: # Handle MP3s that might lack a proper header for metadata
+                current_app.logger.warning(f"Mutagen ID3NoHeaderError for MP3: {file_path}. Duration might be unavailable.")
+                return None
+        elif ext == '.wav':
+            audio = WAVE(file_path)
+        elif ext == '.ogg': # Handles Ogg Vorbis, Ogg Speex, Ogg Opus, Ogg Flac
+            audio = OggVorbis(file_path) # OggVorbis can often handle various ogg types
+        elif ext == '.aac':
+            audio = AAC(file_path)
+        elif ext == '.m4a' or ext == '.mp4': # M4A is typically MP4 container
+            audio = MP4(file_path)
+        elif ext == '.flac':
+            audio = FLAC(file_path)
+        else:
+            current_app.logger.warning(f"Unsupported audio file type for duration check with mutagen: {ext} for file {file_path}")
+            return None
+
+        if audio and hasattr(audio, 'info') and hasattr(audio.info, 'length'):
+            return int(audio.info.length)
+        else:
+            current_app.logger.warning(f"Could not extract duration info from {file_path} (type: {ext}). Audio info: {audio.info if audio else 'N/A'}")
+            return None
+
+    except Exception as e:
+        current_app.logger.error(f"Error getting duration for {file_path} with mutagen: {e}")
+        return None

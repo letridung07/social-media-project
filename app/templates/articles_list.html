@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title if title else "Articles" }}{% endblock %}
+
+{% block app_content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-10 offset-md-1 col-lg-8 offset-lg-2">
+            <h2>{{ title if title else "Articles" }}</h2>
+
+            {% if articles %}
+                <div class="list-group mt-3">
+                    {% for article in articles %}
+                        <a href="{{ url_for('main.view_article', slug=article.slug) }}" class="list-group-item list-group-item-action flex-column align-items-start mb-3 shadow-sm article-list-entry">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h5 class="mb-1 article-title">{{ article.title }}</h5>
+                                <small class="text-muted">{{ article.timestamp.strftime('%Y-%m-%d') }}</small>
+                            </div>
+                            <p class="mb-1 article-snippet">
+                                {# Strip tags for snippet, then truncate. Ensure |safe is NOT used here. #}
+                                {{ article.body | striptags | truncate(200, True, '...') }}
+                            </p>
+                            <small class="text-muted article-list-metadata">By <a href="{{ url_for('main.profile', username=article.author.username) }}">{{ article.author.username }}</a></small>
+                        </a>
+                    {% endfor %}
+                </div>
+
+                {# Pagination #}
+                {% if pagination %}
+                    <nav aria-label="Article navigation" class="mt-4">
+                        <ul class="pagination justify-content-center">
+                            {% if pagination.has_prev %}
+                                <li class="page-item">
+                                    <a class="page-link" href="{{ url_for(request.endpoint, page=pagination.prev_num, username=user.username if user else None, **request.view_args) }}">Previous</a>
+                                </li>
+                            {% else %}
+                                <li class="page-item disabled">
+                                    <span class="page-link">Previous</span>
+                                </li>
+                            {% endif %}
+
+                            {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=2) %}
+                                {% if page_num %}
+                                    {% if pagination.page == page_num %}
+                                        <li class="page-item active" aria-current="page">
+                                            <span class="page-link">{{ page_num }}</span>
+                                        </li>
+                                    {% else %}
+                                        <li class="page-item">
+                                            <a class="page-link" href="{{ url_for(request.endpoint, page=page_num, username=user.username if user else None, **request.view_args) }}">{{ page_num }}</a>
+                                        </li>
+                                    {% endif %}
+                                {% else %}
+                                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                                {% endif %}
+                            {% endfor %}
+
+                            {% if pagination.has_next %}
+                                <li class="page-item">
+                                    <a class="page-link" href="{{ url_for(request.endpoint, page=pagination.next_num, username=user.username if user else None, **request.view_args) }}">Next</a>
+                                </li>
+                            {% else %}
+                                <li class="page-item disabled">
+                                    <span class="page-link">Next</span>
+                                </li>
+                            {% endif %}
+                        </ul>
+                    </nav>
+                {% endif %}
+
+            {% else %}
+                <p class="mt-3 text-muted">No articles found.</p>
+            {% endif %}
+
+            {% if current_user.is_authenticated %}
+            <div class="mt-4 text-center">
+                <a href="{{ url_for('main.create_article') }}" class="btn btn-success"><i class="fas fa-plus-circle"></i> Write New Article</a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block styles %}
+{{ super() }}
+<style>
+    .article-title {
+        color: var(--theme-primary, #007bff); /* Use theme primary color or default blue */
+    }
+    .article-snippet {
+        font-size: 0.95rem;
+        color: #555;
+    }
+    .list-group-item-action:hover .article-title {
+        text-decoration: underline;
+    }
+    .list-group-item {
+        border-radius: 0.3rem; /* Softer corners */
+    }
+</style>
+{% endblock %}

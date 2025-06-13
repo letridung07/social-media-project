@@ -17,53 +17,50 @@
                     {% endif %}
                 </div>
 
-                {# Display current image if exists #}
-                {% if post.image_filename %}
-                    <div class="mb-2">
-                        <p>Current Image:</p>
-                        <img src="{{ url_for('static', filename='post_images/' + post.image_filename) }}" alt="Current post image" style="max-width: 300px; height: auto; border-radius: 8px; display: block;">
-                    </div>
-                {% endif %}
-
-                <div class="form-group">
-                    {{ form.image_file.label(class="form-control-label") }}
-                    {{ form.image_file(class="form-control-file") }}
-                    {% if form.image_file.errors %}
-                        {% for error in form.image_file.errors %}
-                            <span class="text-danger">{{ error }}</span><br>
-                        {% endfor %}
-                    {% endif %}
-                </div>
-
-                {# Display current video if exists #}
-                {% if post.video_filename %}
-                    <div class="mb-2">
-                        <p>Current Video:</p>
-                        <video width="300" controls>
-                            <source src="{{ url_for('static', filename='videos/' + post.video_filename) }}" type="video/mp4">
-                            Your browser does not support the video tag.
-                        </video>
-                    </div>
-                {% endif %}
-
-                <div class="form-group">
-                    {{ form.video_file.label(class="form-control-label") }}
-                    {{ form.video_file(class="form-control-file") }}
-                    {% if form.video_file.errors %}
-                        {% for error in form.video_file.errors %}
-                            <span class="text-danger">{{ error }}</span><br>
-                        {% endfor %}
-                    {% endif %}
-                </div>
-
-                <div class="form-group">
-                    {{ form.alt_text.label(class="form-control-label") }}
-                    {{ form.alt_text(class="form-control", rows="2", placeholder="Describe your image/video for accessibility...") }}
-                    <small class="form-text text-muted">{{ form.alt_text.description }}</small>
-                    {% if form.alt_text.errors %}
-                        <div class="invalid-feedback d-block">
-                            {% for error in form.alt_text.errors %}{{ error }}{% endfor %}
+                {# Display existing media items #}
+                <h5>Existing Media:</h5>
+                {% if post.media_items and post.media_items.count() > 0 %}
+                    <div class="existing-media-gallery row mb-3">
+                    {% for item in post.media_items %}
+                        <div class="media-item-container col-md-4 col-sm-6 mb-3">
+                            <div class="card">
+                                {% if item.media_type == 'image' %}
+                                    <img src="{{ url_for('static', filename=(config.MEDIA_ITEMS_UPLOAD_FOLDER + '/' + item.filename)) }}" alt="Media item {{ item.id }}" class="card-img-top" style="max-height: 150px; object-fit: cover;">
+                                {% elif item.media_type == 'video' %}
+                                    <video width="100%" height="150" controls style="object-fit: cover;">
+                                        <source src="{{ url_for('static', filename=(config.MEDIA_ITEMS_UPLOAD_FOLDER + '/' + item.filename)) }}" type="video/mp4"> {# Adjust type based on actual video types you support #}
+                                        Your browser does not support the video tag.
+                                    </video>
+                                {% else %}
+                                    <p class="text-muted p-2">Unsupported media type: {{ item.filename }}</p>
+                                {% endif %}
+                                <div class="card-body p-2">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="delete_media_ids[]" value="{{ item.id }}" id="delete_media_{{ item.id }}">
+                                        <label class="form-check-label" for="delete_media_{{ item.id }}">
+                                            Mark for deletion
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
+                    {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="text-muted">No media items uploaded yet.</p>
+                {% endif %}
+                <hr>
+
+                {# Field for uploading new media files #}
+                <div class="form-group">
+                    {{ form.media_files.label(class="form-control-label") }}
+                    {{ form.media_files(class="form-control-file") }}
+                    {% if form.media_files.errors %}
+                        {% for error in form.media_files.errors %}
+                            <span class="text-danger">{{ error }}</span><br>
+                        {% endfor %}
+                    {% else %}
+                        <small class="form-text text-muted">Upload new images or videos. Selected files here will be added to the existing media. Mark existing items above for deletion.</small>
                     {% endif %}
                 </div>
 

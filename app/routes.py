@@ -1,17 +1,23 @@
 import os
 import re # For hashtag parsing
 from datetime import datetime, timezone
+import os
+import re # For hashtag parsing
+from datetime import datetime, timezone
 from flask import Blueprint, render_template, redirect, url_for, flash, request, abort, current_app, jsonify, make_response # Import jsonify, make_response
 from flask_login import login_user, current_user, logout_user, login_required
 from sqlalchemy import or_, func, and_ # Import func, and_
 import io # For CSV export
 import csv # For CSV export
 from sqlalchemy.orm import joinedload # Import joinedload
+from werkzeug.utils import secure_filename
 from app import db, socketio, cache # Import cache
-from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm, FriendListForm, AddUserToFriendListForm, PRIVACY_CHOICES
-from app.models import User, Post, Like, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus, Mention, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE, FriendList # Import UserAnalytics, MessageReadStatus, Mention
-from app.utils import save_picture, save_post_image, save_post_video, save_group_image, save_story_media, process_mentions, get_historical_engagement, get_top_performing_hashtags, get_top_performing_groups # Added process_mentions and analytics utils
+from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm, FriendListForm, AddUserToFriendListForm, PRIVACY_CHOICES, ArticleForm, AudioPostForm # Added AudioPostForm
+from app.models import User, Post, MediaItem, Like, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus, Mention, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE, FriendList, Article, AudioPost # Added AudioPost
+from app.utils import save_picture, save_group_image, save_story_media, process_mentions, get_historical_engagement, get_top_performing_hashtags, get_top_performing_groups, save_media_file, slugify, save_audio_file, get_audio_duration # Added save_audio_file, get_audio_duration
 from app.email_utils import send_password_reset_email # Import email utility
+import secrets # For slug generation
+from wtforms.validators import DataRequired # For dynamic validator modification
 
 # Import for recommendations
 from app.utils import get_recommendations
@@ -536,43 +542,17 @@ def create_post():
 
     # Populate choices for custom_friend_list_id
     form.custom_friend_list_id.choices = [(fl.id, fl.name) for fl in current_user.friend_lists.all()]
-    # Add a default empty choice if desired, e.g., form.custom_friend_list_id.choices.insert(0, ('', 'Select a list if choosing Custom'))
 
-    video_filename_to_save = None # Initialize
     if form.validate_on_submit():
-        image_filename_to_save = None # Initialize
-
         # Validate custom_friend_list_id if PRIVACY_CUSTOM_LIST is chosen
         if form.privacy_level.data == PRIVACY_CUSTOM_LIST and not form.custom_friend_list_id.data:
             flash('Please select a friend list when choosing "Custom List" visibility.', 'warning')
-            # Need to re-populate choices for rendering again as they are set outside the POST block
             return render_template('create_post.html', title='Create Post', form=form, group_id=group_id_param, group_name=group_name_for_template)
 
-        if form.image_file.data:
-            try:
-                image_filename_to_save = save_post_image(form.image_file.data)
-            except Exception as e:
-                # Log the error e (e.g., using current_app.logger.error(f"Image upload error: {e}"))
-                flash('An error occurred while uploading the image. Please try a different image or contact support.', 'danger')
-                return render_template('create_post.html', title='Create Post', form=form) # Re-render form
-
-        if form.video_file.data:
-            try:
-                video_filename_to_save = save_post_video(form.video_file.data)
-            except Exception as e:
-                # Log the error e (e.g., using current_app.logger.error(f"Video upload error: {e}"))
-                flash('An error occurred while uploading the video. Please try a different video or contact support.', 'danger')
-                return render_template('create_post.html', title='Create Post', form=form) # Re-render form
-
-        # Create Post object, including the image_filename if one was saved
         post = Post(
-            body=form.body.data,
+            body=form.body.data, # Body now serves as caption for the album
             author=current_user,
-            image_filename=image_filename_to_save, # If applicable
-            video_filename=video_filename_to_save, # If applicable
-            alt_text=form.alt_text.data,
-            # Add privacy_level from form; use user's default if somehow not provided (though form has DataRequired)
-            privacy_level=form.privacy_level.data, # Use the direct value from the form
+            privacy_level=form.privacy_level.data,
             custom_friend_list_id=form.custom_friend_list_id.data if form.privacy_level.data == PRIVACY_CUSTOM_LIST else None
         )
 
@@ -580,65 +560,87 @@ def create_post():
             post.group_id = target_group.id
 
         db.session.add(post)
-        # Process hashtags before committing the post
-        process_hashtags(post.body, post)
+        # Important: Commit post here if MediaItems need post.id immediately and are added in the same transaction scope.
+        # Or, add MediaItems to session and commit all at once.
+        # For simplicity, let's add post, then media items, then commit all.
+        # If post.id is needed for file paths *before* commit, then flush or commit post first.
+        # Assuming save_media_file doesn't strictly need post.id in path (e.g., uses temp names or UUIDs)
+        # or that media items are associated after post gets an ID.
 
-        # Process mentions before committing the post
-        # The actual notification creation will be handled in a subsequent step/subtask
+        # Process and save media files
+        upload_folder = current_app.config.get('MEDIA_ITEMS_UPLOAD_FOLDER', 'static/media_items')
+        media_items_to_add = []
+        if form.media_files.data:
+            for file_storage in form.media_files.data:
+                if file_storage and file_storage.filename: # Check if FileStorage object is not empty
+                    try:
+                        # secure_filename is good practice, though WTForms FileField might do some sanitization.
+                        # save_media_file should handle the actual saving and return (filename, media_type)
+                        filename, media_type = save_media_file(file_storage, upload_folder)
+                        media_item = MediaItem(
+                            post_parent=post, # Associate with the post
+                            filename=filename,
+                            media_type=media_type,
+                            alt_text=None # Alt text per item can be added later if needed
+                        )
+                        media_items_to_add.append(media_item)
+                    except Exception as e:
+                        current_app.logger.error(f"Media file upload error: {e} for file {secure_filename(file_storage.filename if file_storage else 'unknown_file')}")
+                        flash(f'An error occurred while uploading one or more media files: {secure_filename(file_storage.filename if file_storage else "unknown_file")}. Please try again.', 'danger')
+                        # Decide if to proceed without the failed file or abort. For now, aborting.
+                        return render_template('create_post.html', title='Create Post', form=form, group_id=group_id_param, group_name=group_name_for_template)
+
+        for item in media_items_to_add:
+            db.session.add(item)
+
+        process_hashtags(post.body, post)
         mentioned_users_in_post = process_mentions(text_content=post.body, owner_object=post, actor_user=current_user)
 
-        # Commit post first to get post.id (and save mentions)
-        db.session.commit()
+        # Commit everything (Post, MediaItems, Hashtags, Mentions)
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Error committing post and media: {e}")
+            flash('An error occurred while creating your post. Please try again.', 'danger')
+            return render_template('create_post.html', title='Create Post', form=form, group_id=group_id_param, group_name=group_name_for_template)
 
-        # Create notifications for mentions in the post
+
+        # Create notifications for mentions in the post (post-commit)
         if mentioned_users_in_post:
             for tagged_user in mentioned_users_in_post:
-                if tagged_user.id != current_user.id: # Avoid self-notification
-                    # Fetch the specific Mention instance created for this user in this post by this actor
-                    # Order by desc timestamp just in case of very rare duplicate processing, take the latest
+                if tagged_user.id != current_user.id:
                     mention_obj = Mention.query.filter_by(
                         user_id=tagged_user.id,
                         post_id=post.id,
                         actor_id=current_user.id
                     ).order_by(Mention.timestamp.desc()).first()
-
                     if mention_obj:
                         notification = Notification(
                             recipient_id=tagged_user.id,
                             actor_id=current_user.id,
                             type='mention',
                             related_post_id=post.id,
-                            related_mention_id=mention_obj.id
-                        )
+                            related_mention_id=mention_obj.id)
                         db.session.add(notification)
-
-                        # Emit SocketIO event for real-time notification
                         socketio.emit('new_notification', {
-                            'type': 'mention',
-                            'message': f"{current_user.username} mentioned you in a post.",
-                            'actor_username': current_user.username,
-                            'tagged_username': tagged_user.username,
-                            'post_id': post.id,
-                            'post_body_preview': post.body[:50] + "..." if len(post.body) > 50 else post.body,
-                            'owner_username': post.author.username, # Username of the post author
-                            'url': url_for('main.profile', username=post.author.username, _external=True) + f'#post-{post.id}' # Basic URL
+                            'type': 'mention', 'message': f"{current_user.username} mentioned you in a post.",
+                            'actor_username': current_user.username, 'tagged_username': tagged_user.username,
+                            'post_id': post.id, 'post_body_preview': post.body[:50] + "..." if len(post.body) > 50 else post.body,
+                            'owner_username': post.author.username,
+                            'url': url_for('main.profile', username=post.author.username, _external=True) + f'#post-{post.id}'
                         }, room=str(tagged_user.id))
             db.session.commit() # Commit mention notifications
 
-        if target_group: # target_group is the Group object from earlier in the route
-            # Notify group members about the new post
+        if target_group:
             for membership_assoc in target_group.memberships:
                 member_user = membership_assoc.user
-                if member_user.id != current_user.id: # Don't notify the post author
+                if member_user.id != current_user.id:
                     notification = Notification(
-                        recipient_id=member_user.id,
-                        actor_id=current_user.id,
-                        type='new_group_post',
-                        related_post_id=post.id,
-                        related_group_id=target_group.id
-                    )
+                        recipient_id=member_user.id, actor_id=current_user.id,
+                        type='new_group_post', related_post_id=post.id, related_group_id=target_group.id)
                     db.session.add(notification)
-            db.session.commit() # Commit notifications
+            db.session.commit()
 
         flash('Your post is now live!', 'success')
         if target_group:
@@ -652,165 +654,143 @@ def create_post():
 @main.route('/edit_post/<int:post_id>', methods=['GET', 'POST'])
 @login_required
 def edit_post(post_id):
-    post = Post.query.get_or_404(post_id)
+    post = Post.query.options(joinedload(Post.media_items)).get_or_404(post_id) # Eager load media_items
     if post.author != current_user:
-        abort(403)  # Forbidden access
+        abort(403)
 
-    form = PostForm(obj=post)  # Pre-populate with existing post data for GET
-
-        # Populate choices for custom_friend_list_id
-        form.custom_friend_list_id.choices = [(fl.id, fl.name) for fl in current_user.friend_lists.all()]
-        # If it's a GET request and the post already has a custom list, set the default for the form
-        if request.method == 'GET':
-            if post.privacy_level == PRIVACY_CUSTOM_LIST and post.custom_friend_list_id:
-                form.custom_friend_list_id.data = post.custom_friend_list_id
+    form = PostForm(obj=post)
+    form.custom_friend_list_id.choices = [(fl.id, fl.name) for fl in current_user.friend_lists.all()]
+    if request.method == 'GET':
+        if post.privacy_level == PRIVACY_CUSTOM_LIST and post.custom_friend_list_id:
+            form.custom_friend_list_id.data = post.custom_friend_list_id
 
     if form.validate_on_submit():
-        post.body = form.body.data
-        post.alt_text = form.alt_text.data # Ensure alt_text is also updated
+        post.body = form.body.data # Body is the caption
         post.privacy_level = form.privacy_level.data
-
         if post.privacy_level == PRIVACY_CUSTOM_LIST:
             if form.custom_friend_list_id.data:
                 post.custom_friend_list_id = form.custom_friend_list_id.data
             else:
-                flash('Please select a friend list if you choose "Custom List" visibility, or change visibility.', 'warning')
-                # Re-populate choices before rendering again
+                flash('Please select a friend list for "Custom List" visibility.', 'warning')
                 return render_template('edit_post.html', title='Edit Post', form=form, post=post)
         else:
-            post.custom_friend_list_id = None # Clear if not custom list
+            post.custom_friend_list_id = None
 
-        # Handle image update
-        if form.image_file.data:
-            # Delete old image if it exists and is not the default
-            if post.image_filename:
+        upload_folder = current_app.config.get('MEDIA_ITEMS_UPLOAD_FOLDER', 'static/media_items')
+
+        # Handle deletion of existing media items
+        media_ids_to_delete = request.form.getlist('delete_media_ids[]')
+        if media_ids_to_delete:
+            for media_id_str in media_ids_to_delete:
                 try:
-                    old_image_path = os.path.join(current_app.root_path, current_app.config.get('POST_IMAGES_UPLOAD_FOLDER', 'app/static/post_images_default'), post.image_filename)
-                    if os.path.exists(old_image_path):
-                        os.remove(old_image_path)
-                except Exception as e:
-                    current_app.logger.error(f"Error deleting old post image {post.image_filename}: {e}")
-                    flash('Error removing old image.', 'warning')
-            # Save new image
-            try:
-                post.image_filename = save_post_image(form.image_file.data)
-            except Exception as e:
-                flash('An error occurred while uploading the new image. Please try again.', 'danger')
-                return render_template('edit_post.html', title='Edit Post', form=form, post=post)
+                    media_id_to_delete = int(media_id_str)
+                    media_item_to_delete = MediaItem.query.get(media_id_to_delete)
+                    if media_item_to_delete and media_item_to_delete.post_id == post.id:
+                        # Delete physical file
+                        try:
+                            file_path = os.path.join(current_app.root_path, upload_folder, media_item_to_delete.filename)
+                            if os.path.exists(file_path):
+                                os.remove(file_path)
+                        except OSError as e:
+                            current_app.logger.error(f"Error deleting media file {media_item_to_delete.filename}: {e}")
+                            flash(f'Error deleting file {media_item_to_delete.filename}.', 'warning')
+                        db.session.delete(media_item_to_delete)
+                    else:
+                        flash(f'Media item with ID {media_id_to_delete} not found or not associated with this post.', 'warning')
+                except ValueError:
+                    flash(f'Invalid media ID format: {media_id_str}.', 'warning')
 
-        # Handle video update
-        if form.video_file.data:
-            # Delete old video if it exists
-            if post.video_filename:
-                try:
-                    old_video_path = os.path.join(current_app.root_path, current_app.config.get('VIDEO_UPLOAD_FOLDER', 'app/static/videos_default'), post.video_filename)
-                    if os.path.exists(old_video_path):
-                        os.remove(old_video_path)
-                except Exception as e:
-                    current_app.logger.error(f"Error deleting old post video {post.video_filename}: {e}")
-                    flash('Error removing old video.', 'warning')
-            # Save new video
-            try:
-                post.video_filename = save_post_video(form.video_file.data)
-            except Exception as e:
-                flash('An error occurred while uploading the new video. Please try again.', 'danger')
-                return render_template('edit_post.html', title='Edit Post', form=form, post=post)
 
-        # Process hashtags before committing the post changes
-        post.alt_text = form.alt_text.data # <-- Add this line
+        # Handle newly uploaded files
+        if form.media_files.data:
+            for file_storage in form.media_files.data:
+                if file_storage and file_storage.filename:
+                    try:
+                        filename, media_type = save_media_file(file_storage, upload_folder)
+                        media_item = MediaItem(
+                            post_id=post.id,
+                            filename=filename,
+                            media_type=media_type,
+                            alt_text=None # Placeholder for individual alt text
+                        )
+                        db.session.add(media_item)
+                    except Exception as e:
+                        current_app.logger.error(f"Media file upload error during edit: {e} for file {secure_filename(file_storage.filename)}")
+                        flash(f'An error occurred while uploading new media file: {secure_filename(file_storage.filename)}. Please try again.', 'danger')
+                        # Potentially return early or collect errors
+                        return render_template('edit_post.html', title='Edit Post', form=form, post=post)
+
         process_hashtags(post.body, post)
-
-        # Clear existing mentions for the post before processing new ones
-        Mention.query.filter_by(post_id=post.id).delete()
-        # Process new mentions
-        # The actual notification creation will be handled in a subsequent step/subtask
+        Mention.query.filter_by(post_id=post.id).delete() # Clear old mentions
         mentioned_users_in_edited_post = process_mentions(text_content=post.body, owner_object=post, actor_user=current_user)
 
-        db.session.commit()
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Error committing edited post: {e}")
+            flash('An error occurred while updating your post. Please try again.', 'danger')
+            return render_template('edit_post.html', title='Edit Post', form=form, post=post)
 
-        # Create notifications for mentions in the edited post
+        # Create notifications for mentions (post-commit)
         if mentioned_users_in_edited_post:
             for tagged_user in mentioned_users_in_edited_post:
-                if tagged_user.id != current_user.id: # Avoid self-notification
+                if tagged_user.id != current_user.id:
                     mention_obj = Mention.query.filter_by(
-                        user_id=tagged_user.id,
-                        post_id=post.id,
-                        actor_id=current_user.id
+                        user_id=tagged_user.id, post_id=post.id, actor_id=current_user.id
                     ).order_by(Mention.timestamp.desc()).first()
-
                     if mention_obj:
-                        # Check if a similar notification already exists to avoid duplicates if content hasn't changed much
                         existing_notification = Notification.query.filter_by(
-                            recipient_id=tagged_user.id,
-                            actor_id=current_user.id,
-                            type='mention',
-                            related_mention_id=mention_obj.id
+                            recipient_id=tagged_user.id, actor_id=current_user.id,
+                            type='mention', related_mention_id=mention_obj.id
                         ).first()
-
                         if not existing_notification:
                             notification = Notification(
-                                recipient_id=tagged_user.id,
-                                actor_id=current_user.id,
-                                type='mention',
-                                related_post_id=post.id,
-                                related_mention_id=mention_obj.id
-                            )
+                                recipient_id=tagged_user.id, actor_id=current_user.id, type='mention',
+                                related_post_id=post.id, related_mention_id=mention_obj.id)
                             db.session.add(notification)
-
                             socketio.emit('new_notification', {
-                                'type': 'mention',
-                                'message': f"{current_user.username} mentioned you in an updated post.",
-                                'actor_username': current_user.username,
-                                'tagged_username': tagged_user.username,
-                                'post_id': post.id,
-                                'post_body_preview': post.body[:50] + "..." if len(post.body) > 50 else post.body,
+                                'type': 'mention', 'message': f"{current_user.username} mentioned you in an updated post.",
+                                'actor_username': current_user.username, 'tagged_username': tagged_user.username,
+                                'post_id': post.id, 'post_body_preview': post.body[:50] + "..." if len(post.body) > 50 else post.body,
                                 'owner_username': post.author.username,
                                 'url': url_for('main.profile', username=post.author.username, _external=True) + f'#post-{post.id}'
                             }, room=str(tagged_user.id))
-            db.session.commit() # Commit mention notifications for edited post
+            db.session.commit()
 
         flash('Your post has been updated!', 'success')
-        return redirect(url_for('main.profile', username=current_user.username)) # Or redirect to post view: url_for('main.view_post', post_id=post.id)
+        # Assuming view_post_page exists or redirect to profile.
+        return redirect(url_for('main.profile', username=current_user.username, _anchor=f'post-{post.id}'))
 
-    # For GET requests, pre-fill form fields if not already done by obj=post for WTForms-Alchemy
-    # For standard WTForms, you might do:
-    # elif request.method == 'GET':
-    # form.body.data = post.body
-    # The image/video fields are not pre-filled as they are file inputs
 
-    return render_template('edit_post.html', title='Edit Post', form=form, post=post)
+    return render_template('edit_post.html', title='Edit Post', form=form, post=post) # Pass post to access post.media_items in template
 
 
 @main.route('/delete_post/<int:post_id>', methods=['POST'])
 @login_required
 def delete_post(post_id):
-    post = Post.query.get_or_404(post_id)
+    post = Post.query.options(joinedload(Post.media_items)).get_or_404(post_id) # Eager load media_items
     if post.author != current_user:
         abort(403)
 
-    # Delete associated image file
-    if post.image_filename:
-        try:
-            image_path = os.path.join(current_app.root_path, current_app.config.get('POST_IMAGES_UPLOAD_FOLDER', 'app/static/post_images_default'), post.image_filename)
-            if os.path.exists(image_path):
-                os.remove(image_path)
-        except Exception as e:
-            current_app.logger.error(f"Error deleting post image {post.image_filename}: {e}")
-            flash('Error deleting post image file.', 'warning') # Inform user, but proceed with DB deletion
+    upload_folder = current_app.config.get('MEDIA_ITEMS_UPLOAD_FOLDER', 'static/media_items')
 
-    # Delete associated video file
-    if post.video_filename:
+    # Delete associated media files first
+    for item in post.media_items:
         try:
-            video_path = os.path.join(current_app.root_path, current_app.config.get('VIDEO_UPLOAD_FOLDER', 'app/static/videos_default'), post.video_filename)
-            if os.path.exists(video_path):
-                os.remove(video_path)
-        except Exception as e:
-            current_app.logger.error(f"Error deleting post video {post.video_filename}: {e}")
-            flash('Error deleting post video file.', 'warning') # Inform user, but proceed with DB deletion
+            file_path = os.path.join(current_app.root_path, upload_folder, item.filename)
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        except OSError as e: # Catch file system errors
+            current_app.logger.error(f"Error deleting media file {item.filename} for post {post.id}: {e}")
+            # Flash a warning but proceed with deleting the database record
+            flash(f'Warning: Could not delete file {item.filename}. Please contact support if this persists.', 'warning')
 
+    # The Post.media_items relationship has cascade='all, delete-orphan',
+    # so MediaItem DB records will be deleted when the post is deleted.
     db.session.delete(post)
     db.session.commit()
-    flash('Your post has been deleted!', 'success')
+    flash('Your post and all its media have been deleted!', 'success')
     return redirect(url_for('main.profile', username=current_user.username)) # Or redirect to main.index
 
 
@@ -2515,3 +2495,223 @@ def bulk_update_privacy():
     # It's defined in app/forms.py. We need to pass it to the template.
     privacy_options = PRIVACY_CHOICES
     return render_template('bulk_update_privacy.html', title='Bulk Update Post Privacy', posts=user_posts, privacy_options=privacy_options)
+
+
+# -------------------- Article Routes --------------------
+
+@main.route('/article/create', methods=['GET', 'POST'])
+@login_required
+def create_article():
+    form = ArticleForm()
+    if form.validate_on_submit():
+        title = form.title.data
+        body = form.body.data
+
+        # Generate unique slug
+        original_slug = slugify(title)
+        slug_candidate = original_slug
+        counter = 1
+        # Loop to ensure slug uniqueness
+        while Article.query.filter_by(slug=slug_candidate).first():
+            slug_candidate = f"{original_slug}-{secrets.token_hex(2)}" # Append short random hex for uniqueness
+            # Alternative: increment counter: slug_candidate = f"{original_slug}-{counter}"; counter += 1
+        unique_slug = slug_candidate
+
+        article = Article(title=title, body=body, author=current_user, slug=unique_slug)
+        db.session.add(article)
+        db.session.commit()
+        flash('Article published successfully!', 'success')
+        return redirect(url_for('main.view_article', slug=article.slug))
+    return render_template('create_article.html', title='Create New Article', form=form)
+
+@main.route('/article/<slug>')
+def view_article(slug):
+    article = Article.query.filter_by(slug=slug).first_or_404()
+    return render_template('view_article.html', title=article.title, article=article)
+
+@main.route('/article/<slug>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_article(slug):
+    article = Article.query.filter_by(slug=slug).first_or_404()
+    if article.author != current_user:
+        abort(403)  # Forbidden
+
+    form = ArticleForm(obj=article) # Pre-populate form with article data on GET
+    if form.validate_on_submit():
+        article.title = form.title.data
+        article.body = form.body.data
+        # Note: Slug is generally not updated on edit to maintain URL stability.
+        # If title change should reflect in slug, new unique slug generation logic would be needed.
+        db.session.commit()
+        flash('Article updated successfully!', 'success')
+        return redirect(url_for('main.view_article', slug=article.slug))
+
+    return render_template('edit_article.html', title=f'Edit Article: {article.title}', form=form, article=article)
+
+@main.route('/article/<slug>/delete', methods=['POST'])
+@login_required
+def delete_article(slug):
+    article = Article.query.filter_by(slug=slug).first_or_404()
+    if article.author != current_user:
+        abort(403)
+    db.session.delete(article)
+    db.session.commit()
+    flash('Article deleted successfully!', 'success')
+    return redirect(url_for('main.articles_list')) # Or user's profile or another relevant page
+
+@main.route('/articles')
+def articles_list():
+    page = request.args.get('page', 1, type=int)
+    # Order by timestamp descending to show newest articles first
+    articles_pagination = Article.query.order_by(Article.timestamp.desc()).paginate(page=page, per_page=current_app.config.get('ARTICLES_PER_PAGE', 10), error_out=False)
+    articles = articles_pagination.items
+    return render_template('articles_list.html', title='All Articles', articles=articles, pagination=articles_pagination)
+
+@main.route('/user/<username>/articles')
+def user_articles(username):
+    user = User.query.filter_by(username=username).first_or_404()
+    page = request.args.get('page', 1, type=int)
+    # Assuming user.articles is the relationship from User to Article model
+    articles_pagination = user.articles.order_by(Article.timestamp.desc()).paginate(page=page, per_page=current_app.config.get('ARTICLES_PER_PAGE', 10), error_out=False)
+    articles = articles_pagination.items
+    return render_template('articles_list.html', title=f'Articles by {username}', articles=articles, pagination=articles_pagination, user=user)
+
+
+# -------------------- Audio Post Routes --------------------
+
+@main.route('/audio/upload', methods=['GET', 'POST'])
+@login_required
+def upload_audio():
+    form = AudioPostForm()
+    if form.validate_on_submit():
+        try:
+            # Assuming AUDIO_UPLOAD_FOLDER is configured in app.config
+            # e.g., current_app.config.get('AUDIO_UPLOAD_FOLDER', 'static/audio_uploads')
+            # save_audio_file utility will use this config.
+            upload_folder_config_name = current_app.config.get('AUDIO_UPLOAD_FOLDER_NAME', 'audio_uploads') # e.g. 'audio_uploads'
+            saved_filename = save_audio_file(form.audio_file.data, upload_folder_config_name)
+
+            duration_seconds = None
+            # Construct full path for duration extraction
+            # Assumes save_audio_file places it under 'static/audio_uploads_configured_name'
+            # And AUDIO_UPLOAD_FOLDER_NAME is just the last part of the path after 'static/'
+            base_static_path = current_app.config.get('MEDIA_UPLOAD_BASE_DIR', 'static')
+            full_file_path = os.path.join(current_app.root_path, base_static_path, upload_folder_config_name, saved_filename)
+
+            try:
+                duration_seconds = get_audio_duration(full_file_path)
+            except Exception as e:
+                current_app.logger.warning(f"Could not get duration for {saved_filename}: {e}")
+                # flash("Could not determine audio duration, but file uploaded.", "warning") # Optional
+
+            audio_post = AudioPost(
+                title=form.title.data,
+                description=form.description.data,
+                uploader=current_user,
+                audio_filename=saved_filename,
+                duration=duration_seconds
+            )
+            db.session.add(audio_post)
+            db.session.commit()
+            flash('Audio post uploaded successfully!', 'success')
+            return redirect(url_for('main.view_audio_post', audio_id=audio_post.id))
+        except Exception as e: # Catch errors from save_audio_file or other issues
+            current_app.logger.error(f"Audio upload error: {e}")
+            flash(f"An error occurred during audio upload: {e}", "danger")
+            # Potentially db.session.rollback() if add was attempted before error
+
+    return render_template('upload_audio.html', title='Upload New Audio', form=form)
+
+@main.route('/audio/<int:audio_id>')
+def view_audio_post(audio_id):
+    audio_post = AudioPost.query.get_or_404(audio_id)
+    # Assuming AUDIO_UPLOAD_FOLDER_NAME is like 'audio_uploads' and it's under 'static'
+    audio_folder_name = current_app.config.get('AUDIO_UPLOAD_FOLDER_NAME', 'audio_uploads')
+    audio_file_url = url_for('static', filename=f"{audio_folder_name}/{audio_post.audio_filename}")
+    return render_template('view_audio_post.html', title=audio_post.title, audio_post=audio_post, audio_file_url=audio_file_url)
+
+@main.route('/audio/<int:audio_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_audio_post(audio_id):
+    audio_post = AudioPost.query.get_or_404(audio_id)
+    if audio_post.uploader != current_user:
+        abort(403)
+
+    form = AudioPostForm(obj=audio_post) # Pre-populate for GET
+
+    original_audio_file_validator = None
+    # If it's a POST request and no new file is uploaded, make audio_file optional
+    if request.method == 'POST' and not form.audio_file.data:
+        # Store original validators and then remove DataRequired
+        original_audio_file_validator = form.audio_file.validators
+        form.audio_file.validators = [v for v in form.audio_file.validators if not isinstance(v, DataRequired)]
+
+    if form.validate_on_submit():
+        audio_post.title = form.title.data
+        audio_post.description = form.description.data
+
+        # Handle file replacement (optional, for now we're only editing metadata)
+        # If form.audio_file.data was provided, it would be validated by FileAllowed
+        # and then you would:
+        # 1. Delete old file: os.remove(os.path.join(...old_filename...))
+        # 2. Save new file: new_filename = save_audio_file(form.audio_file.data, ...)
+        # 3. Update audio_post.audio_filename = new_filename
+        # 4. Update audio_post.duration = get_audio_duration(...)
+
+        db.session.commit()
+        flash('Audio post updated successfully!', 'success')
+        return redirect(url_for('main.view_audio_post', audio_id=audio_post.id))
+
+    # If validation failed on POST and we removed validators, add them back for correct form rendering
+    if request.method == 'POST' and original_audio_file_validator is not None:
+        form.audio_file.validators = original_audio_file_validator
+
+    # For GET request, populate form fields (already done by obj=audio_post for title/desc)
+    # The audio_file field will be empty, which is fine as we're not requiring re-upload for edit.
+    return render_template('edit_audio_post.html', title=f'Edit Audio Post: {audio_post.title}', form=form, audio_post=audio_post)
+
+@main.route('/audio/<int:audio_id>/delete', methods=['POST'])
+@login_required
+def delete_audio_post(audio_id):
+    audio_post = AudioPost.query.get_or_404(audio_id)
+    if audio_post.uploader != current_user:
+        abort(403)
+
+    try:
+        # Construct file path for deletion
+        upload_folder_config_name = current_app.config.get('AUDIO_UPLOAD_FOLDER_NAME', 'audio_uploads')
+        base_static_path = current_app.config.get('MEDIA_UPLOAD_BASE_DIR', 'static')
+        file_path = os.path.join(current_app.root_path, base_static_path, upload_folder_config_name, audio_post.audio_filename)
+
+        if os.path.exists(file_path):
+            os.remove(file_path)
+    except Exception as e:
+        current_app.logger.error(f"Error deleting audio file {audio_post.audio_filename}: {e}")
+        flash(f"Error deleting physical audio file. Please contact support.", "warning")
+        # Decide if to proceed with DB deletion or not. For now, proceeding.
+
+    db.session.delete(audio_post)
+    db.session.commit()
+    flash('Audio post deleted successfully!', 'success')
+    return redirect(url_for('main.audio_list'))
+
+@main.route('/audio/list')
+def audio_list():
+    page = request.args.get('page', 1, type=int)
+    audio_posts_pagination = AudioPost.query.order_by(AudioPost.timestamp.desc()).paginate(
+        page=page, per_page=current_app.config.get('AUDIO_POSTS_PER_PAGE', 10), error_out=False
+    )
+    audios = audio_posts_pagination.items
+    return render_template('audio_list.html', title='All Audio Posts', audio_posts=audios, pagination=audio_posts_pagination)
+
+@main.route('/user/<username>/audio')
+def user_audio_list(username):
+    user = User.query.filter_by(username=username).first_or_404()
+    page = request.args.get('page', 1, type=int)
+    audio_posts_pagination = user.audio_posts.order_by(AudioPost.timestamp.desc()).paginate(
+        page=page, per_page=current_app.config.get('AUDIO_POSTS_PER_PAGE', 10), error_out=False
+    )
+    audios = audio_posts_pagination.items
+    # Need to pass audio_folder_name for constructing URLs in the template
+    audio_folder_name = current_app.config.get('AUDIO_UPLOAD_FOLDER_NAME', 'audio_uploads')
+    return render_template('audio_list.html', title=f'Audio Posts by {username}', audio_posts=audios, pagination=audio_posts_pagination, user=user, audio_folder_name=audio_folder_name)

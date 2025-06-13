@@ -324,3 +324,257 @@ footer p {
   margin: -0.1em -0.2em; /* Counteract padding to maintain layout flow */
   border-radius: 3px; /* Optional: slightly rounded corners for the flash */
 }
+
+/* Basic Gallery Styling */
+.media-gallery, .existing-media-gallery {
+    display: flex;
+    flex-wrap: wrap; /* Allow wrapping for many items, or use overflow for carousel */
+    gap: 10px; /* Space between items */
+    margin-bottom: 15px;
+}
+
+.media-gallery-item, .media-item-container { /* .media-item-container from edit_post.html */
+    flex: 1 1 150px; /* Grow, shrink, basis for items in edit_post */
+    max-width: 200px; /* Max width for items in edit_post */
+}
+
+.media-gallery-item img, .media-gallery-item video,
+.media-item-container img, .media-item-container video {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    border-radius: 4px;
+}
+
+/* Carousel specific (if implementing) */
+.media-gallery.carousel { /* Add 'carousel' class to media-gallery if it's a carousel */
+    position: relative;
+    overflow: hidden;
+    width: 100%;
+    flex-wrap: nowrap; /* Prevent wrapping for carousel track */
+}
+
+.carousel-track {
+    display: flex;
+    transition: transform 0.3s ease-in-out;
+}
+
+.media-gallery.carousel .media-gallery-item {
+    min-width: 100%; /* Each item takes full width of the carousel viewport */
+    flex-shrink: 0;
+}
+
+.carousel-nav {
+    text-align: center;
+    margin-top: 10px;
+}
+
+.carousel-nav button {
+    background-color: #f0f0f0;
+    border: 1px solid #ccc;
+    padding: 5px 10px;
+    cursor: pointer;
+    margin: 0 5px;
+}
+.carousel-nav button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+/* === Article Specific Styles === */
+
+/* Styles for view_article.html */
+.article-view { /* Was: .article-content-view, using existing class on col div */
+    margin-bottom: 20px;
+    padding: 20px; /* Increased padding */
+    background-color: #ffffff; /* White background for article content */
+    border: 1px solid #e7e7e7;
+    border-radius: 5px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+
+.article-view h1 {
+    font-size: 2.5em; /* Consistent with removed inline style */
+    margin-bottom: 0.5em;
+    color: #333; /* Consistent with removed inline style */
+}
+
+.article-meta { /* Class already exists in view_article.html */
+    font-size: 0.9em; /* Consistent with removed inline style */
+    color: #777;
+    margin-bottom: 1.5em;
+}
+
+.article-body-content { /* Class already exists in view_article.html */
+    font-size: 1.1rem; /* Consistent with removed inline style */
+    line-height: 1.7;  /* Consistent with removed inline style */
+    color: #444;       /* Consistent with removed inline style */
+}
+
+.article-body-content p {
+    line-height: 1.7; /* Ensure this matches if .article-body-content already set it */
+    margin-bottom: 1.2em; /* Slightly more space after paragraphs */
+}
+
+.article-body-content ul,
+.article-body-content ol {
+    margin-left: 25px; /* Increased indent */
+    margin-bottom: 1em;
+    padding-left: 15px; /* Add padding for list items */
+}
+.article-body-content ul li,
+.article-body-content ol li {
+    margin-bottom: 0.5em; /* Spacing between list items */
+}
+
+.article-body-content blockquote {
+    border-left: 4px solid #00B8A9; /* Use theme secondary color */
+    padding: 10px 20px; /* More padding */
+    margin: 1.5em 0; /* More margin for separation */
+    font-style: italic;
+    color: #555;
+    background-color: #f8f9fa; /* Light background for blockquote */
+}
+
+/* Styles from the removed inline block in view_article.html */
+.article-body-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 4px;
+    margin-top: 10px;
+    margin-bottom: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1); /* Add subtle shadow to images */
+}
+
+.article-body-content table {
+    width: 100%;
+    margin-bottom: 1rem;
+    border-collapse: collapse;
+}
+
+.article-body-content th,
+.article-body-content td {
+    border: 1px solid #ddd;
+    padding: 10px; /* Increased padding */
+    text-align: left; /* Ensure text alignment */
+}
+
+.article-body-content th {
+    background-color: #f0f0f0; /* Slightly darker header for table */
+    font-weight: bold;
+}
+
+.article-actions { /* Class already exists in view_article.html */
+    margin-top: 25px; /* Increased margin */
+    padding-top: 15px;
+    border-top: 1px solid #eee;
+}
+
+/* Styles for articles_list.html */
+/* .list-group-item is used in articles_list.html. We can enhance it or use a more specific class if needed */
+/* For now, enhancing .list-group-item when it contains article info, assuming a context or specific class */
+.list-group-item.article-list-entry { /* Add 'article-list-entry' class to the <a> tag in articles_list.html for these styles */
+    padding: 20px;
+    border: 1px solid #ddd;
+    border-radius: 5px; /* Softer corners */
+    margin-bottom: 15px;
+    background-color: #fff;
+    transition: box-shadow 0.2s ease-in-out;
+}
+.list-group-item.article-list-entry:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.article-list-item h3 a, /* If using h3 for titles in list */
+.article-title { /* Class already used in articles_list.html for h5 */
+    text-decoration: none;
+    color: var(--theme-primary); /* Use theme color */
+}
+.article-list-item h3 a:hover,
+.article-title:hover {
+    text-decoration: underline;
+    color: var(--theme-secondary); /* Hover effect with secondary color */
+}
+
+.article-list-metadata { /* New class to be added in articles_list.html for the <small> tag */
+    font-size: 0.85em;
+    color: #888;
+    margin-bottom: 8px; /* More space */
+    display: block; /* Make it block to ensure margin-bottom applies */
+}
+
+.article-list-snippet { /* Class already used in articles_list.html for <p> */
+    font-size: 0.95em;
+    color: #555;
+    line-height: 1.5;
+}
+
+/* === Audio Post Specific Styles === */
+
+/* Styles for view_audio_post.html */
+.audio-post-view .card-title { /* From existing inline style */
+    font-size: 2rem;
+}
+.audio-meta { /* From existing inline style & prompt */
+    font-size: 0.9em; /* Prompt version */
+    color: #777;      /* Prompt version */
+    margin-bottom: 1em;/* Prompt version */
+}
+.audio-description { /* From existing inline style & prompt */
+    font-size: 1.1rem;
+    color: #555;
+    white-space: pre-wrap;
+    margin-top: 1rem;
+    margin-bottom: 1.5rem; /* Prompt version */
+    line-height: 1.5;     /* Prompt version */
+}
+.audio-player-container { /* From existing inline style & prompt */
+    background-color: #f8f9fa;
+    padding: 15px;
+    border-radius: 4px;
+    margin: 15px 0; /* Prompt version */
+}
+.audio-player-container audio {
+    width: 100%;
+    max-width: 600px; /* From prompt */
+}
+.audio-actions { /* Container for edit/delete buttons, from prompt */
+    margin-top: 20px;
+    padding-top: 15px; /* Added from article example for consistency */
+    border-top: 1px solid #eee; /* Added from article example */
+}
+
+/* Styles for audio_list.html */
+.audio-list-entry { /* Combines inline and prompt example */
+    padding: 15px; /* Prompt example had 10px, inline had more via list-group-item default */
+    border: 1px solid #ddd; /* From prompt */
+    border-radius: 0.3rem; /* From inline */
+    margin-bottom: 15px; /* From prompt */
+    background-color: #fff; /* From prompt */
+    transition: box-shadow 0.2s ease-in-out; /* From inline */
+}
+.audio-list-entry:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08); /* From inline */
+}
+
+.audio-title a { /* Class used in audio_list.html, combines inline and prompt */
+    text-decoration: none; /* From prompt */
+    color: var(--theme-primary, #007bff); /* From inline */
+}
+.audio-title a:hover {
+    text-decoration: underline; /* From prompt */
+    color: var(--theme-secondary, #0056b3); /* From inline */
+}
+
+.audio-list-metadata { /* Class used in audio_list.html, combines inline and prompt */
+    font-size: 0.8em; /* From inline */
+    color: #888; /* From prompt */
+    margin-bottom: 5px; /* From prompt */
+    display: block; /* Ensure margin takes effect if needed */
+}
+
+.audio-list-snippet { /* Class used in audio_list.html, combines inline and prompt */
+    font-size: 0.9rem; /* From inline */
+    color: #666; /* From inline */
+    line-height: 1.5; /* From prompt */
+}
