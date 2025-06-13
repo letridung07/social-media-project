@@ -175,6 +175,11 @@ class StreamSetupForm(FlaskForm):
     enable_recording = BooleanField('Enable Recording')
     submit = SubmitField('Update Stream Settings')
 
+class ArticleForm(FlaskForm):
+    title = StringField('Title', validators=[DataRequired(), Length(min=3, max=150)])
+    body = TextAreaField('Body', validators=[DataRequired()])
+    submit = SubmitField('Publish Article')
+
 class FriendListForm(FlaskForm):
     name = StringField('List Name', validators=[DataRequired(), Length(min=1, max=100)])
     submit = SubmitField('Save List')

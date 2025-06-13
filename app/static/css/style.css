@@ -380,3 +380,131 @@ footer p {
     cursor: not-allowed;
     opacity: 0.5;
 }
+
+/* === Article Specific Styles === */
+
+/* Styles for view_article.html */
+.article-view { /* Was: .article-content-view, using existing class on col div */
+    margin-bottom: 20px;
+    padding: 20px; /* Increased padding */
+    background-color: #ffffff; /* White background for article content */
+    border: 1px solid #e7e7e7;
+    border-radius: 5px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+
+.article-view h1 {
+    font-size: 2.5em; /* Consistent with removed inline style */
+    margin-bottom: 0.5em;
+    color: #333; /* Consistent with removed inline style */
+}
+
+.article-meta { /* Class already exists in view_article.html */
+    font-size: 0.9em; /* Consistent with removed inline style */
+    color: #777;
+    margin-bottom: 1.5em;
+}
+
+.article-body-content { /* Class already exists in view_article.html */
+    font-size: 1.1rem; /* Consistent with removed inline style */
+    line-height: 1.7;  /* Consistent with removed inline style */
+    color: #444;       /* Consistent with removed inline style */
+}
+
+.article-body-content p {
+    line-height: 1.7; /* Ensure this matches if .article-body-content already set it */
+    margin-bottom: 1.2em; /* Slightly more space after paragraphs */
+}
+
+.article-body-content ul,
+.article-body-content ol {
+    margin-left: 25px; /* Increased indent */
+    margin-bottom: 1em;
+    padding-left: 15px; /* Add padding for list items */
+}
+.article-body-content ul li,
+.article-body-content ol li {
+    margin-bottom: 0.5em; /* Spacing between list items */
+}
+
+.article-body-content blockquote {
+    border-left: 4px solid #00B8A9; /* Use theme secondary color */
+    padding: 10px 20px; /* More padding */
+    margin: 1.5em 0; /* More margin for separation */
+    font-style: italic;
+    color: #555;
+    background-color: #f8f9fa; /* Light background for blockquote */
+}
+
+/* Styles from the removed inline block in view_article.html */
+.article-body-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 4px;
+    margin-top: 10px;
+    margin-bottom: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1); /* Add subtle shadow to images */
+}
+
+.article-body-content table {
+    width: 100%;
+    margin-bottom: 1rem;
+    border-collapse: collapse;
+}
+
+.article-body-content th,
+.article-body-content td {
+    border: 1px solid #ddd;
+    padding: 10px; /* Increased padding */
+    text-align: left; /* Ensure text alignment */
+}
+
+.article-body-content th {
+    background-color: #f0f0f0; /* Slightly darker header for table */
+    font-weight: bold;
+}
+
+.article-actions { /* Class already exists in view_article.html */
+    margin-top: 25px; /* Increased margin */
+    padding-top: 15px;
+    border-top: 1px solid #eee;
+}
+
+/* Styles for articles_list.html */
+/* .list-group-item is used in articles_list.html. We can enhance it or use a more specific class if needed */
+/* For now, enhancing .list-group-item when it contains article info, assuming a context or specific class */
+.list-group-item.article-list-entry { /* Add 'article-list-entry' class to the <a> tag in articles_list.html for these styles */
+    padding: 20px;
+    border: 1px solid #ddd;
+    border-radius: 5px; /* Softer corners */
+    margin-bottom: 15px;
+    background-color: #fff;
+    transition: box-shadow 0.2s ease-in-out;
+}
+.list-group-item.article-list-entry:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.article-list-item h3 a, /* If using h3 for titles in list */
+.article-title { /* Class already used in articles_list.html for h5 */
+    text-decoration: none;
+    color: var(--theme-primary); /* Use theme color */
+}
+.article-list-item h3 a:hover,
+.article-title:hover {
+    text-decoration: underline;
+    color: var(--theme-secondary); /* Hover effect with secondary color */
+}
+
+.article-list-metadata { /* New class to be added in articles_list.html for the <small> tag */
+    font-size: 0.85em;
+    color: #888;
+    margin-bottom: 8px; /* More space */
+    display: block; /* Make it block to ensure margin-bottom applies */
+}
+
+.article-list-snippet { /* Class already used in articles_list.html for <p> */
+    font-size: 0.95em;
+    color: #555;
+    line-height: 1.5;
+}

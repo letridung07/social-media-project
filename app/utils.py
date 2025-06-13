@@ -8,8 +8,89 @@ import re # For mention processing
 # Imports for recommendation functions
 from sqlalchemy import func, desc, not_, and_, or_, distinct
 from app import db # Assuming db instance is available in app package
-from app.models import User, Post, Like, Comment, Hashtag, Group, GroupMembership, followers, Mention, HistoricalAnalytics, post_hashtags # Added Mention, HistoricalAnalytics, post_hashtags
+from app.models import User, Post, Like, Comment, Hashtag, Group, GroupMembership, followers, Mention, HistoricalAnalytics, post_hashtags, Article # Added Article
 from datetime import datetime, timedelta, timezone # Added datetime, timedelta, timezone
+
+
+def slugify(text_to_slugify: str, model_to_check=None, target_column_name: str = 'slug', max_slug_length: int = 200) -> str:
+    """
+    Generates a URL-friendly slug from a string, ensuring uniqueness.
+    """
+    if model_to_check is None:
+        model_to_check = Article # Default to Article model
+
+    if not text_to_slugify or not text_to_slugify.strip():
+        # If input is empty, generate a purely random slug
+        base_slug = secrets.token_hex(8)
+    else:
+        # Convert to lowercase
+        slug = text_to_slugify.lower()
+        # Remove non-alphanumeric characters (except spaces and hyphens)
+        slug = re.sub(r'[^\w\s-]', '', slug).strip()
+        # Replace spaces with hyphens
+        slug = re.sub(r'\s+', '-', slug)
+        # Consolidate multiple hyphens
+        slug = re.sub(r'-+', '-', slug)
+        # Remove leading/trailing hyphens
+        slug = slug.strip('-')
+        base_slug = slug
+
+        if not base_slug: # If all characters were special chars and removed
+            base_slug = secrets.token_hex(8)
+
+    # Truncate base_slug to ensure space for potential suffixes
+    # Max length for suffix like "-xxxxxx" (1 hyphen + 6 hex chars) is 7
+    # Initial truncation to leave space for this
+    effective_max_base_length = max_slug_length - 8
+    if len(base_slug) > effective_max_base_length:
+        base_slug = base_slug[:effective_max_base_length]
+
+    # Ensure base_slug is not empty after truncation, and re-strip hyphens
+    base_slug = base_slug.strip('-')
+    if not base_slug: # If truncation made it empty or just hyphens
+         base_slug = secrets.token_hex(min(8, effective_max_base_length if effective_max_base_length > 0 else 8))
+
+
+    current_slug_candidate = base_slug
+    attempt_counter = 0
+    max_attempts = 15 # Max attempts before switching to fully random slug
+
+    while True:
+        existing_record = model_to_check.query.filter(getattr(model_to_check, target_column_name) == current_slug_candidate).first()
+        if not existing_record:
+            return current_slug_candidate # Slug is unique
+
+        attempt_counter += 1
+        if attempt_counter > max_attempts:
+            # Fallback to a highly random slug if too many collisions
+            # Ensure this random slug also fits max_slug_length
+            random_len = min(max_slug_length, 16) # e.g. 16 hex chars
+            current_slug_candidate = secrets.token_hex(random_len // 2)
+            # One last check for this highly random slug (extremely unlikely to collide)
+            if not model_to_check.query.filter(getattr(model_to_check, target_column_name) == current_slug_candidate).first():
+                return current_slug_candidate
+            else:
+                # This case is astronomically rare. Could raise an error or log.
+                # For now, we'll just return it and assume it's okay, or let DB constraint catch it.
+                current_app.logger.error(f"Slugify: Extremely rare collision with fully random slug {current_slug_candidate}")
+                return current_slug_candidate # Or raise Exception("Could not generate unique slug after max attempts and random fallback.")
+
+
+        # Generate suffix
+        suffix = secrets.token_hex(3) # 6 characters long
+
+        # Calculate max length for the base part of the slug to accommodate the suffix
+        max_len_for_base_with_suffix = max_slug_length - len(suffix) - 1 # -1 for the hyphen
+
+        # Truncate the original base_slug if necessary
+        truncated_base = base_slug
+        if len(base_slug) > max_len_for_base_with_suffix:
+            truncated_base = base_slug[:max_len_for_base_with_suffix]
+
+        current_slug_candidate = f"{truncated_base}-{suffix}"
+        # Ensure the final slug with suffix does not exceed max_slug_length
+        if len(current_slug_candidate) > max_slug_length:
+             current_slug_candidate = current_slug_candidate[:max_slug_length]
 
 
 # Define allowed extensions comprehensively at the top

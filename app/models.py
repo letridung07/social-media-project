@@ -123,6 +123,7 @@ class User(db.Model, UserMixin):
     # Relationship to Post
     posts = db.relationship('Post', backref='author', lazy='dynamic')
     stories = db.relationship('Story', backref='author', lazy='dynamic')
+    articles = db.relationship('Article', backref='author', lazy='dynamic', cascade='all, delete-orphan') # New relationship for Articles
     historical_analytics = db.relationship('HistoricalAnalytics', backref='user', lazy='dynamic')
     polls = db.relationship('Poll', backref='author', lazy='dynamic', foreign_keys='Poll.user_id')
     poll_votes = db.relationship('PollVote', backref='user', lazy='dynamic')
@@ -630,3 +631,16 @@ class LiveStream(db.Model):
 
     def __repr__(self):
         return f'<LiveStream {self.id} by User {self.user_id} - Title: {self.title[:30] if self.title else "N/A"}>'
+
+
+class Article(db.Model):
+    __tablename__ = 'article'
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(150), nullable=False)
+    body = db.Column(db.Text, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+    slug = db.Column(db.String(200), unique=True, nullable=False, index=True)
+
+    def __repr__(self):
+        return f'<Article {self.title} by User {self.user_id}>'

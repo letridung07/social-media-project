@@ -12,10 +12,11 @@ import csv # For CSV export
 from sqlalchemy.orm import joinedload # Import joinedload
 from werkzeug.utils import secure_filename
 from app import db, socketio, cache # Import cache
-from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm, FriendListForm, AddUserToFriendListForm, PRIVACY_CHOICES
-from app.models import User, Post, MediaItem, Like, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus, Mention, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE, FriendList # Import UserAnalytics, MessageReadStatus, Mention, MediaItem
-from app.utils import save_picture, save_group_image, save_story_media, process_mentions, get_historical_engagement, get_top_performing_hashtags, get_top_performing_groups, save_media_file # Added process_mentions and analytics utils, save_media_file
+from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm, FriendListForm, AddUserToFriendListForm, PRIVACY_CHOICES, ArticleForm # Added ArticleForm
+from app.models import User, Post, MediaItem, Like, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus, Mention, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE, FriendList, Article # Added Article
+from app.utils import save_picture, save_group_image, save_story_media, process_mentions, get_historical_engagement, get_top_performing_hashtags, get_top_performing_groups, save_media_file, slugify # Added process_mentions and analytics utils, save_media_file, slugify
 from app.email_utils import send_password_reset_email # Import email utility
+import secrets # For slug generation
 
 # Import for recommendations
 from app.utils import get_recommendations
@@ -2493,3 +2494,83 @@ def bulk_update_privacy():
     # It's defined in app/forms.py. We need to pass it to the template.
     privacy_options = PRIVACY_CHOICES
     return render_template('bulk_update_privacy.html', title='Bulk Update Post Privacy', posts=user_posts, privacy_options=privacy_options)
+
+
+# -------------------- Article Routes --------------------
+
+@main.route('/article/create', methods=['GET', 'POST'])
+@login_required
+def create_article():
+    form = ArticleForm()
+    if form.validate_on_submit():
+        title = form.title.data
+        body = form.body.data
+
+        # Generate unique slug
+        original_slug = slugify(title)
+        slug_candidate = original_slug
+        counter = 1
+        # Loop to ensure slug uniqueness
+        while Article.query.filter_by(slug=slug_candidate).first():
+            slug_candidate = f"{original_slug}-{secrets.token_hex(2)}" # Append short random hex for uniqueness
+            # Alternative: increment counter: slug_candidate = f"{original_slug}-{counter}"; counter += 1
+        unique_slug = slug_candidate
+
+        article = Article(title=title, body=body, author=current_user, slug=unique_slug)
+        db.session.add(article)
+        db.session.commit()
+        flash('Article published successfully!', 'success')
+        return redirect(url_for('main.view_article', slug=article.slug))
+    return render_template('create_article.html', title='Create New Article', form=form)
+
+@main.route('/article/<slug>')
+def view_article(slug):
+    article = Article.query.filter_by(slug=slug).first_or_404()
+    return render_template('view_article.html', title=article.title, article=article)
+
+@main.route('/article/<slug>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_article(slug):
+    article = Article.query.filter_by(slug=slug).first_or_404()
+    if article.author != current_user:
+        abort(403)  # Forbidden
+
+    form = ArticleForm(obj=article) # Pre-populate form with article data on GET
+    if form.validate_on_submit():
+        article.title = form.title.data
+        article.body = form.body.data
+        # Note: Slug is generally not updated on edit to maintain URL stability.
+        # If title change should reflect in slug, new unique slug generation logic would be needed.
+        db.session.commit()
+        flash('Article updated successfully!', 'success')
+        return redirect(url_for('main.view_article', slug=article.slug))
+
+    return render_template('edit_article.html', title=f'Edit Article: {article.title}', form=form, article=article)
+
+@main.route('/article/<slug>/delete', methods=['POST'])
+@login_required
+def delete_article(slug):
+    article = Article.query.filter_by(slug=slug).first_or_404()
+    if article.author != current_user:
+        abort(403)
+    db.session.delete(article)
+    db.session.commit()
+    flash('Article deleted successfully!', 'success')
+    return redirect(url_for('main.articles_list')) # Or user's profile or another relevant page
+
+@main.route('/articles')
+def articles_list():
+    page = request.args.get('page', 1, type=int)
+    # Order by timestamp descending to show newest articles first
+    articles_pagination = Article.query.order_by(Article.timestamp.desc()).paginate(page=page, per_page=current_app.config.get('ARTICLES_PER_PAGE', 10), error_out=False)
+    articles = articles_pagination.items
+    return render_template('articles_list.html', title='All Articles', articles=articles, pagination=articles_pagination)
+
+@main.route('/user/<username>/articles')
+def user_articles(username):
+    user = User.query.filter_by(username=username).first_or_404()
+    page = request.args.get('page', 1, type=int)
+    # Assuming user.articles is the relationship from User to Article model
+    articles_pagination = user.articles.order_by(Article.timestamp.desc()).paginate(page=page, per_page=current_app.config.get('ARTICLES_PER_PAGE', 10), error_out=False)
+    articles = articles_pagination.items
+    return render_template('articles_list.html', title=f'Articles by {username}', articles=articles, pagination=articles_pagination, user=user)
