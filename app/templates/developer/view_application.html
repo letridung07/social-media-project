@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}View Application: {{ application.name }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Application: {{ application.name }}</h2>
+    <hr>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                {% if category == 'new_client_secret' %}
+                    <div class="alert alert-warning">
+                        <strong>Important: New Client Secret</strong><br>
+                        Your new client secret is: <code>{{ message }}</code><br>
+                        Please copy and store it securely. This is the only time it will be shown.
+                    </div>
+                {% elif category == 'success_secret_regenerated' %}
+                     <div class="alert alert-success">{{ message }}</div>
+                {% endif %}
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <dl class="row">
+        <dt class="col-sm-3">Application Name</dt>
+        <dd class="col-sm-9">{{ application.name }}</dd>
+
+        <dt class="col-sm-3">Description</dt>
+        <dd class="col-sm-9">{{ application.description if application.description else 'N/A' }}</dd>
+
+        <dt class="col-sm-3">Client ID</dt>
+        <dd class="col-sm-9"><code>{{ application.client_id }}</code></dd>
+
+        <dt class="col-sm-3">Client Secret</dt>
+        <dd class="col-sm-9">
+            <span class="text-muted"><em>Client secrets are hashed and cannot be viewed after initial registration or regeneration. Store them securely.</em></span>
+        </dd>
+
+        <dt class="col-sm-3">Redirect URIs</dt>
+        <dd class="col-sm-9">
+            <ul class="list-unstyled">
+                {% for uri in application.redirect_uris.split() %} {# Assuming space or newline separated #}
+                    <li><code>{{ uri }}</code></li>
+                {% endfor %}
+            </ul>
+        </dd>
+
+        <dt class="col-sm-3">Registered On</dt>
+        <dd class="col-sm-9">{{ application.created_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC</dd>
+
+        <dt class="col-sm-3">Last Updated</dt>
+        <dd class="col-sm-9">{{ application.updated_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC</dd>
+    </dl>
+
+    <hr>
+    <a href="{{ url_for('main.edit_application', app_id=application.id) }}" class="btn btn-warning">Edit Application</a>
+    <form action="{{ url_for('main.regenerate_secret', app_id=application.id) }}" method="POST" style="display: inline;" class="ml-2" onsubmit="return confirm('Are you sure you want to regenerate the client secret? The old secret will stop working immediately.');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-danger">Regenerate Client Secret</button>
+    </form>
+    <a href="{{ url_for('main.developer_dashboard') }}" class="btn btn-secondary ml-2">Back to Dashboard</a>
+</div>
+{% endblock %}
