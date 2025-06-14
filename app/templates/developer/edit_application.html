@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "_form_macros.html" import render_field %} {# Assuming you have form macros #}
+
+{% block title %}Edit Application: {{ form.name.data if form.name.data else application.name }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Edit Application: {{ application.name }}</h2>
+    <form method="POST" action="{{ url_for('main.edit_application', app_id=application.id) }}" novalidate>
+        {{ form.hidden_tag() }} {# CSRF token #}
+
+        {{ render_field(form.name, class="form-control") }}
+        {{ render_field(form.description, class="form-control", rows="3") }}
+
+        <div class="form-group">
+            {{ form.redirect_uris.label(class="form-control-label") }}
+            {{ form.redirect_uris(class="form-control", rows="3") }}
+            {% if form.redirect_uris.description %}
+                <small class="form-text text-muted">{{ form.redirect_uris.description }}</small>
+            {% endif %}
+            {% for error in form.redirect_uris.errors %}
+                <span class="text-danger">{{ error }}</span><br>
+            {% endfor %}
+        </div>
+
+        <div class="form-group mt-3">
+            {{ form.submit(class="btn btn-primary") }}
+            <a href="{{ url_for('main.view_application', app_id=application.id) }}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

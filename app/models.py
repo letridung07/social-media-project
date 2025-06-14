@@ -8,6 +8,7 @@ from app import db, cache # Import cache
 from flask_login import UserMixin
 from passlib.hash import sha256_crypt
 from datetime import datetime, timezone, timedelta
+import secrets # For generating secure tokens
 try:
     from itsdangerous import TimedJSONWebSignatureSerializer as Serializer
 except ImportError:
@@ -761,3 +762,72 @@ class UserSubscription(db.Model):
     def __repr__(self):
         return f'<UserSubscription User {self.subscriber_id} to Plan {self.plan_id} - Status: {self.status}>'
 
+
+# OAuth Application Model
+class Application(db.Model):
+    __tablename__ = 'oauth_application'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    client_id = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    client_secret = db.Column(db.String(256), nullable=False) # Will be hashed
+    redirect_uris = db.Column(db.Text, nullable=False) # Space-separated string or JSON list of URIs
+    owner_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow(), onupdate=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+
+    owner = db.relationship('User', backref=db.backref('oauth_applications', lazy='dynamic'))
+
+    def __init__(self, *args, **kwargs):
+        super(Application, self).__init__(*args, **kwargs)
+        if not self.client_id:
+            self.client_id = secrets.token_urlsafe(32) # Generate a secure client_id
+        # Client secret should be set and hashed separately, similar to password
+        # For example, a method set_client_secret(secret) could be added
+
+    def set_client_secret(self, secret):
+        self.client_secret = sha256_crypt.hash(secret)
+
+    def check_client_secret(self, secret):
+        return sha256_crypt.verify(secret, self.client_secret)
+
+    def __repr__(self):
+        return f'<Application {self.name}>'
+
+
+# OAuth Access Token Model
+class AccessToken(db.Model):
+    __tablename__ = 'oauth_access_token'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    application_id = db.Column(db.Integer, db.ForeignKey('oauth_application.id'), nullable=False, index=True)
+    token = db.Column(db.String(255), unique=True, nullable=False, index=True)
+    refresh_token = db.Column(db.String(255), unique=True, nullable=True, index=True)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    scopes = db.Column(db.Text, nullable=True) # Space-separated string or JSON list of scopes
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+
+    user = db.relationship('User', backref=db.backref('oauth_access_tokens', lazy='dynamic'))
+    application = db.relationship('Application', backref=db.backref('access_tokens', lazy='dynamic'))
+
+    def __init__(self, *args, **kwargs):
+        super(AccessToken, self).__init__(*args, **kwargs)
+        if not self.token:
+            self.token = secrets.token_urlsafe(64) # Generate a secure access token
+        # refresh_token could be generated similarly if needed upon creation
+        # if not self.refresh_token and kwargs.get('generate_refresh_token', False):
+        # self.refresh_token = secrets.token_urlsafe(64)
+
+
+    def is_expired(self):
+        return (datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow()) >= self.expires_at
+
+    def revoke(self):
+        # Placeholder for token revocation logic, e.g., by setting expires_at to now or deleting the token
+        # For now, we can simply delete it or mark it as expired.
+        # Depending on the strategy, you might also want to handle refresh tokens.
+        db.session.delete(self) # Or mark as expired: self.expires_at = datetime.utcnow()
+        # If there's a corresponding refresh token, it might need to be revoked too.
+
+    def __repr__(self):
+        return f'<AccessToken {self.token} for User {self.user_id} to App {self.application_id}>'

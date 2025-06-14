@@ -251,3 +251,20 @@ class SubscriptionPlanForm(FlaskForm):
     features = TextAreaField('Features (one per line)', validators=[Optional()]) # Will be processed into JSON list
     submit = SubmitField('Save Plan')
 
+
+# Developer Portal Forms
+class ApplicationRegistrationForm(FlaskForm):
+    name = StringField('Application Name', validators=[DataRequired(), Length(min=3, max=100)])
+    description = TextAreaField('Description', validators=[Optional(), Length(max=500)])
+    redirect_uris = TextAreaField('Redirect URIs (one per line)',
+                                  validators=[DataRequired()],
+                                  description="Enter one URI per line. These are the locations your application can redirect to after authorization.")
+    submit = SubmitField('Register Application')
+
+class ApplicationEditForm(FlaskForm):
+    name = StringField('Application Name', validators=[DataRequired(), Length(min=3, max=100)])
+    description = TextAreaField('Description', validators=[Optional(), Length(max=500)])
+    redirect_uris = TextAreaField('Redirect URIs (one per line)',
+                                  validators=[DataRequired()],
+                                  description="Enter one URI per line.")
+    submit = SubmitField('Save Changes')

@@ -6,14 +6,14 @@ from flask_socketio import SocketIO
 from flask_mail import Mail # Import Mail
 from flask_migrate import Migrate # Import Migrate
 from flask_caching import Cache # Import Cache
-from bootstrap_flask import Bootstrap # Import Bootstrap
+# from bootstrap_flask import Bootstrap # Import Bootstrap
 from config import Config
 # from app.scheduler import init_scheduler # Import the scheduler initializer MOVED
 
 db = SQLAlchemy()
 cache = Cache() # Initialize Cache
 csrf = CSRFProtect()
-bootstrap = Bootstrap() # Initialize Bootstrap
+# bootstrap = Bootstrap() # Initialize Bootstrap
 login_manager = LoginManager() # Initialize LoginManager
 socketio = SocketIO()
 mail = Mail() # Create Mail instance
@@ -33,13 +33,17 @@ def create_app(config_class=Config):
     mail.init_app(app) # Initialize Mail with the app
     migrate.init_app(app, db) # Initialize Migrate with the app and db
     cache.init_app(app, config={'CACHE_TYPE': 'SimpleCache'}) # Initialize Cache with the app
-    bootstrap.init_app(app) # Initialize Bootstrap with the app
+    # bootstrap.init_app(app) # Initialize Bootstrap with the app
 
     from app.routes import main as main_blueprint
     app.register_blueprint(main_blueprint)
 
     from app.admin_routes import admin_bp # Import admin blueprint
     app.register_blueprint(admin_bp) # Register admin blueprint
+
+    # Register API blueprint
+    from app.api_routes import api_bp
+    app.register_blueprint(api_bp, url_prefix='/api/v1') # Example prefix
 
     # If you have authentication routes, import and register them here
     # from app.auth import auth as auth_blueprint # We will create this soon
