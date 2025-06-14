@@ -1,8 +1,8 @@
 from flask_wtf import FlaskForm
-from wtforms import StringField, PasswordField, SubmitField, BooleanField, TextAreaField, FieldList, FormField, HiddenField, SelectField
+from wtforms import StringField, PasswordField, SubmitField, BooleanField, TextAreaField, FieldList, FormField, HiddenField, SelectField, DecimalField
 from wtforms.fields import FileField, MultipleFileField, DateTimeField # Added DateTimeField
 from flask_wtf.file import FileAllowed # For validation
-from wtforms.validators import DataRequired, Length, Email, EqualTo, ValidationError, Optional, InputRequired
+from wtforms.validators import DataRequired, Length, Email, EqualTo, ValidationError, Optional, InputRequired, NumberRange
 from app.models import User, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE
 from datetime import datetime # Added datetime
 
@@ -217,3 +217,18 @@ class AddUserToFriendListForm(FlaskForm):
         user = User.query.filter_by(username=username.data).first()
         if not user:
             raise ValidationError('User with that username does not exist.')
+
+
+class SubscriptionPlanForm(FlaskForm):
+    name = StringField('Plan Name', validators=[DataRequired(), Length(min=3, max=100)])
+    description = TextAreaField('Description', validators=[Optional(), Length(max=500)])
+    price = DecimalField('Price (e.g., 9.99)', places=2, validators=[DataRequired(), NumberRange(min=0.01, message="Price must be greater than 0.")])
+    currency = StringField('Currency Code (e.g., USD)', validators=[DataRequired(), Length(min=3, max=3)]) # Basic validation, could be a SelectField
+    duration = SelectField('Billing Interval', choices=[
+        ('day', 'Daily'),
+        ('week', 'Weekly'),
+        ('month', 'Monthly'),
+        ('year', 'Yearly')
+    ], validators=[DataRequired()])
+    features = TextAreaField('Features (one per line)', validators=[Optional()]) # Will be processed into JSON list
+    submit = SubmitField('Save Plan')

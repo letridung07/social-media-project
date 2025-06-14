@@ -12,13 +12,13 @@ import csv # For CSV export
 from sqlalchemy.orm import joinedload # Import joinedload
 from werkzeug.utils import secure_filename
 from app import db, socketio, cache # Import cache
-from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm, FriendListForm, AddUserToFriendListForm, PRIVACY_CHOICES, ArticleForm, AudioPostForm # Added AudioPostForm
-from app.models import User, Post, MediaItem, Like, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus, Mention, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE, FriendList, Article, AudioPost # Added AudioPost
+from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm, FriendListForm, AddUserToFriendListForm, PRIVACY_CHOICES, ArticleForm, AudioPostForm, SubscriptionPlanForm # Added AudioPostForm, SubscriptionPlanForm
+from app.models import User, Post, MediaItem, Like, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus, Mention, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE, FriendList, Article, AudioPost, SubscriptionPlan, UserSubscription # Added AudioPost, SubscriptionPlan, UserSubscription
 from app.utils import save_picture, save_group_image, save_story_media, process_mentions, get_historical_engagement, get_top_performing_hashtags, get_top_performing_groups, save_media_file, slugify, save_audio_file, get_audio_duration # Added save_audio_file, get_audio_duration
 from app.email_utils import send_password_reset_email # Import email utility
 import secrets # For slug generation
 from wtforms.validators import DataRequired # For dynamic validator modification
-from app.utils import generate_ics_file # For ICS export
+from app.utils import generate_ics_file, subscription_required # For ICS export
 import stripe # For Stripe integration
 
 # Import for recommendations
@@ -2622,6 +2622,7 @@ def create_article():
     return render_template('create_article.html', title='Create New Article', form=form)
 
 @main.route('/article/<slug>')
+@subscription_required(creator_model=Article, creator_model_param_name='slug')
 def view_article(slug):
     article = Article.query.filter_by(slug=slug).first_or_404()
     return render_template('view_article.html', title=article.title, article=article)
@@ -2812,6 +2813,220 @@ def user_audio_list(username):
     # Need to pass audio_folder_name for constructing URLs in the template
     audio_folder_name = current_app.config.get('AUDIO_UPLOAD_FOLDER_NAME', 'audio_uploads')
     return render_template('audio_list.html', title=f'Audio Posts by {username}', audio_posts=audios, pagination=audio_posts_pagination, user=user, audio_folder_name=audio_folder_name)
+
+
+# -------------------- Subscription Plan Management Routes --------------------
+@main.route('/creator/plans/create', methods=['GET', 'POST'])
+@login_required
+def create_subscription_plan():
+    form = SubscriptionPlanForm()
+    if form.validate_on_submit():
+        try:
+            stripe.api_key = current_app.config['STRIPE_SECRET_KEY']
+            if not stripe.api_key:
+                flash('Stripe integration is not configured (missing secret key).', 'danger')
+                return render_template('creator/create_edit_plan.html', title='Create Subscription Plan', form=form)
+
+            # Create Stripe Product
+            stripe_product = stripe.Product.create(
+                name=form.name.data,
+                description=form.description.data or None # Stripe description can be None
+            )
+
+            # Create Stripe Price
+            stripe_price = stripe.Price.create(
+                product=stripe_product.id,
+                unit_amount=int(form.price.data * 100), # Price in cents
+                currency=form.currency.data.lower(),
+                recurring={'interval': form.duration.data}
+            )
+
+            features_list = [f.strip() for f in form.features.data.splitlines() if f.strip()]
+            features_json_string = json.dumps(features_list) # json import is already there
+
+            new_plan = SubscriptionPlan(
+                name=form.name.data,
+                description=form.description.data,
+                price=form.price.data,
+                currency=form.currency.data.upper(), # Store currency in uppercase consistently
+                duration=form.duration.data,
+                features=features_json_string,
+                creator_id=current_user.id,
+                stripe_product_id=stripe_product.id,
+                stripe_price_id=stripe_price.id
+            )
+            db.session.add(new_plan)
+            db.session.commit()
+            flash('Subscription plan created successfully!', 'success')
+            return redirect(url_for('main.list_creator_plans'))
+        except stripe.error.StripeError as e:
+            flash(f'Stripe API Error: {str(e)}', 'danger')
+            current_app.logger.error(f"Stripe API error during plan creation: {e}")
+        except Exception as e:
+            db.session.rollback()
+            flash(f'An error occurred: {str(e)}', 'danger')
+            current_app.logger.error(f"Error during plan creation: {e}")
+
+    return render_template('creator/create_edit_plan.html', title='Create Subscription Plan', form=form, action="Create")
+
+
+@main.route('/creator/dashboard/plans')
+@login_required
+def list_creator_plans():
+    plans = SubscriptionPlan.query.filter_by(creator_id=current_user.id).order_by(SubscriptionPlan.created_at.desc()).all()
+    return render_template('creator/list_plans.html', title='Your Subscription Plans', plans=plans)
+
+
+@main.route('/creator/plans/<int:plan_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_creator_plan(plan_id):
+    plan = SubscriptionPlan.query.get_or_404(plan_id)
+    if plan.creator_id != current_user.id:
+        abort(403) # Forbidden
+
+    form = SubscriptionPlanForm(obj=plan if request.method == 'GET' else None)
+
+    if request.method == 'GET':
+        if plan.features:
+            try:
+                features_list = json.loads(plan.features)
+                form.features.data = '\n'.join(features_list)
+            except json.JSONDecodeError:
+                form.features.data = plan.features # Fallback if not valid JSON (though it should be)
+                current_app.logger.warning(f"Could not parse features JSON for plan {plan.id} during edit GET: {plan.features}")
+        # Price, currency, duration, name, description are pre-filled by obj=plan
+
+    if form.validate_on_submit():
+        original_price = plan.price
+        original_currency = plan.currency
+        original_duration = plan.duration
+
+        plan.name = form.name.data
+        plan.description = form.description.data
+
+        features_list = [f.strip() for f in form.features.data.splitlines() if f.strip()]
+        plan.features = json.dumps(features_list)
+
+        # Update descriptive fields on Stripe Product
+        if plan.stripe_product_id:
+            try:
+                stripe.api_key = current_app.config['STRIPE_SECRET_KEY']
+                stripe.Product.modify(
+                    plan.stripe_product_id,
+                    name=form.name.data,
+                    description=form.description.data or "" # Stripe description can be empty string
+                )
+            except stripe.error.StripeError as e:
+                flash(f'Warning: Error updating Stripe Product details: {str(e)}', 'warning')
+                current_app.logger.error(f"Stripe Product.modify error for plan {plan.id}: {e}")
+            except Exception as e:
+                flash(f'Warning: A non-Stripe error occurred while updating Stripe Product: {str(e)}', 'warning')
+                current_app.logger.error(f"Non-Stripe error during Product.modify for plan {plan.id}: {e}")
+
+
+        # Handle price, currency, duration changes with a note
+        price_changed = form.price.data != original_price
+        currency_changed = form.currency.data.upper() != original_currency # Compare with consistent casing
+        duration_changed = form.duration.data != original_duration
+
+        if price_changed or currency_changed or duration_changed:
+            flash('Note: Price, currency, and billing interval changes are complex with existing Stripe Prices. '
+                  'This version updates the local database values, but for Stripe, '
+                  'you typically need to create a new Price and archive the old one. '
+                  'The Stripe Price associated with this plan has NOT been updated.', 'info')
+
+        plan.price = form.price.data
+        plan.currency = form.currency.data.upper() # Store consistently
+        plan.duration = form.duration.data
+
+        try:
+            db.session.commit()
+            flash('Subscription plan updated successfully!', 'success')
+            return redirect(url_for('main.list_creator_plans'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error saving updated plan: {str(e)}', 'danger')
+            current_app.logger.error(f"Database error updating plan {plan.id}: {e}")
+
+    return render_template('creator/create_edit_plan.html', title=f'Edit Plan: {plan.name}', form=form, plan=plan, action="Edit")
+
+
+@main.route('/creator/plans/<int:plan_id>/deactivate', methods=['POST'])
+@login_required
+def deactivate_creator_plan(plan_id):
+    plan = SubscriptionPlan.query.get_or_404(plan_id)
+    if plan.creator_id != current_user.id:
+        abort(403) # Forbidden
+
+    if not plan.is_active:
+        flash('This plan is already inactive.', 'info')
+        return redirect(url_for('main.list_creator_plans'))
+
+    plan.is_active = False
+    action_successful = True # Flag to track if all operations were successful
+
+    # Archive Stripe Price
+    if plan.stripe_price_id:
+        try:
+            stripe.api_key = current_app.config['STRIPE_SECRET_KEY']
+            stripe.Price.modify(plan.stripe_price_id, active=False)
+            flash('Stripe Price archived successfully.', 'info')
+        except stripe.error.StripeError as e:
+            action_successful = False
+            flash(f'Could not archive Stripe Price: {str(e)}. Please check your Stripe dashboard. Local plan will still be marked as inactive.', 'warning')
+            current_app.logger.error(f"Stripe Price.modify error for plan {plan.id}, price {plan.stripe_price_id}: {e}")
+        except Exception as e:
+            action_successful = False
+            flash(f'A non-Stripe error occurred while archiving Stripe Price: {str(e)}. Local plan will still be marked as inactive.', 'warning')
+            current_app.logger.error(f"Non-Stripe error during Price.modify for plan {plan.id}, price {plan.stripe_price_id}: {e}")
+
+
+    # Optionally, attempt to archive Stripe Product
+    # This is a simplified attempt. In reality, you'd check if other active prices exist for this product.
+    if plan.stripe_product_id:
+        try:
+            stripe.api_key = current_app.config['STRIPE_SECRET_KEY'] # Ensure API key is set if not done above or if Price modify failed
+            # Check if product has other active prices (simplified check - assumes product might be shared)
+            # A more robust check would list all prices for the product and see if any others are active.
+            # For now, we just try to deactivate and catch error if it fails (e.g. due to active prices).
+            stripe.Product.modify(plan.stripe_product_id, active=False)
+            flash('Stripe Product also marked as inactive (if applicable).', 'info')
+        except stripe.error.StripeError as e:
+            # This error is less critical if the price is already inactive or if product has other active prices.
+            flash(f'Note: Could not automatically archive Stripe Product ({plan.stripe_product_id}): {str(e)}. This might be because other active prices are still attached to it. You may need to manage it in your Stripe dashboard.', 'notice')
+            current_app.logger.warning(f"Stripe Product.modify error for product {plan.stripe_product_id} (plan {plan.id}): {e}")
+        except Exception as e:
+            flash(f'Note: A non-Stripe error occurred while archiving Stripe Product ({plan.stripe_product_id}): {str(e)}.', 'notice')
+            current_app.logger.warning(f"Non-Stripe error during Product.modify for product {plan.stripe_product_id} (plan {plan.id}): {e}")
+
+    try:
+        db.session.commit()
+        if action_successful:
+            flash('Subscription plan deactivated successfully.', 'success')
+        else:
+            flash('Subscription plan marked as inactive locally, but there were issues with Stripe operations. Please review warnings.', 'warning')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error deactivating plan locally: {str(e)}', 'danger')
+        current_app.logger.error(f"Database error deactivating plan {plan.id}: {e}")
+
+    return redirect(url_for('main.list_creator_plans'))
+
+
+@main.route('/creator/dashboard/subscribers')
+@login_required
+def list_creator_subscribers():
+    # Fetch active subscriptions to plans created by the current user
+    # Ensure User and SubscriptionPlan models are correctly joined to UserSubscription
+    subscriptions = UserSubscription.query \
+        .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id) \
+        .join(User, UserSubscription.subscriber_id == User.id) \
+        .filter(SubscriptionPlan.creator_id == current_user.id, UserSubscription.status == 'active') \
+        .options(db.joinedload(UserSubscription.subscriber), db.joinedload(UserSubscription.plan)) \
+        .order_by(UserSubscription.start_date.desc()) \
+        .all()
+
+    return render_template('creator/list_subscribers.html', title='Active Subscribers', subscriptions=subscriptions)
 
 
 # -------------------- Stripe Checkout Session Route --------------------

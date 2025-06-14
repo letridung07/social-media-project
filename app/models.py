@@ -693,6 +693,7 @@ class SubscriptionPlan(db.Model):
     features = db.Column(db.JSON, nullable=True) # For storing list of features
     stripe_product_id = db.Column(db.String(255), nullable=True, index=True)
     stripe_price_id = db.Column(db.String(255), nullable=True, unique=True, index=True)
+    is_active = db.Column(db.Boolean, default=True, nullable=False, index=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
     updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow(), onupdate=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
 
