@@ -3029,6 +3029,118 @@ def list_creator_subscribers():
     return render_template('creator/list_subscribers.html', title='Active Subscribers', subscriptions=subscriptions)
 
 
+# -------------------- User's Own Subscriptions Route --------------------
+@main.route('/user/subscriptions')
+@login_required
+def my_subscriptions():
+    subscriptions = UserSubscription.query \
+        .filter_by(subscriber_id=current_user.id) \
+        .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id) \
+        .join(User, SubscriptionPlan.creator_id == User.id) \
+        .options(
+            db.joinedload(UserSubscription.plan).joinedload(SubscriptionPlan.creator)
+        ) \
+        .order_by(UserSubscription.start_date.desc()) \
+        .all()
+
+    return render_template('user/my_subscriptions.html', title='My Subscriptions', subscriptions=subscriptions)
+
+
+@main.route('/user/subscriptions/<int:subscription_id>/cancel', methods=['POST'])
+@login_required
+def cancel_user_subscription(subscription_id):
+    user_sub = UserSubscription.query.get_or_404(subscription_id)
+
+    if user_sub.subscriber_id != current_user.id:
+        current_app.logger.warning(f"User {current_user.id} attempt to cancel subscription {subscription_id} not belonging to them.")
+        abort(403) # Forbidden
+
+    # Define cancellable states. 'past_due' can also be cancelled by user, Stripe might retry payment or eventually cancel.
+    cancellable_states = ['active', 'trialing', 'past_due']
+    if user_sub.status not in cancellable_states:
+        flash(f"This subscription is currently '{user_sub.status.replace('_', ' ').capitalize()}' and cannot be cancelled through this action or is already processing a cancellation.", 'info')
+        return redirect(url_for('main.my_subscriptions'))
+
+    if user_sub.stripe_subscription_id:
+        try:
+            stripe.api_key = current_app.config['STRIPE_SECRET_KEY']
+            # Request Stripe to cancel the subscription at the end of the current billing period.
+            # The actual 'cancelled' status and final end_date will be set by webhook (e.g., customer.subscription.updated/deleted).
+            stripe_subscription_object = stripe.Subscription.retrieve(user_sub.stripe_subscription_id)
+
+            if stripe_subscription_object.status == 'canceled':
+                 flash('This subscription has already been canceled with Stripe.', 'info')
+            elif stripe_subscription_object.cancel_at_period_end:
+                flash('This subscription is already scheduled to be cancelled at the end of the current billing period.', 'info')
+            else:
+                stripe.Subscription.modify(
+                    user_sub.stripe_subscription_id,
+                    cancel_at_period_end=True
+                )
+                # Optionally, update local status to something like 'pending_cancellation'
+                # user_sub.status = 'pending_cancellation'
+                # db.session.commit()
+                flash('Your subscription cancellation has been requested. It will be finalized at the end of your current billing period.', 'success')
+                current_app.logger.info(f"User {current_user.id} requested cancellation for Stripe subscription {user_sub.stripe_subscription_id} at period end.")
+
+        except stripe.error.StripeError as e:
+            flash(f'Error requesting subscription cancellation with payment provider: {str(e)}', 'danger')
+            current_app.logger.error(f"Stripe API error cancelling subscription {user_sub.stripe_subscription_id} for user {current_user.id}: {e}")
+        except Exception as e:
+            flash(f'An unexpected error occurred while processing your cancellation request: {str(e)}', 'danger')
+            current_app.logger.error(f"Unexpected error cancelling subscription {user_sub.stripe_subscription_id} for user {current_user.id}: {e}")
+    else:
+        # Fallback for local subscriptions without a Stripe ID (should be rare for active ones)
+        current_app.logger.warning(f"UserSubscription {user_sub.id} for user {current_user.id} has no stripe_subscription_id. Cancelling locally.")
+        user_sub.status = 'cancelled'
+        user_sub.end_date = datetime.now(timezone.utc)
+        try:
+            db.session.commit()
+            flash('Your subscription has been cancelled locally as no payment provider ID was found.', 'info')
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error cancelling local subscription: {str(e)}', 'danger')
+            current_app.logger.error(f"Database error cancelling local subscription {user_sub.id} for user {current_user.id}: {e}")
+
+    return redirect(url_for('main.my_subscriptions'))
+
+
+# -------------------- Stripe Customer Portal Session Route --------------------
+@main.route('/stripe/create-customer-portal-session', methods=['POST'])
+@login_required
+def create_customer_portal_session():
+    stripe_customer_id = current_user.stripe_customer_id
+
+    if not stripe_customer_id:
+        # Although flash is usually for rendered templates, it can be useful for server-side logging/awareness.
+        # The primary response for an AJAX call should be JSON.
+        flash('No billing information found for this user.', 'info')
+        current_app.logger.info(f"User {current_user.id} attempted to access Stripe portal without a stripe_customer_id.")
+        return jsonify({'error': 'No Stripe customer ID found for user.'}), 404 # Or 400 Bad Request
+
+    # This is the URL to which the user will be redirected after they are done managing their billing on Stripe.
+    return_url = url_for('main.my_subscriptions', _external=True)
+
+    try:
+        stripe.api_key = current_app.config.get('STRIPE_SECRET_KEY')
+        if not stripe.api_key:
+            current_app.logger.error("Stripe secret key is not configured for portal session creation.")
+            return jsonify({'error': 'Payment provider configuration error.'}), 500
+
+        portal_session = stripe.billing_portal.Session.create(
+            customer=stripe_customer_id,
+            return_url=return_url
+        )
+        return jsonify({'portal_url': portal_session.url})
+
+    except stripe.error.StripeError as e:
+        current_app.logger.error(f"Stripe Billing Portal session creation failed for customer {stripe_customer_id}: {str(e)}")
+        return jsonify({'error': f'Could not create billing portal session: {str(e)}'}), 500
+    except Exception as e:
+        current_app.logger.error(f"Unexpected error creating billing portal session for customer {stripe_customer_id}: {e}")
+        return jsonify({'error': 'An unexpected error occurred while creating billing portal session.'}), 500
+
+
 # -------------------- Stripe Checkout Session Route --------------------
 @main.route('/api/subscriptions/create-checkout-session', methods=['POST'])
 @login_required
@@ -3193,6 +3305,29 @@ def stripe_webhook():
                     db.session.add(user_subscription)
                     db.session.commit()
                     current_app.logger.info(f"UserSubscription created/updated for user {user_id}, plan {plan_id}, stripe_sub {stripe_subscription_id}")
+
+                    # Send notification to subscriber
+                    if user and plan: # plan is already fetched, user is already fetched
+                        creator = User.query.get(plan.creator_id)
+                        if creator:
+                            notification_message = f"You are now subscribed to {creator.username}'s '{plan.name}' plan!"
+                            notification = Notification(
+                                recipient_id=user.id,
+                                actor_id=creator.id,
+                                type='subscription_started'
+                            )
+                            db.session.add(notification)
+                            db.session.commit() # Commit notification
+
+                            socketio.emit('new_notification', {
+                                'type': 'subscription_started',
+                                'message': notification_message,
+                                'recipient_id': user.id,
+                                'plan_name': plan.name,
+                                'creator_username': creator.username
+                            }, room=str(user.id))
+                            current_app.logger.info(f"Sent 'subscription_started' notification to user {user.id}")
+
                 except stripe.error.StripeError as e:
                     current_app.logger.error(f"Stripe API error processing checkout.session.completed: {e}")
                     # Don't necessarily return 500 to Stripe, as they might retry. Log and investigate.
@@ -3217,6 +3352,32 @@ def stripe_webhook():
                     subscription.status = 'active' # Ensure active on payment success
                     db.session.commit()
                     current_app.logger.info(f"UserSubscription {subscription.id} updated by invoice.payment_succeeded.")
+
+                    # Send notification for renewal
+                    if subscription.status == 'active': # Confirm it's active after payment
+                        user = User.query.get(subscription.subscriber_id)
+                        plan = SubscriptionPlan.query.get(subscription.plan_id)
+                        if user and plan and plan.creator: # Assumes plan.creator relationship is loaded or accessible
+                            renewal_end_date_str = subscription.end_date.strftime('%Y-%m-%d %H:%M UTC') if subscription.end_date else "the next period"
+                            notification_message = f"Your subscription to {plan.creator.username}'s '{plan.name}' plan has been successfully renewed until {renewal_end_date_str}."
+                            notification = Notification(
+                                recipient_id=user.id,
+                                actor_id=plan.creator.id,
+                                type='subscription_renewed'
+                            )
+                            db.session.add(notification)
+                            db.session.commit()
+
+                            socketio.emit('new_notification', {
+                                'type': 'subscription_renewed',
+                                'message': notification_message,
+                                'recipient_id': user.id,
+                                'plan_name': plan.name,
+                                'creator_username': plan.creator.username,
+                                'renewal_date': renewal_end_date_str
+                            }, room=str(user.id))
+                            current_app.logger.info(f"Sent 'subscription_renewed' notification to user {user.id}")
+
                 except stripe.error.StripeError as e:
                     current_app.logger.error(f"Stripe API error processing invoice.payment_succeeded: {e}")
                 except Exception as e:
@@ -3237,6 +3398,30 @@ def stripe_webhook():
                 try:
                     db.session.commit()
                     current_app.logger.info(f"UserSubscription {subscription.id} status set to past_due.")
+
+                    # Send notification for payment failure
+                    if subscription.status == 'past_due':
+                        user = User.query.get(subscription.subscriber_id)
+                        plan = SubscriptionPlan.query.get(subscription.plan_id)
+                        if user and plan and plan.creator:
+                            notification_message = f"Action required: Payment failed for your subscription to {plan.creator.username}'s '{plan.name}' plan. Please update your payment method via 'Manage Billing'."
+                            notification = Notification(
+                                recipient_id=user.id,
+                                actor_id=plan.creator.id,
+                                type='subscription_payment_failed'
+                            )
+                            db.session.add(notification)
+                            db.session.commit()
+
+                            socketio.emit('new_notification', {
+                                'type': 'subscription_payment_failed',
+                                'message': notification_message,
+                                'recipient_id': user.id,
+                                'plan_name': plan.name,
+                                'creator_username': plan.creator.username
+                            }, room=str(user.id))
+                            current_app.logger.info(f"Sent 'subscription_payment_failed' notification to user {user.id}")
+
                 except Exception as e:
                     db.session.rollback()
                     current_app.logger.error(f"Database error processing invoice.payment_failed: {e}")
@@ -3287,6 +3472,32 @@ def stripe_webhook():
                 try:
                     db.session.commit()
                     current_app.logger.info(f"UserSubscription {subscription.id} updated by customer.subscription.updated. New status: {new_status}")
+
+                    # Send notification if subscription is definitively cancelled
+                    if new_status == 'canceled':
+                        user = User.query.get(subscription.subscriber_id)
+                        plan = SubscriptionPlan.query.get(subscription.plan_id)
+                        if user and plan and plan.creator:
+                            end_date_str = datetime.fromtimestamp(stripe_sub_object.canceled_at, tz=timezone.utc).strftime('%Y-%m-%d %H:%M UTC') if stripe_sub_object.canceled_at else "the end of the current period"
+                            notification_message = f"Your subscription to {plan.creator.username}'s '{plan.name}' plan has been cancelled, effective {end_date_str}."
+                            notification = Notification(
+                                recipient_id=user.id,
+                                actor_id=plan.creator.id,
+                                type='subscription_cancelled'
+                            )
+                            db.session.add(notification)
+                            db.session.commit()
+
+                            socketio.emit('new_notification', {
+                                'type': 'subscription_cancelled',
+                                'message': notification_message,
+                                'recipient_id': user.id,
+                                'plan_name': plan.name,
+                                'creator_username': plan.creator.username,
+                                'cancellation_date': end_date_str
+                            }, room=str(user.id))
+                            current_app.logger.info(f"Sent 'subscription_cancelled' notification to user {user.id}")
+
                 except Exception as e:
                     db.session.rollback()
                     current_app.logger.error(f"Database error processing customer.subscription.updated: {e}")
