@@ -113,6 +113,7 @@ class User(db.Model, UserMixin):
 
     # User Theme Preference
     theme_preference = db.Column(db.String(50), nullable=True, default='default')
+    stripe_customer_id = db.Column(db.String(255), nullable=True, unique=True, index=True)
 
     profile_visibility = db.Column(db.String(50), nullable=False, default=PRIVACY_PUBLIC)
     default_post_privacy = db.Column(db.String(50), nullable=False, default=PRIVACY_PUBLIC)
@@ -678,3 +679,50 @@ class AudioPost(db.Model):
 
     def __repr__(self):
         return f'<AudioPost {self.title} by User {self.user_id}>'
+
+
+class SubscriptionPlan(db.Model):
+    __tablename__ = 'subscription_plan'
+    id = db.Column(db.Integer, primary_key=True)
+    creator_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    price = db.Column(db.Numeric(10, 2), nullable=False) # Assuming 10 digits, 2 decimal places
+    currency = db.Column(db.String(3), nullable=False) # e.g., "USD"
+    duration = db.Column(db.String(50), nullable=False) # e.g., "monthly", "yearly"
+    features = db.Column(db.JSON, nullable=True) # For storing list of features
+    stripe_product_id = db.Column(db.String(255), nullable=True, index=True)
+    stripe_price_id = db.Column(db.String(255), nullable=True, unique=True, index=True)
+    is_active = db.Column(db.Boolean, default=True, nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow(), onupdate=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+
+    creator = db.relationship('User', backref=db.backref('subscription_plans_offered', lazy='dynamic'))
+
+    def __repr__(self):
+        return f'<SubscriptionPlan {self.name} by User ID {self.creator_id}>'
+
+
+class UserSubscription(db.Model):
+    __tablename__ = 'user_subscription'
+    id = db.Column(db.Integer, primary_key=True)
+    subscriber_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    plan_id = db.Column(db.Integer, db.ForeignKey('subscription_plan.id'), nullable=False, index=True)
+    start_date = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+    end_date = db.Column(db.DateTime, nullable=True) # Nullable if subscription is, for example, lifetime or managed by status
+    status = db.Column(db.String(50), nullable=False, default='active', index=True) # e.g., "active", "cancelled", "expired"
+    payment_details_id = db.Column(db.String(255), nullable=True) # External payment gateway reference
+    stripe_subscription_id = db.Column(db.String(255), nullable=True, unique=True, index=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow(), onupdate=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+
+    subscriber = db.relationship('User', backref=db.backref('subscriptions', lazy='dynamic'))
+    plan = db.relationship('SubscriptionPlan', backref=db.backref('subscribers', lazy='dynamic'))
+
+    # Composite unique constraint to prevent a user from subscribing to the same plan multiple times simultaneously (if applicable)
+    # __table_args__ = (db.UniqueConstraint('subscriber_id', 'plan_id', name='_subscriber_plan_uc'),)
+    # For now, we'll comment this out as a user might be able to cancel and resubscribe, or have multiple instances if not managed strictly by active status.
+    # Active status should be the primary gate.
+
+    def __repr__(self):
+        return f'<UserSubscription User {self.subscriber_id} to Plan {self.plan_id} - Status: {self.status}>'
