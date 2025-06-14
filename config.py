@@ -26,11 +26,6 @@ class Config:
     TURN_SERVER_USERNAME = os.environ.get('TURN_SERVER_USERNAME') or 'turn_username' # Example placeholder
     TURN_SERVER_CREDENTIAL = os.environ.get('TURN_SERVER_CREDENTIAL') or 'turn_password' # Example placeholder
 
-    # Stripe Configuration
-    STRIPE_PUBLISHABLE_KEY = os.environ.get('STRIPE_PUBLISHABLE_KEY') or 'your_stripe_publishable_key'
-    STRIPE_SECRET_KEY = os.environ.get('STRIPE_SECRET_KEY') or 'your_stripe_secret_key'
-    STRIPE_WEBHOOK_SECRET = os.environ.get('STRIPE_WEBHOOK_SECRET') or 'your_stripe_webhook_secret'
-
 class TestingConfig(Config):
     TESTING = True
     SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:' # Use in-memory SQLite for tests

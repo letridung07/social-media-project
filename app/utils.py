@@ -1,7 +1,6 @@
 import os
 import secrets
-from functools import wraps
-from flask import current_app, redirect, url_for, flash, abort
+from flask import current_app
 from PIL import Image # For image resizing - will need to install Pillow
 from werkzeug.utils import secure_filename # For secure filenames
 
@@ -25,7 +24,7 @@ except ImportError:
 # Imports for recommendation functions
 from sqlalchemy import func, desc, not_, and_, or_, distinct
 from app import db # Assuming db instance is available in app package
-from app.models import User, Post, Like, Comment, Hashtag, Group, GroupMembership, followers, Mention, HistoricalAnalytics, post_hashtags, Article, Event as AppEvent, UserSubscription, SubscriptionPlan # Added Article and AppEvent
+from app.models import User, Post, Like, Comment, Hashtag, Group, GroupMembership, followers, Mention, HistoricalAnalytics, post_hashtags, Article, Event as AppEvent # Added Article and AppEvent
 from datetime import datetime, timedelta, timezone # Ensure timezone is imported
 
 # Imports for iCalendar generation
@@ -768,110 +767,3 @@ def generate_ics_file(event_obj: AppEvent) -> bytes:
 
     cal.add_component(ics_event)
     return cal.to_ical()
-
-
-def is_user_subscribed_to_creator(user, creator_id):
-    """
-    Checks if a given user has an active subscription to any plan
-    offered by the specified creator.
-
-    :param user: The User object (subscriber).
-    :param creator_id: The ID of the content creator.
-    :return: True if an active subscription exists, False otherwise.
-    """
-    if not user or not user.is_authenticated: # user.is_authenticated might not be available on a raw User object if not from flask_login.current_user
-        return False # Consider if 'user' is always a Flask-Login current_user proxy or a direct User model.
-                     # If direct User model, user.is_authenticated check might not be appropriate or available.
-                     # Assuming 'user' can be current_user or a User model instance that might not have is_authenticated.
-                     # A simple check 'if not user:' might be enough if it's always a User instance.
-                     # For now, keeping it as is, assuming 'user' could be flask_login's current_user.
-
-    # Ensure user object has an id attribute and it's not None
-    if not hasattr(user, 'id') or user.id is None:
-        return False
-
-    active_subscription = UserSubscription.query \
-        .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id) \
-        .filter(
-            UserSubscription.subscriber_id == user.id,
-            SubscriptionPlan.creator_id == creator_id,
-            UserSubscription.status == 'active' # Assuming 'active' is the status string for active subscriptions
-        ).first()
-
-    return active_subscription is not None
-
-
-def subscription_required(creator_id_param_name='user_id', creator_model=None, creator_model_param_name=None):
-    """
-    Decorator to ensure the current user is actively subscribed to the content creator.
-    Can fetch creator_id directly from a route variable (using creator_id_param_name)
-    OR by fetching a model (e.g., Post, Article) using creator_model_param_name,
-    and then accessing its user_id attribute.
-
-    :param creator_id_param_name: The name of the route variable holding the creator's user ID.
-    :param creator_model: The SQLAlchemy model (e.g., Post) to fetch if creator_id is on a related object.
-    :param creator_model_param_name: The name of the route variable holding the ID for creator_model (e.g., 'post_id').
-    """
-    def decorator(f):
-        @wraps(f)
-        def decorated_function(*args, **kwargs):
-            target_creator_id = None
-
-            if creator_model and creator_model_param_name:
-                model_id = kwargs.get(creator_model_param_name)
-                if model_id:
-                    item = creator_model.query.get_or_404(model_id) # This will abort if not found
-                    if hasattr(item, 'user_id'):
-                        target_creator_id = item.user_id
-                    elif hasattr(item, 'author_id'):
-                         target_creator_id = item.author_id
-                    elif hasattr(item, 'creator_id'): # For SubscriptionPlan itself, or similar
-                         target_creator_id = item.creator_id
-                    elif isinstance(item, User): # If the item itself is a User profile
-                        target_creator_id = item.id
-                    else:
-                        current_app.logger.error(f"Subscription check failed: Could not determine creator attribute for {creator_model.__name__} ID {model_id}")
-                        flash('Content creator could not be determined for subscription check.', 'danger')
-                        return redirect(url_for('main.index'))
-                else:
-                    # This case means creator_model_param_name was not found in kwargs,
-                    # which might be an issue with route variable naming or decorator setup.
-                    current_app.logger.warning(f"Subscription check: model_id not found in kwargs using creator_model_param_name '{creator_model_param_name}'.")
-                    # Fall through to try creator_id_param_name directly.
-                    pass
-
-            if not target_creator_id and creator_id_param_name:
-                raw_id = kwargs.get(creator_id_param_name)
-                if raw_id is not None:
-                    try:
-                        target_creator_id = int(raw_id)
-                    except ValueError:
-                        current_app.logger.error(f"Subscription check: Could not convert '{raw_id}' to int for creator_id.")
-                        flash('Invalid creator identifier.', 'danger')
-                        return redirect(url_for('main.index'))
-                # else: creator_id_param_name not in kwargs. This will be caught by the None check below.
-
-            if target_creator_id is None:
-                current_app.logger.error("Subscription check: target_creator_id could not be determined from route parameters.")
-                flash('Creator ID not found for subscription check.', 'danger')
-                return redirect(url_for('main.index'))
-
-            # Allow access if the current user is the creator
-            if current_user.is_authenticated and current_user.id == target_creator_id:
-                return f(*args, **kwargs)
-
-            if not is_user_subscribed_to_creator(current_user, target_creator_id):
-                flash('You must be actively subscribed to this creator to view this content.', 'warning')
-                # Try to redirect to creator's profile if possible.
-                # Need to ensure the creator_id can be used to find a username or a profile route.
-                # For simplicity, if we have target_creator_id, we can try to find the user to get username for profile URL.
-                creator_user = User.query.get(target_creator_id)
-                if creator_user:
-                    return redirect(url_for('main.profile', username=creator_user.username))
-                else:
-                    # Fallback if creator user not found (e.g. creator_id was from a deleted user's content)
-                    return redirect(url_for('main.index'))
-
-            return f(*args, **kwargs)
-        return decorated_function
-    return decorator

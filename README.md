@@ -65,6 +65,7 @@ A social media platform built with Flask, featuring user authentication, profile
         *   Remove members from the group.
         *   Delete the group entirely (posts within the group will be disassociated).
     *   **Notifications:** Members receive notifications for new posts and shares within their groups, and group admins are notified when new users join.
+*   **In-App Purchases/Virtual Goods:** Purchase and display virtual items like badges and profile frames.
 *   **Real-time Chat:** (See dedicated section below for more details)
     *   One-on-one conversations.
     *   Real-time messaging with Socket.IO.
@@ -128,6 +129,23 @@ To enhance interactivity, poll results now update in real-time. When a user vote
         *   Users can easily export event details to their preferred external calendar application (e.g., Google Calendar, Outlook, Apple Calendar).
         *   This is done by downloading an industry-standard .ics file directly from the event's detail page.
         *   To use, simply click the "Add to Calendar" button on an event page. This will download the .ics file, which can then be imported into most calendar programs.
+
+### In-App Purchases/Virtual Goods
+
+This feature allows users to purchase virtual items (e.g., badges, emojis, profile frames) that can be displayed on their profile or used in interactions. The implementation is phased:
+
+*   **Phase 1: Database & Model Design**
+    *   **`VirtualGood` Model:** Stores information about each virtual item, including `name`, `description`, `price`, `currency`, `type` (e.g., "badge", "emoji", "profile_frame"), `image_url`, and `is_active` status.
+    *   **`UserVirtualGood` Model (Inventory):** Tracks the virtual goods owned by each user, linking to the `User` and `VirtualGood` models. It includes `purchase_date`, `quantity` (for consumable items, though most are one-time purchases), and an `is_equipped` status for items like profile frames or badges.
+
+*   **Phase 2: Storefront & Purchase Flow**
+    *   **Storefront Page (`/store`):** A dedicated section displays available virtual goods. Currently, it lists active items.
+    *   **Purchase Flow (Placeholder):** A route (`/purchase_virtual_good/<id>`) is set up to handle purchases. *Note: Actual payment gateway integration and inventory update logic are currently placeholders and not yet fully functional. The database schema update for these models might also require manual application in the target environment due to issues encountered with automated migrations in the development sandbox.*
+
+*   **Phase 3: Usage & Display**
+    *   **Profile Integration:** The user's profile page has been updated to display any equipped badges or profile frames from their `UserVirtualGood` inventory. This is subject to the database schema being correctly migrated.
+    *   **Chat/Comment Integration (Placeholder):** Integration of purchased emojis into chat and comment input fields is planned for a future phase.
+    *   **Admin Management:** An admin interface (`/admin/virtual_goods/*`) allows administrators to add, edit, and manage virtual goods.
 
 ## Advanced Analytics Dashboard
 
@@ -304,9 +322,15 @@ Follow these instructions to get a copy of the project up and running on your lo
 │   │   ├── group_images/ # Group profile images
 │   │   └── story_media/  # Media for stories
 │   ├── templates/        # HTML templates
+│   │   ├── admin/        # Templates for admin interface
+│   │   │   ├── virtual_goods_list.html   # Admin list of virtual goods
+│   │   │   └── virtual_good_form.html  # Admin form for adding/editing virtual goods
 │   │   ├── chat/         # Chat specific templates
+│   │   │   ├── conversations_list.html
+│   │   │   └── view_conversation.html
 │   │   ├── create_story.html # Template for creating stories
 │   │   ├── stories.html    # Template for displaying stories
+│   │   ├── storefront.html # Storefront for virtual goods
 │   │   ├── create_poll.html  # Template for creating polls
 │   │   ├── create_article.html
 │   │   ├── edit_article.html
@@ -316,10 +340,17 @@ Follow these instructions to get a copy of the project up and running on your lo
 │   │   ├── edit_audio_post.html
 │   │   ├── view_audio_post.html
 │   │   ├── audio_list.html
+│   │   ├── base.html      # Base template for all pages (order adjusted)
+│   │   ├── index.html     # Home page (order adjusted)
+│   │   ├── login.html     # Login page (order adjusted)
+│   │   ├── profile.html   # User profile page (order adjusted)
+│   │   ├── register.html  # Registration page (order adjusted)
+│   │   └── _post.html     # Partial for displaying a single post (order adjusted)
 │   ├── __init__.py       # Application factory, initializes Flask app and extensions
 │   ├── forms.py          # WTForms definitions
 │   ├── models.py         # SQLAlchemy database models
 │   ├── routes.py         # Application routes (views)
+│   ├── admin_routes.py   # Admin specific routes
 │   ├── events.py         # Socket.IO event handlers
 │   └── utils.py          # Utility functions (e.g., saving pictures, processing hashtags & mentions, linkifying mentions)
 ├── tests/                # Unit tests
@@ -338,6 +369,7 @@ Follow these instructions to get a copy of the project up and running on your lo
     ├── test_analytics.py # Tests for Analytics Dashboard
     ├── test_articles.py  # Tests for Article functionality
     ├── test_audio_posts.py # Tests for AudioPost functionality
+    ├── test_virtual_goods.py # Tests for Virtual Goods feature
     ├── test_sharing.py   # Placeholder for external sharing tests
     ├── test_livestream.py # Placeholder for live stream tests
     ├── test_themes.py    # Placeholder for theme functionality tests
@@ -448,6 +480,7 @@ classDiagram
         +mentions_made: Mention[]
         +notifications_received: Notification[]
         +notifications_sent: Notification[]
+        +virtual_goods_inventory: UserVirtualGood[]
     }
     class Post {
         id: Integer
@@ -617,7 +650,29 @@ classDiagram
         timestamp: DateTime
         +uploader: User
     }
-
+    class VirtualGood {
+        id: Integer
+        name: String
+        description: Text
+        price: Numeric
+        currency: String
+        type: String
+        image_url: String
+        is_active: Boolean
+        created_at: DateTime
+        updated_at: DateTime
+        +user_inventories: UserVirtualGood[]
+    }
+    class UserVirtualGood {
+        id: Integer
+        user_id: Integer
+        virtual_good_id: Integer
+        purchase_date: DateTime
+        quantity: Integer
+        is_equipped: Boolean
+        +user: User
+        +virtual_good: VirtualGood
+    }
 
     User "1" -- "*" Post : authors
     User "1" -- "*" Comment : authors
@@ -626,6 +681,7 @@ classDiagram
     User "*" -- "*" GroupMembership : has
     GroupMembership "*" -- "1" User : user
     GroupMembership "*" -- "1" Group : group
+    User "1" -- "*" UserVirtualGood : owns_inventory_items
 
     Post "1" -- "*" Comment : has
     Post "1" -- "*" Like : received on
@@ -633,6 +689,7 @@ classDiagram
     post_hashtags "*" -- "*" Hashtag : uses
     Post "0..1" -- "1" Group : posted_in (optional)
     Post "1" -- "*" Poll : can_have_poll
+    Post "1" -- "*" MediaItem : contains
 
     Mention "1"--"1" User : tagged_user_rel (user_id)
     Mention "1"--"1" User : actor_user_rel (actor_id)
@@ -655,13 +712,17 @@ classDiagram
     Event "1"--"1" User : organized_by
     Event "*" -- "*" User : attended_by
 
-    Post "1" -- "*" MediaItem : contains
     User "1" -- "*" Article : authors_articles
     User "1" -- "*" AudioPost : uploads_audio
+
+    VirtualGood "1" -- "*" UserVirtualGood : appears_in_inventory
+    UserVirtualGood --|> User : user_fk
+    UserVirtualGood --|> VirtualGood : virtual_good_fk
 
 
     note for GroupMembership "Intermediary table defining user roles within groups."
     note for Post "group_id is nullable, allowing posts outside groups."
     note for Mention "Represents a @username tag in a post or comment."
     note for Notification "Consolidated notification relationships."
+    note for UserVirtualGood "Tracks user's purchased virtual goods."
 ```
