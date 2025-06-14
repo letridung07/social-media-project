@@ -27,6 +27,47 @@
                             </form>
                         {% endif %}
                     {% endif %}
+
+                    {# Display Equipped Virtual Goods #}
+                    {% if equipped_badge %}
+                        <div class="equipped-badge mt-3">
+                            <h6>Equipped Badge:</h6>
+                            <p>
+                                <img src="{{ equipped_badge.virtual_good.image_url if equipped_badge.virtual_good.image_url and equipped_badge.virtual_good.image_url.startswith('http') else url_for('static', filename='images/' + equipped_badge.virtual_good.image_url if equipped_badge.virtual_good.image_url else 'images/virtual_goods_placeholder.png') }}"
+                                     alt="{{ equipped_badge.virtual_good.name }}"
+                                     style="width: 50px; height: 50px; margin-right: 10px; vertical-align: middle;"
+                                     onerror="this.onerror=null; this.src='{{ url_for('static', filename='images/virtual_goods_placeholder.png') }}';"
+                                     loading="lazy">
+                                <span style="vertical-align: middle;">{{ equipped_badge.virtual_good.name }}</span>
+                            </p>
+                        </div>
+                    {% endif %}
+
+                    {% if equipped_frame %}
+                        <div class="equipped-frame mt-2">
+                            <h6>Equipped Frame:</h6>
+                            <p>
+                                {# For frames, the image might be used as an overlay or border via CSS.
+                                   For now, just displaying name and a small image like the badge. #}
+                                {% if equipped_frame.virtual_good.image_url %}
+                                <img src="{{ equipped_frame.virtual_good.image_url if equipped_frame.virtual_good.image_url.startswith('http') else url_for('static', filename='images/' + equipped_frame.virtual_good.image_url) }}"
+                                     alt="{{ equipped_frame.virtual_good.name }}"
+                                     style="width: 50px; height: 50px; margin-right: 10px; vertical-align: middle; border: 2px dashed grey;"  {# Example style for frame #}
+                                     onerror="this.onerror=null; this.src='{{ url_for('static', filename='images/virtual_goods_placeholder.png') }}';"
+                                     loading="lazy">
+                                {% endif %}
+                                <span style="vertical-align: middle;">{{ equipped_frame.virtual_good.name }}</span>
+                            </p>
+                        </div>
+                    {% endif %}
+
+                    {% if equipped_items_error %}
+                        <div class="alert alert-warning mt-2 small" role="alert">
+                            {{ equipped_items_error }}
+                        </div>
+                    {% endif %}
+                    {# End Display Equipped Virtual Goods #}
+
                 </div>
             </div>
         </div>

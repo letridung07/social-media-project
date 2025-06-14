@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Virtual Goods Store</h2>
+
+    {% if error_message %}
+        <div class="alert alert-warning" role="alert">
+            {{ error_message }}
+        </div>
+    {% elif goods %}
+        <div class="row">
+            {% for good in goods %}
+            <div class="col-md-4 mb-4">
+                <div class="card">
+                    {% if good.image_url %}
+                        <img src="{{ good.image_url if good.image_url.startswith('http') else url_for('static', filename='images/' + good.image_url if good.image_url else 'images/virtual_goods_placeholder.png') }}" class="card-img-top" alt="{{ good.name }}" style="height: 200px; object-fit: cover;">
+                    {% else %}
+                        <img src="{{ url_for('static', filename='images/virtual_goods_placeholder.png') }}" class="card-img-top" alt="Placeholder Image" style="height: 200px; object-fit: cover;">
+                    {% endif %}
+                    <div class="card-body">
+                        <h5 class="card-title">{{ good.name }}</h5>
+                        <p class="card-text">{{ good.description if good.description else 'No description available.' }}</p>
+                        <p class="card-text"><strong>Price:</strong> {{ "%.2f"|format(good.price) }} {{ good.currency }}</p>
+                        <p class="card-text"><small class="text-muted">Type: {{ good.type }}</small></p>
+
+                        <form action="{{ url_for('main.purchase_virtual_good', good_id=good.id) }}" method="POST">
+                            {{ csrf_token_field() if csrf_token_field else '' }} {# Add CSRF token if available globally #}
+                            <button type="submit" class="btn btn-primary">Purchase</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="alert alert-info" role="alert">
+            No virtual goods currently available. Check back later!
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

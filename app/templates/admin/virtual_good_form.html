@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% from "_form_helpers.html" import render_field %} {# Assuming you have a form helper macro #}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>{{ title }}</h2>
+
+    {% include '_flash_messages.html' %} {# Assuming you have a partial for flash messages #}
+
+    <form method="POST" action=""> {# Action URL will be set by Flask's url_for in the route #}
+        {{ form.hidden_tag() if form.hidden_tag else '' }} {# CSRF token #}
+
+        <div class="form-group">
+            {{ render_field(form.name, class="form-control") }}
+        </div>
+        <div class="form-group">
+            {{ render_field(form.description, class="form-control", rows=5) }}
+        </div>
+        <div class="form-row">
+            <div class="form-group col-md-6">
+                {{ render_field(form.price, class="form-control") }}
+            </div>
+            <div class="form-group col-md-6">
+                {{ render_field(form.currency, class="form-control") }}
+            </div>
+        </div>
+        <div class="form-group">
+            {{ render_field(form.type, class="form-control") }}
+        </div>
+        <div class="form-group">
+            {{ render_field(form.image_url, class="form-control", placeholder="https://example.com/image.png or /static/images/goods/my_good.png") }}
+            {% if good and good.image_url %}
+                <small class="form-text text-muted">Current image:</small>
+                <img src="{{ good.image_url if good.image_url.startswith('http') else url_for('static', filename=good.image_url) }}" alt="{{ good.name }}" style="max-width: 100px; max-height: 100px; margin-top: 10px;" loading="lazy">
+            {% endif %}
+        </div>
+        <div class="form-group form-check">
+            {{ render_field(form.is_active, class="form-check-input") }}
+        </div>
+
+        <hr>
+        <div class="form-group">
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-save"></i> {{ form_action }} Virtual Good
+            </button>
+            <a href="{{ url_for('admin.list_virtual_goods') }}" class="btn btn-secondary">
+                <i class="fas fa-times"></i> Cancel
+            </a>
+        </div>
+    </form>
+</div>
+{% endblock %}
