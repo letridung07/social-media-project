@@ -681,6 +681,40 @@ class AudioPost(db.Model):
         return f'<AudioPost {self.title} by User {self.user_id}>'
 
 
+class VirtualGood(db.Model):
+    __tablename__ = 'virtual_good'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    price = db.Column(db.Numeric(10, 2), nullable=False)
+    currency = db.Column(db.String(10), nullable=False, default='USD')
+    type = db.Column(db.String(50), nullable=False)  # e.g., "badge", "emoji", "profile_frame"
+    image_url = db.Column(db.String(255), nullable=True)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow(), onupdate=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+
+    def __repr__(self):
+        return f'<VirtualGood {self.name}>'
+
+
+class UserVirtualGood(db.Model):
+    __tablename__ = 'user_virtual_good'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    virtual_good_id = db.Column(db.Integer, db.ForeignKey('virtual_good.id'), nullable=False, index=True)
+    purchase_date = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+    quantity = db.Column(db.Integer, default=1, nullable=False)
+    is_equipped = db.Column(db.Boolean, default=False, nullable=False)
+
+    user = db.relationship('User', backref=db.backref('virtual_goods_inventory', lazy='dynamic'))
+    virtual_good = db.relationship('VirtualGood', backref=db.backref('user_inventories', lazy='dynamic'))
+
+    __table_args__ = (db.UniqueConstraint('user_id', 'virtual_good_id', name='_user_virtual_good_uc'),) # Assuming a user can only have one entry per virtual good type, quantity handles multiples. If multiple separate purchases of the same good should be distinct rows, remove this.
+
+    def __repr__(self):
+        return f'<UserVirtualGood UserID:{self.user_id} GoodID:{self.virtual_good_id} Qty:{self.quantity}>'
+
 class SubscriptionPlan(db.Model):
     __tablename__ = 'subscription_plan'
     id = db.Column(db.Integer, primary_key=True)
@@ -726,3 +760,4 @@ class UserSubscription(db.Model):
 
     def __repr__(self):
         return f'<UserSubscription User {self.subscriber_id} to Plan {self.plan_id} - Status: {self.status}>'
+

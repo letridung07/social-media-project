@@ -219,6 +219,24 @@ class AddUserToFriendListForm(FlaskForm):
             raise ValidationError('User with that username does not exist.')
 
 
+from wtforms import DecimalField # Added for VirtualGoodForm price
+from wtforms.validators import URL # Added for VirtualGoodForm image_url
+
+class VirtualGoodForm(FlaskForm):
+    name = StringField('Name', validators=[DataRequired(), Length(min=2, max=100)])
+    description = TextAreaField('Description', validators=[Optional(), Length(max=500)])
+    price = DecimalField('Price', validators=[DataRequired()], places=2) # Ensure price is a decimal with 2 places
+    currency = StringField('Currency', validators=[DataRequired(), Length(min=3, max=10)], default='USD')
+    type = SelectField('Type', choices=[
+        ('badge', 'Badge'),
+        ('emoji', 'Emoji'),
+        ('profile_frame', 'Profile Frame'),
+        ('other', 'Other') # Added 'other' as a generic type
+    ], validators=[DataRequired()])
+    image_url = StringField('Image URL', validators=[Optional(), URL(), Length(max=255)])
+    is_active = BooleanField('Is Active', default=True)
+    submit = SubmitField('Save Virtual Good')
+
 class SubscriptionPlanForm(FlaskForm):
     name = StringField('Plan Name', validators=[DataRequired(), Length(min=3, max=100)])
     description = TextAreaField('Description', validators=[Optional(), Length(max=500)])
@@ -232,3 +250,4 @@ class SubscriptionPlanForm(FlaskForm):
     ], validators=[DataRequired()])
     features = TextAreaField('Features (one per line)', validators=[Optional()]) # Will be processed into JSON list
     submit = SubmitField('Save Plan')
+

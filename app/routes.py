@@ -485,7 +485,39 @@ def profile(username):
         if profile_is_limited:
              posts = []
 
-    return render_template('profile.html', title=f"{user.username}'s Profile", user=user, posts=posts, comment_form=comment_form, profile_is_private=profile_is_private, profile_is_limited=profile_is_limited)
+    # Fetch equipped virtual goods
+    equipped_badge = None
+    equipped_frame = None
+    equipped_items_error = None
+    try:
+        # Ensure UserVirtualGood and VirtualGood models are imported
+        # from app.models import UserVirtualGood, VirtualGood (already handled at top)
+        # from sqlalchemy.exc import SQLAlchemyError (already handled at top)
+        # from sqlalchemy.orm import joinedload (already handled at top)
+
+        equipped_items = UserVirtualGood.query.filter_by(user_id=user.id, is_equipped=True)\
+                                             .options(joinedload(UserVirtualGood.virtual_good)).all()
+        for item in equipped_items:
+            if item.virtual_good:
+                if item.virtual_good.type == 'badge' and not equipped_badge:
+                    equipped_badge = item
+                elif item.virtual_good.type == 'profile_frame' and not equipped_frame:
+                    equipped_frame = item
+                if equipped_badge and equipped_frame: # Optimization: stop if both found
+                    break
+    except SQLAlchemyError as e:
+        current_app.logger.error(f"Error fetching equipped virtual goods for {username}: {e}")
+        equipped_items_error = "Could not load equipped items due to a database issue."
+    except Exception as e: # Catch any other unexpected errors during the query or processing
+        current_app.logger.error(f"Unexpected error fetching equipped virtual goods for {username}: {e}")
+        equipped_items_error = "An unexpected error occurred while loading equipped items."
+
+
+    return render_template('profile.html', title=f"{user.username}'s Profile", user=user, posts=posts,
+                           comment_form=comment_form, profile_is_private=profile_is_private,
+                           profile_is_limited=profile_is_limited,
+                           equipped_badge=equipped_badge, equipped_frame=equipped_frame,
+                           equipped_items_error=equipped_items_error)
 
 @main.route('/edit_profile', methods=['GET', 'POST'])
 @login_required
@@ -2814,6 +2846,36 @@ def user_audio_list(username):
     audio_folder_name = current_app.config.get('AUDIO_UPLOAD_FOLDER_NAME', 'audio_uploads')
     return render_template('audio_list.html', title=f'Audio Posts by {username}', audio_posts=audios, pagination=audio_posts_pagination, user=user, audio_folder_name=audio_folder_name)
 
+
+
+# -------------------- Virtual Goods Storefront Routes --------------------
+from app.models import VirtualGood, UserVirtualGood # Added UserVirtualGood
+from sqlalchemy.exc import SQLAlchemyError # Added SQLAlchemyError
+
+@main.route('/store')
+@login_required
+def storefront():
+    goods = []
+    error_message = None
+    try:
+        # Attempt to fetch active virtual goods
+        # This might fail if the database hasn't been migrated yet after adding VirtualGood model
+        goods = VirtualGood.query.filter_by(is_active=True).all()
+    except Exception as e:
+        current_app.logger.error(f"Error fetching virtual goods from database: {e}")
+        error_message = "Store currently unavailable due to a database issue. Please try again later."
+        # Depending on how critical this is, you might flash a message or just pass error_message to template
+        # flash("Store currently unavailable. Please try again later.", "warning")
+
+    return render_template('storefront.html', title='Store', goods=goods, error_message=error_message)
+
+@main.route('/purchase_virtual_good/<int:good_id>', methods=['POST'])
+@login_required
+def purchase_virtual_good(good_id):
+    # good = VirtualGood.query.get_or_404(good_id) # Will be used when implementing logic
+    # For now, just a placeholder
+    flash('Purchase functionality is not yet implemented.', 'info')
+    return redirect(url_for('main.storefront'))
 
 # -------------------- Subscription Plan Management Routes --------------------
 @main.route('/creator/plans/create', methods=['GET', 'POST'])
