@@ -96,7 +96,7 @@ def create_app(config_class=Config):
             " font-src 'self' https://fonts.gstatic.com data:;" # Allow fonts from self, Google, and data URIs (for some icon fonts)
             " object-src 'none';"
             " frame-ancestors 'self';"
-            " connect-src 'self' wss: ws:;" # Allow self, and WebSockets (secure and insecure for development)
+            f" connect-src {connect_src};"  # Dynamically set connect-src
             " base-uri 'self';"
             " form-action 'self';"
         )
