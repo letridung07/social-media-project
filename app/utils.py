@@ -120,7 +120,8 @@ ALLOWED_VIDEO_EXTENSIONS = {'mp4', 'mov', 'avi', 'mkv'}
 
 def save_picture(form_picture_field):
     random_hex = secrets.token_hex(8)
-    _, f_ext = os.path.splitext(form_picture_field.filename)
+    original_filename = secure_filename(form_picture_field.filename)
+    _, f_ext = os.path.splitext(original_filename)
     picture_fn = random_hex + f_ext
     picture_path = os.path.join(current_app.root_path, 'static/images', picture_fn)
 
@@ -189,7 +190,8 @@ def save_media_file(form_media_file, upload_folder_name='media_items'):
 
 def save_group_image(form_image_field):
     random_hex = secrets.token_hex(10)
-    _, f_ext = os.path.splitext(form_image_field.filename)
+    original_filename = secure_filename(form_image_field.filename)
+    _, f_ext = os.path.splitext(original_filename)
     image_fn = random_hex + f_ext
 
     upload_path_from_config = current_app.config.get('UPLOAD_FOLDER_GROUP_IMAGES', 'app/static/group_images_default')
@@ -238,7 +240,7 @@ def save_story_media(form_media_file):
     # and handling any story-specific resizing/processing if different.
     # For now, keeping it separate as per subtask focus.
     random_hex = secrets.token_hex(12)
-    original_filename = form_media_file.filename
+    original_filename = secure_filename(form_media_file.filename)
     _, f_ext_with_dot = os.path.splitext(original_filename)
     f_ext = f_ext_with_dot.lower().lstrip('.') # ensure lowercase and no dot
 
@@ -316,34 +318,45 @@ def process_mentions(text_content: str, owner_object, actor_user: User) -> list[
 
     return mentioned_users_objects
 
-from flask import url_for
-from markupsafe import Markup, escape
+# Removed duplicate import of url_for; already imported globally on line 4
+from markupsafe import Markup, escape # This import is already present globally
+
+# Ensure User and func are available (they are, from global imports in this file)
+# from app.models import User # Already imported globally
+# from sqlalchemy import func # Already imported globally
 
 def linkify_mentions(text_content):
-    """
-    Converts @username patterns in text to HTML links to user profiles.
-    If username does not exist, it leaves the @username as plain text.
-    """
     if not text_content:
-        return ""
+        return Markup('') # Return Markup empty string
 
-    def replace_username_with_link(match):
-        username = match.group(1)
-        # Query for user, case-insensitive
-        user = User.query.filter(func.lower(User.username) == username.lower()).first()
+    segments = []
+    last_end = 0
+    # Regex to find @username patterns: @ followed by word characters
+    for match in re.finditer(r"@(\w+)", text_content):
+        # Append the text segment before the mention (escaped)
+        segments.append(escape(text_content[last_end:match.start()]))
+
+        username_match = match.group(1) # The actual username string, e.g., "john_doe"
+
+        # Query for the user, case-insensitive
+        # User and func are available from global imports
+        user = User.query.filter(func.lower(User.username) == username_match.lower()).first()
+
         if user:
             profile_url = url_for('main.profile', username=user.username)
-            # Use user.username for display to preserve original casing
-            return Markup(f'<a href="{escape(profile_url)}">@{escape(user.username)}</a>')
+            # Construct the link with properly escaped components. user.username is used for display.
+            segments.append(f'<a href="{escape(profile_url)}">@{escape(user.username)}</a>')
         else:
-            # Return original match if user not found (e.g., "@nonexistentuser")
-            return match.group(0)
+            # If user not found, append the original @mention text (e.g., "@nonexistentuser")
+            # This part also needs to be escaped as it's part of the overall text_content.
+            segments.append(escape(match.group(0)))
 
-    # Using re.sub to replace all occurrences
-    # The pattern r"@(\w+)" ensures we capture the username after @
-    # \w+ matches one or more alphanumeric characters (letters, numbers, and underscore)
-    processed_text = re.sub(r"@(\w+)", replace_username_with_link, text_content)
-    return Markup(processed_text)
+        last_end = match.end()
+
+    # Append the remaining text segment after the last mention (escaped)
+    segments.append(escape(text_content[last_end:]))
+
+    return Markup("".join(segments))
 
 
 # Recommendation Functions

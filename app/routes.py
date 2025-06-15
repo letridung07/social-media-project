@@ -372,6 +372,7 @@ def login():
             next_page = request.args.get('next')
             return redirect(next_page) if next_page else redirect(url_for('main.index'))
         else:
+            current_app.logger.warning(f"Failed login attempt for email '{form.email.data}' from IP: {request.remote_addr}")
             flash('Login Unsuccessful. Please check email and password', 'danger')
     return render_template('login.html', title='Sign In', form=form)
 

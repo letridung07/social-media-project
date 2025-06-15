@@ -2,9 +2,9 @@
 import unittest
 import os
 import io # For creating mock files
-from flask import current_app
+from flask import current_app, url_for # Added url_for
 from app import create_app, db
-from app.models import User, Post, MediaItem, Mention, Comment, Notification # Added MediaItem
+from app.models import User, Post, MediaItem, Mention, Comment, Notification, PRIVACY_PUBLIC, PRIVACY_PRIVATE, PRIVACY_FOLLOWERS # Added MediaItem and privacy constants
 from app.utils import process_mentions, linkify_mentions # Added process_mentions and linkify_mentions
 from config import TestingConfig # Using TestingConfig for tests
 from werkzeug.datastructures import FileStorage # For creating mock FileStorage object
@@ -23,7 +23,9 @@ class PostModelCase(unittest.TestCase):
         # Create a test user
         self.user1 = User(username='john', email='john@example.com')
         self.user1.set_password('cat')
-        db.session.add(self.user1)
+        self.user2 = User(username='susan', email='susan@example.com') # Add user2
+        self.user2.set_password('dog')
+        db.session.add_all([self.user1, self.user2])
         db.session.commit()
 
         # Path for media items - ensure it's cleaned up
@@ -892,7 +894,7 @@ class PostModelCase(unittest.TestCase):
         self._logout()
 
     def test_route_create_post_schedule_time_in_past(self):
-        self._login('john@example.com', 'cat')
+        self._login(self.user1.email, 'cat') # Use self.user1 properties
         past_schedule_dt = datetime.now(timezone.utc) - timedelta(days=1)
         past_schedule_dt_str = past_schedule_dt.strftime('%Y-%m-%d %H:%M')
 
@@ -911,6 +913,84 @@ class PostModelCase(unittest.TestCase):
         post = Post.query.filter_by(body='Test post with past schedule time.').first()
         self.assertIsNone(post)
         self._logout()
+
+    # --- Post Privacy Authorization Tests ---
+    def test_view_private_post_unauthorized(self):
+        # user1 creates a private post
+        self._login(self.user1.email, 'cat')
+        private_post_body = "User1's super secret private post."
+        self.client.post(url_for('main.create_post'), data={
+            'body': private_post_body,
+            'privacy_level': PRIVACY_PRIVATE
+        }, follow_redirects=True)
+        self._logout()
+
+        # user2 logs in
+        self._login(self.user2.email, 'dog')
+        # user2 views user1's profile
+        response = self.client.get(url_for('main.profile', username=self.user1.username))
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn(private_post_body.encode(), response.data, "User2 should not see user1's private post.")
+        self._logout()
+
+    def test_view_followers_only_post_as_non_follower(self):
+        # user1 creates a followers-only post
+        self._login(self.user1.email, 'cat')
+        followers_post_body = "User1's post for followers."
+        self.client.post(url_for('main.create_post'), data={
+            'body': followers_post_body,
+            'privacy_level': PRIVACY_FOLLOWERS
+        }, follow_redirects=True)
+        self._logout()
+
+        # user2 (not following user1) logs in
+        self._login(self.user2.email, 'dog')
+        response = self.client.get(url_for('main.profile', username=self.user1.username))
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn(followers_post_body.encode(), response.data, "User2 (non-follower) should not see user1's followers-only post.")
+        self._logout()
+
+    def test_view_followers_only_post_as_follower(self):
+        # user1 creates a followers-only post
+        self._login(self.user1.email, 'cat')
+        followers_post_body = "User1's post for followers (seen by follower)."
+        self.client.post(url_for('main.create_post'), data={
+            'body': followers_post_body,
+            'privacy_level': PRIVACY_FOLLOWERS
+        }, follow_redirects=True)
+        self._logout()
+
+        # user2 logs in and follows user1
+        self._login(self.user2.email, 'dog')
+        self.user2.follow(self.user1)
+        db.session.commit()
+
+        response = self.client.get(url_for('main.profile', username=self.user1.username))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(followers_post_body.encode(), response.data, "User2 (follower) should see user1's followers-only post.")
+        self._logout()
+
+    def test_view_public_post_by_anyone(self):
+        # user1 creates a public post
+        self._login(self.user1.email, 'cat')
+        public_post_body = "User1's public post for everyone."
+        self.client.post(url_for('main.create_post'), data={
+            'body': public_post_body,
+            'privacy_level': PRIVACY_PUBLIC
+        }, follow_redirects=True)
+        self._logout()
+
+        # user2 (logged in) views user1's profile
+        self._login(self.user2.email, 'dog')
+        response_user2 = self.client.get(url_for('main.profile', username=self.user1.username))
+        self.assertEqual(response_user2.status_code, 200)
+        self.assertIn(public_post_body.encode(), response_user2.data, "User2 should see user1's public post.")
+        self._logout()
+
+        # Anonymous user views user1's profile
+        response_anon = self.client.get(url_for('main.profile', username=self.user1.username))
+        self.assertEqual(response_anon.status_code, 200)
+        self.assertIn(public_post_body.encode(), response_anon.data, "Anonymous user should see user1's public post.")
 
 
 if __name__ == '__main__':

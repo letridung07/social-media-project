@@ -1,4 +1,5 @@
 import unittest
+from flask import url_for # Added for redirect checks
 from app import create_app, db
 from app.models import User
 from config import TestingConfig # Import TestingConfig
@@ -137,6 +138,162 @@ class AuthTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200) # Stays on login page
         self.assertIn(b'Login Unsuccessful. Please check email and password', response.data)
         self.assertIn(b'Sign In', response.data) # Still on login page
+
+    # --- Password Reset Flow Tests ---
+    def test_forgot_password_request_success(self):
+        # Register a user
+        self._register_user(self.test_user_username, self.test_user_email, self.test_user_password)
+
+        response = self.app.post('/forgot_password', data=dict(
+            email=self.test_user_email
+        ), follow_redirects=True)
+        self.assertEqual(response.status_code, 200) # Should redirect to login
+        self.assertIn(b'Sign In', response.data) # Back on login page
+        # Check for one of the possible success messages based on app's behavior
+        self.assertTrue(
+            b'An email has been sent with instructions to reset your password.' in response.data or
+            b'If an account with that email exists, instructions to reset your password have been sent.' in response.data
+        )
+
+    def test_forgot_password_request_nonexistent_email(self):
+        response = self.app.post('/forgot_password', data=dict(
+            email='nonexistent@example.com'
+        ), follow_redirects=True)
+        self.assertEqual(response.status_code, 200) # Should redirect to login
+        self.assertIn(b'Sign In', response.data) # Back on login page
+        # Should show the generic message for security (doesn't reveal if email exists)
+        self.assertIn(b'If an account with that email exists, instructions to reset your password have been sent.', response.data)
+
+    def test_reset_password_with_valid_token(self):
+        # Register user
+        self._register_user(self.test_user_username, self.test_user_email, self.test_user_password)
+        user = User.query.filter_by(email=self.test_user_email).first()
+        self.assertIsNotNone(user)
+
+        token = user.get_reset_password_token()
+        self.assertIsNotNone(token)
+
+        # GET the reset password page
+        response_get = self.app.get(f'/reset_password/{token}')
+        self.assertEqual(response_get.status_code, 200)
+        self.assertIn(b'Reset Password', response_get.data) # Check for page title or specific form elements
+
+        # POST new password
+        new_password = 'newpassword123'
+        response_post = self.app.post(f'/reset_password/{token}', data=dict(
+            password=new_password,
+            confirm_password=new_password
+        ), follow_redirects=True)
+        self.assertEqual(response_post.status_code, 200) # Redirects to login
+        self.assertIn(b'Your password has been updated!', response_post.data)
+        self.assertIn(b'Sign In', response_post.data)
+
+        # Attempt login with new password
+        login_response_new_pw = self._login_user(self.test_user_email, new_password)
+        self.assertEqual(login_response_new_pw.status_code, 200)
+        self.assertIn(bytes(f'Hi, {self.test_user_username}!', 'utf-8'), login_response_new_pw.data)
+
+        # Attempt login with old password (should fail)
+        self._logout_user() # Logout first
+        login_response_old_pw = self._login_user(self.test_user_email, self.test_user_password)
+        self.assertEqual(login_response_old_pw.status_code, 200) # Stays on login page
+        self.assertIn(b'Login Unsuccessful. Please check email and password', login_response_old_pw.data)
+
+    def test_reset_password_with_invalid_token(self):
+        new_password = 'newpassword123'
+        # POST to reset password with an invalid token
+        response_post = self.app.post('/reset_password/invalidtoken123', data=dict(
+            password=new_password,
+            confirm_password=new_password
+        ), follow_redirects=True)
+        self.assertEqual(response_post.status_code, 200) # Redirects to forgot_password
+        self.assertIn(b'That is an invalid or expired token.', response_post.data)
+        self.assertIn(b'Forgot Password', response_post.data) # Check if on forgot password page
+
+    def test_reset_password_with_expired_token(self):
+        import time # Ensure time is imported at top of file or here
+        # Register user
+        self._register_user(self.test_user_username, self.test_user_email, self.test_user_password)
+        user = User.query.filter_by(email=self.test_user_email).first()
+        self.assertIsNotNone(user)
+
+        # Generate token with short expiry (1 second)
+        token = user.get_reset_password_token(expires_sec=1)
+        self.assertIsNotNone(token)
+
+        # Wait for token to expire
+        time.sleep(2)
+
+        new_password = 'newpassword123'
+        # POST new password with expired token
+        response_post = self.app.post(f'/reset_password/{token}', data=dict(
+            password=new_password,
+            confirm_password=new_password
+        ), follow_redirects=True)
+        self.assertEqual(response_post.status_code, 200) # Redirects to forgot_password
+        self.assertIn(b'That is an invalid or expired token.', response_post.data)
+        self.assertIn(b'Forgot Password', response_post.data) # Check if on forgot password page
+
+    # --- Admin Authorization Tests ---
+    def test_admin_route_access_as_non_admin(self):
+        self._register_user(self.test_user_username, self.test_user_email, self.test_user_password)
+        self._login_user(self.test_user_email, self.test_user_password)
+
+        response = self.app.get('/admin/virtual_goods', follow_redirects=True)
+        # Non-admins are often redirected to index or a generic error page.
+        # The flash message is key. Status code might be 200 if redirected to a page that exists.
+        self.assertIn(b'You do not have permission to access this page.', response.data)
+        # Check that we are NOT on an admin page (e.g., check for content NOT present, or if redirected to index)
+        self.assertNotIn(b'Admin Dashboard - Virtual Goods', response.data)
+        # Check if redirected to index or a known non-admin page
+        # This depends on how @admin_required decorator handles unauthorized access.
+        # Assuming it redirects to index and flashes a message.
+        self.assertTrue(b'Welcome to Your App' in response.data or b'Hi, testuser!' in response.data)
+
+
+    def test_admin_route_access_as_admin(self):
+        # Register user
+        self._register_user(self.test_user_username, "admin@example.com", self.test_user_password)
+
+        # Promote user to admin
+        admin_user = User.query.filter_by(email="admin@example.com").first()
+        self.assertIsNotNone(admin_user)
+        admin_user.is_admin = True
+        db.session.commit()
+
+        # Login as admin
+        self._login_user("admin@example.com", self.test_user_password)
+
+        response = self.app.get('/admin/virtual_goods', follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Admin Dashboard - Virtual Goods', response.data) # Check for admin-specific content
+
+    def test_admin_route_access_as_anonymous(self):
+        response = self.app.get('/admin/virtual_goods', follow_redirects=False) # Don't follow, check redirect location
+        self.assertEqual(response.status_code, 302) # Expect redirect to login
+        self.assertTrue(response.location.endswith(url_for('main.login', next='/admin/virtual_goods')))
+
+        # Optionally, follow redirect and check login page content
+        response_followed = self.app.get('/admin/virtual_goods', follow_redirects=True)
+        self.assertEqual(response_followed.status_code, 200) # Login page loads
+        self.assertIn(b'Sign In', response_followed.data)
+        self.assertIn(b'You must be logged in to access this page.', response_followed.data)
+
+
+    # --- Access to Protected Routes by Anonymous User ---
+    def test_protected_route_access_as_anonymous(self):
+        response = self.app.get('/edit_profile', follow_redirects=False) # Accessing a @login_required route
+        self.assertEqual(response.status_code, 302) # Expect redirect
+        # Check if the redirect location is the login page
+        # The 'next' parameter should point back to '/edit_profile'
+        self.assertTrue(response.location.endswith(url_for('main.login', next='/edit_profile')))
+
+        # Follow redirect to ensure login page is rendered with flash message
+        response_followed = self.app.get('/edit_profile', follow_redirects=True)
+        self.assertEqual(response_followed.status_code, 200) # Login page should load
+        self.assertIn(b'Sign In', response_followed.data) # Check for login page content
+        self.assertIn(b'You must be logged in to access this page.', response_followed.data)
+
 
 if __name__ == '__main__':
     unittest.main()

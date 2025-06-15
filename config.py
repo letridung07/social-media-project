@@ -2,6 +2,7 @@ import os
 
 class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'you-will-never-guess'
+    DEBUG = False
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
         'sqlite:///' + os.path.join(os.path.abspath(os.path.dirname(__file__)), 'app.db')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
@@ -10,6 +11,7 @@ class Config:
     VIDEO_UPLOAD_FOLDER = 'app/static/videos' # New config for post videos
     UPLOAD_FOLDER_GROUP_IMAGES = 'app/static/group_images' # For group images
     STORY_MEDIA_UPLOAD_FOLDER = os.path.join('app', 'static', 'story_media') # For story media
+    MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16 MB limit
 
     # Flask-Mail configuration
     MAIL_SERVER = os.environ.get('MAIL_SERVER', 'smtp.googlemail.com')
@@ -30,6 +32,8 @@ class Config:
     STRIPE_PUBLISHABLE_KEY = os.environ.get('STRIPE_PUBLISHABLE_KEY') or 'your_stripe_publishable_key'
     STRIPE_SECRET_KEY = os.environ.get('STRIPE_SECRET_KEY') or 'your_stripe_secret_key'
     STRIPE_WEBHOOK_SECRET = os.environ.get('STRIPE_WEBHOOK_SECRET') or 'your_stripe_webhook_secret'
+    SESSION_COOKIE_SECURE = True
+    SESSION_COOKIE_SAMESITE = 'Lax'
 
 class TestingConfig(Config):
     TESTING = True

@@ -2,10 +2,12 @@ from flask import Blueprint, request, jsonify
 from app.models import Application, User # User is needed to fetch app owner
 from app.oauth2 import generate_access_token, ACCESS_TOKEN_EXPIRES_IN_SECONDS
 from app import db # For database session if needed directly, though models handle it
+from app import limiter # Assuming limiter is the instance from app/__init__.py
 
 api_bp = Blueprint('api', __name__)
 
 @api_bp.route('/oauth/token', methods=['POST'])
+@limiter.limit("60 per hour; 5 per minute") # Stricter: 60 per hour, 5 per minute
 def oauth_token():
     """
     OAuth 2.0 Token Endpoint.
