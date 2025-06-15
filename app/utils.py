@@ -318,7 +318,7 @@ def process_mentions(text_content: str, owner_object, actor_user: User) -> list[
 
     return mentioned_users_objects
 
-from flask import url_for # This import is already present globally
+# Removed duplicate import of url_for; already imported globally on line 4
 from markupsafe import Markup, escape # This import is already present globally
 
 # Ensure User and func are available (they are, from global imports in this file)
