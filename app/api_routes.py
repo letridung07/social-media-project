@@ -7,7 +7,7 @@ from app import limiter # Assuming limiter is the instance from app/__init__.py
 api_bp = Blueprint('api', __name__)
 
 @api_bp.route('/oauth/token', methods=['POST'])
-@limiter.limit("60/hour;5/minute") # Stricter: 60 per hour, 5 per minute
+@limiter.limit("60 per hour; 5 per minute") # Stricter: 60 per hour, 5 per minute
 def oauth_token():
     """
     OAuth 2.0 Token Endpoint.
