@@ -6,6 +6,8 @@ from flask_socketio import SocketIO
 from flask_mail import Mail # Import Mail
 from flask_migrate import Migrate # Import Migrate
 from flask_caching import Cache # Import Cache
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 # from bootstrap_flask import Bootstrap # Import Bootstrap
 from config import Config
 # from app.scheduler import init_scheduler # Import the scheduler initializer MOVED
@@ -18,6 +20,13 @@ login_manager = LoginManager() # Initialize LoginManager
 socketio = SocketIO()
 mail = Mail() # Create Mail instance
 migrate = Migrate() # Create Migrate instance
+
+limiter = Limiter(
+    key_func=get_remote_address,
+    default_limits=["100 per hour", "20 per minute"],
+    storage_uri="memory://" # For simplicity in this environment; consider Redis in production
+)
+
 login_manager.login_view = 'main.login' # Corrected login view
 login_manager.login_message_category = 'info'
 
@@ -33,6 +42,7 @@ def create_app(config_class=Config):
     mail.init_app(app) # Initialize Mail with the app
     migrate.init_app(app, db) # Initialize Migrate with the app and db
     cache.init_app(app, config={'CACHE_TYPE': 'SimpleCache'}) # Initialize Cache with the app
+    limiter.init_app(app)
     # bootstrap.init_app(app) # Initialize Bootstrap with the app
 
     from app.routes import main as main_blueprint
@@ -75,6 +85,28 @@ def create_app(config_class=Config):
     app.jinja_env.filters['linkify_mentions'] = linkify_mentions
 
     from app import events # noqa
+
+    @app.after_request
+    def add_security_headers(response):
+        csp_policy = (
+            "default-src 'self';"
+            " img-src 'self' data: https:;"  # Allow images from self, data URIs, and any HTTPS source
+            " style-src 'self' 'unsafe-inline' https://stackpath.bootstrapcdn.com https://cdn.jsdelivr.net https://fonts.googleapis.com;" # Common CDNs for styles
+            " script-src 'self' https://code.jquery.com https://cdnjs.cloudflare.com https://stackpath.bootstrapcdn.com https://cdn.jsdelivr.net;" # Common CDNs for scripts
+            " font-src 'self' https://fonts.gstatic.com data:;" # Allow fonts from self, Google, and data URIs (for some icon fonts)
+            " object-src 'none';"
+            " frame-ancestors 'self';"
+            " connect-src 'self' wss: ws:;" # Allow self, and WebSockets (secure and insecure for development)
+            " base-uri 'self';"
+            " form-action 'self';"
+        )
+        response.headers['Content-Security-Policy'] = csp_policy
+        # Add other security headers here if needed in the future, e.g., X-Content-Type-Options
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Frame-Options'] = 'SAMEORIGIN' # Though frame-ancestors in CSP is more modern
+        response.headers['X-XSS-Protection'] = '1; mode=block' # Older browser XSS protection
+        return response
+
     return app
 
 

@@ -1,7 +1,8 @@
 import unittest
 import io # For simulating file uploads
+from flask import url_for # Added for consistency if needed
 from app import create_app, db
-from app.models import User
+from app.models import User, Post, PRIVACY_PUBLIC, PRIVACY_PRIVATE, PRIVACY_FOLLOWERS # Added Post and privacy constants
 from config import TestingConfig
 from app.utils import save_picture # For potential mocking or direct call
 import os
@@ -209,6 +210,79 @@ class ProfileTestCase(unittest.TestCase):
     # in the same way as if the URL contained the username to be edited.
     # The protection is that you can only GET/POST to /edit_profile for yourself.
     # test_view_another_users_profile already checks that the "Edit Profile" link isn't there.
+
+    # --- Profile Privacy Authorization Tests ---
+    def test_view_private_profile_unauthorized(self):
+        # user1 sets their profile to private
+        self.user1.profile_visibility = PRIVACY_PRIVATE
+        db.session.commit()
+
+        # user2 logs in
+        self._login(self.user2.email, 'password456')
+        response = self.app.get(url_for('main.profile', username=self.user1.username))
+        self.assertEqual(response.status_code, 200) # Page might load but show limited info + flash
+        self.assertIn(f"{self.user1.username}'s profile is private.".encode(), response.data)
+        # Check that user1's bio (sensitive info) is not visible
+        self.assertNotIn(self.user1.bio.encode(), response.data)
+        self._logout()
+
+    def test_view_followers_only_profile_as_non_follower(self):
+        # user1 sets their profile to followers only
+        self.user1.profile_visibility = PRIVACY_FOLLOWERS
+        # user1 creates a post to check if it's visible
+        post_by_user1 = Post(body="User1's test post for followers profile", author=self.user1)
+        db.session.add(post_by_user1)
+        db.session.commit()
+
+        # user2 (not following user1) logs in
+        self._login(self.user2.email, 'password456')
+        response = self.app.get(url_for('main.profile', username=self.user1.username))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(f"{self.user1.username}'s profile is visible only to followers.".encode(), response.data)
+        self.assertNotIn(post_by_user1.body.encode(), response.data) # Posts should not be visible
+        self.assertNotIn(self.user1.bio.encode(), response.data) # Bio might also be hidden
+        self._logout()
+
+    def test_view_followers_only_profile_as_follower(self):
+        # user1 sets their profile to followers only
+        self.user1.profile_visibility = PRIVACY_FOLLOWERS
+        post_by_user1 = Post(body="User1's test post for followers profile (follower view)", author=self.user1)
+        db.session.add(post_by_user1)
+        db.session.commit()
+
+        # user2 logs in and follows user1
+        self._login(self.user2.email, 'password456')
+        self.user2.follow(self.user1)
+        db.session.commit()
+
+        response = self.app.get(url_for('main.profile', username=self.user1.username))
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn(f"{self.user1.username}'s profile is visible only to followers.".encode(), response.data)
+        self.assertIn(post_by_user1.body.encode(), response.data) # Post should be visible
+        self.assertIn(self.user1.bio.encode(), response.data) # Bio should be visible
+        self._logout()
+
+    def test_view_public_profile_by_anyone(self):
+        # user1's profile is public by default (or set it explicitly)
+        self.user1.profile_visibility = PRIVACY_PUBLIC
+        post_by_user1 = Post(body="User1's public profile post", author=self.user1)
+        db.session.add(post_by_user1)
+        db.session.commit()
+
+        # user2 (logged in) views user1's profile
+        self._login(self.user2.email, 'password456')
+        response_user2 = self.app.get(url_for('main.profile', username=self.user1.username))
+        self.assertEqual(response_user2.status_code, 200)
+        self.assertIn(post_by_user1.body.encode(), response_user2.data)
+        self.assertIn(self.user1.bio.encode(), response_user2.data)
+        self._logout()
+
+        # Anonymous user views user1's profile
+        response_anon = self.app.get(url_for('main.profile', username=self.user1.username))
+        self.assertEqual(response_anon.status_code, 200)
+        self.assertIn(post_by_user1.body.encode(), response_anon.data)
+        self.assertIn(self.user1.bio.encode(), response_anon.data)
+
 
 if __name__ == '__main__':
     unittest.main()

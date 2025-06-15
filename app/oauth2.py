@@ -46,8 +46,8 @@ def validate_access_token(token_string):
     # Check if token is expired
     if access_token.expires_at < datetime.now(timezone.utc):
         # Optionally, clean up expired tokens
-        # db.session.delete(access_token)
-        # db.session.commit()
+        db.session.delete(access_token)
+        db.session.commit()
         return None
 
     # Check if token was revoked (if an is_revoked field exists and is True)
