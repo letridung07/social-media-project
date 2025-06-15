@@ -4,7 +4,7 @@ import os
 import io # For creating mock files
 from flask import current_app, url_for # Added url_for
 from app import create_app, db
-from app.models import User, Post, MediaItem, Mention, Comment, Notification, PRIVACY_PUBLIC, PRIVACY_PRIVATE, PRIVACY_FOLLOWERS, FriendList # Added MediaItem and privacy constants
+from app.models import User, Post, MediaItem, Mention, Comment, Notification, PRIVACY_PUBLIC, PRIVACY_PRIVATE, PRIVACY_FOLLOWERS # Added MediaItem and privacy constants
 from app.utils import process_mentions, linkify_mentions # Added process_mentions and linkify_mentions
 from config import TestingConfig # Using TestingConfig for tests
 from werkzeug.datastructures import FileStorage # For creating mock FileStorage object
