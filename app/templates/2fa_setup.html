@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% import "bootstrap/wtf.html" as wtf %}
+
+{% block title %}Setup Two-Factor Authentication{% endblock %}
+
+{% block app_content %}
+<div class="container">
+    <h2>Setup Two-Factor Authentication</h2>
+    {% if current_user.otp_enabled %}
+        <div class="alert alert-success">
+            Two-Factor Authentication is already enabled on your account.
+        </div>
+        <p><a href="{{ url_for('main.edit_profile') }}" class="btn btn-primary">Manage 2FA</a></p> {# Or a dedicated manage_2fa route #}
+    {% else %}
+        <p>Scan the QR code below with your authenticator app (e.g., Google Authenticator, Authy). If you cannot scan the QR code, you can manually enter the secret key.</p>
+
+        <div class="row">
+            <div class="col-md-6">
+                <h4>QR Code</h4>
+                {% if qr_code_image_data %}
+                    <img src="data:image/png;base64,{{ qr_code_image_data }}" alt="2FA QR Code" class="img-fluid mb-3">
+                {% else %}
+                    <p class="text-danger">Could not generate QR code image.</p>
+                {% endif %}
+
+                <h4>Secret Key</h4>
+                <p><code>{{ otp_secret_key }}</code></p>
+                <hr>
+                <h4>Backup Codes</h4>
+                <p>Save these backup codes in a safe place. They can be used to access your account if you lose access to your authenticator app. Each code can only be used once.</p>
+                <ul class="list-group mb-3">
+                    {% for backup_code in backup_codes %}
+                        <li class="list-group-item"><code>{{ backup_code }}</code></li>
+                    {% endfor %}
+                </ul>
+            </div>
+            <div class="col-md-6">
+                <h4>Verify and Enable 2FA</h4>
+                <p>Enter the 6-digit code from your authenticator app to verify and enable 2FA.</p>
+                <form method="POST" action="{{ url_for('main.setup_2fa') }}">
+                    {{ form.hidden_tag() }}
+                    <div class="form-group">
+                        {{ form.totp_code.label(class="form-label") }}
+                        {{ form.totp_code(class="form-control form-control-lg", placeholder="Enter 6-digit code") }}
+                        {% if form.totp_code.errors %}
+                            <div class="invalid-feedback d-block">
+                                {% for error in form.totp_code.errors %}{{ error }}{% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+                    <div class="form-group mt-3">
+                        {{ form.submit(class="btn btn-success") }}
+                    </div>
+                </form>
+            </div>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

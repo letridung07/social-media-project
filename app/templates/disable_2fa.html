@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% import "bootstrap/wtf.html" as wtf %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block app_content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <h2>{{ title }}</h2>
+            <p>To disable Two-Factor Authentication, please confirm your identity by providing your current password and an authenticator code.</p>
+
+            <form method="POST" action="{{ url_for('main.disable_2fa') }}">
+                {{ form.hidden_tag() }}
+                <div class="form-group mb-3">
+                    {{ form.password.label(class="form-label") }}
+                    {{ form.password(class="form-control form-control-lg", placeholder="Enter your password") }}
+                    {% if form.password.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.password.errors %}{{ error }}{% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+                <div class="form-group mb-3">
+                    {{ form.totp_code.label(class="form-label") }}
+                    {{ form.totp_code(class="form-control form-control-lg", placeholder="Enter 6-digit code from authenticator") }}
+                    {% if form.totp_code.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.totp_code.errors %}{{ error }}{% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+                <div class="form-group mt-4">
+                    {{ form.submit(class="btn btn-danger w-100") }}
+                </div>
+            </form>
+            <hr>
+            <p class="text-center">
+                <a href="{{ url_for('main.edit_profile') }}">Cancel</a>
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}

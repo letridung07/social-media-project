@@ -25,6 +25,9 @@
                 <li class="nav-item">
                     <a class="nav-link" href="{{ url_for('main.index') }}">Home</a>
                 </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('main.trending_hashtags') }}">Trending</a>
+                </li>
                 {% if current_user.is_authenticated %}
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('main.profile', username=current_user.username) }}">My Profile</a>
@@ -56,8 +59,23 @@
                 {% endif %}
             </ul>
 
+            <!-- Language Selector START -->
+            <ul class="navbar-nav ml-auto"> {# Changed mr-auto to ml-auto to push to the right, or just before search #}
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" id="languageDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                        <i class="fas fa-globe"></i> {{ _('Language') }}
+                    </a>
+                    <div class="dropdown-menu dropdown-menu-right" aria-labelledby="languageDropdown">
+                        {% for lang_code, lang_name in config.LANGUAGES.items() %}
+                        <a class="dropdown-item" href="{{ url_for('main.set_language', lang_code=lang_code) }}">{{ lang_name }}</a>
+                        {% endfor %}
+                    </div>
+                </li>
+            </ul>
+            <!-- Language Selector END -->
+
             <!-- Theme Toggle Switch START -->
-            <div class="custom-control custom-switch ml-auto my-2 my-lg-0 mr-lg-2">
+            <div class="custom-control custom-switch my-2 my-lg-0 mr-lg-2"> {# Removed ml-auto from here #}
                 <input type="checkbox" class="custom-control-input" id="themeToggleSwitch">
                 <label class="custom-control-label" for="themeToggleSwitch" style="color: white;">Toggle Theme</label>
             </div>

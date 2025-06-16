@@ -1,0 +1,20 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: YourAppName 1.0\n"
+"Report-Msgid-Bugs-To: email@example.com\n"
+"POT-Creation-Date: 2024-05-22 10:00+0000\n"
+"PO-Revision-Date: 2024-05-22 10:00+0000\n"
+"Last-Translator: Automatically Generated <email@example.com>\n"
+"Language-Team: Spanish <yourteam@example.com>\n"
+"Language: es\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+# Example translation (won't be compiled, just for structure)
+# msgid "Login"
+# msgstr "Iniciar Sesión"
+
+# msgid "Sign In"
+# msgstr "Acceder"

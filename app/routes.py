@@ -4,18 +4,25 @@ from datetime import datetime, timezone
 import os
 import re # For hashtag parsing
 from datetime import datetime, timezone
-from flask import Blueprint, render_template, redirect, url_for, flash, request, abort, current_app, jsonify, make_response # Import jsonify, make_response
+from flask import Blueprint, render_template, redirect, url_for, flash, request, abort, current_app, jsonify, make_response, session
 from flask_login import login_user, current_user, logout_user, login_required
-from sqlalchemy import or_, func, and_ # Import func, and_
+from sqlalchemy import or_, func, and_
+from flask_babel import lazy_gettext as _l, gettext
 import io # For CSV export
 import csv # For CSV export
 from sqlalchemy.orm import joinedload # Import joinedload
 from werkzeug.utils import secure_filename
 from app import db, socketio, cache # Import cache
-from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm, FriendListForm, AddUserToFriendListForm, PRIVACY_CHOICES, ArticleForm, AudioPostForm, SubscriptionPlanForm # Added AudioPostForm, SubscriptionPlanForm
+from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm, FriendListForm, AddUserToFriendListForm, PRIVACY_CHOICES, ArticleForm, AudioPostForm, SubscriptionPlanForm, TOTPSetupForm, Verify2FAForm, Disable2FAForm, ConfirmPasswordAndTOTPForm # Added Disable2FAForm, ConfirmPasswordAndTOTPForm
 from app.models import User, Post, MediaItem, Like, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus, Mention, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE, FriendList, Article, AudioPost, SubscriptionPlan, UserSubscription # Added AudioPost, SubscriptionPlan, UserSubscription
 from app.utils import save_picture, save_group_image, save_story_media, process_mentions, get_historical_engagement, get_top_performing_hashtags, get_top_performing_groups, save_media_file, slugify, save_audio_file, get_audio_duration # Added save_audio_file, get_audio_duration
 from app.email_utils import send_password_reset_email # Import email utility
+import pyotp
+import qrcode
+import io
+import base64
+import json
+from passlib.hash import sha256_crypt
 import secrets # For slug generation
 from wtforms.validators import DataRequired # For dynamic validator modification
 from app.utils import generate_ics_file, subscription_required # For ICS export
@@ -116,7 +123,7 @@ def index():
         posts = posts_pagination.items
 
     comment_form = CommentForm()
-    return render_template('index.html', title='Home', posts=posts, comment_form=comment_form, pagination=posts_pagination)
+    return render_template('index.html', title=_l('Home'), posts=posts, comment_form=comment_form, pagination=posts_pagination)
 
 
 from app.models import post_hashtags # For hashtag popularity sort
@@ -227,16 +234,18 @@ def search():
     else:
         temp_title_parts = []
         if query_term:
-            temp_title_parts.append(f'Results for "{query_term}"')
+            temp_title_parts.append(_l('Results for "%(query)s"', query=query_term))
             if category != 'all':
-                temp_title_parts.append(f'in {category.capitalize()}')
+                temp_title_parts.append(_l('in %(category)s', category=category.capitalize()))
             if sort_by != 'relevance':
-                temp_title_parts.append(f'sorted by {sort_by.capitalize()}')
+                temp_title_parts.append(_l('sorted by %(sort_by)s', sort_by=sort_by.capitalize()))
 
         if temp_title_parts:
             final_title = " ".join(temp_title_parts)
+        elif recommendations:
+             final_title = _l('Recommended for You')
         else:
-            final_title = 'Search'
+            final_title = _l('Search')
 
     comment_form = CommentForm()
 
@@ -262,7 +271,7 @@ def search_recommendations():
     Returns data in JSON format.
     """
     if current_user.is_anonymous: # Should be caught by @login_required but good for safety with cache
-        return jsonify({'error': 'Authentication required.'}), 401
+        return jsonify({'error': _l('Authentication required.')}), 401
 
     recommendations = get_recommendations(current_user.id)
 
@@ -339,19 +348,29 @@ def hashtag_feed(tag_text):
     normalized_tag_text = tag_text.lower()
     hashtag = Hashtag.query.filter_by(tag_text=normalized_tag_text).first()
     posts = []
-    title = f'No posts found for #{normalized_tag_text}'
+    title = _l('No posts found for #%(tag)s', tag=normalized_tag_text)
 
     if hashtag:
         # Only show published posts in hashtag feeds
         posts = hashtag.posts.filter(Post.is_published == True).order_by(Post.timestamp.desc()).all()
-        title = f'Posts tagged #{hashtag.tag_text}'
+        title = _l('Posts tagged #%(tag)s', tag=hashtag.tag_text)
         if not posts: # Hashtag exists but no posts are associated or published
-             title = f'No published posts found for #{hashtag.tag_text}'
-    else: # Hashtag does not exist
-        title = f'No posts found for #{normalized_tag_text}'
+             title = _l('No published posts found for #%(tag)s', tag=hashtag.tag_text)
+    # else: title remains "No posts found..."
+
+    return render_template('hashtag_feed.html', title=title, hashtag=hashtag, posts=posts, query=normalized_tag_text) # pass normalized
 
 
-    return render_template('hashtag_feed.html', title=title, hashtag=hashtag, posts=posts, query=tag_text)
+import random
+
+@main.route('/trending_hashtags')
+def trending_hashtags():
+    all_hashtags = Hashtag.query.all()
+    if len(all_hashtags) > 10:
+        trending = random.sample(all_hashtags, 10)
+    else:
+        trending = all_hashtags
+    return render_template('trending_hashtags.html', title=_l("Trending Hashtags"), hashtags=trending)
 
 
 @main.route('/register', methods=['GET', 'POST'])
@@ -362,9 +381,9 @@ def register():
         user.set_password(form.password.data)
         db.session.add(user)
         db.session.commit()
-        flash('Congratulations, you are now a registered user!', 'success')
+        flash(_l('Congratulations, you are now a registered user!'), 'success')
         return redirect(url_for('main.login'))
-    return render_template('register.html', title='Register', form=form)
+    return render_template('register.html', title=_l('Register'), form=form)
 
 @main.route('/login', methods=['GET', 'POST'])
 def login():
@@ -374,17 +393,52 @@ def login():
     if form.validate_on_submit():
         user = User.query.filter_by(email=form.email.data).first()
         if user and user.check_password(form.password.data):
-            login_user(user, remember=form.remember_me.data)
-            next_page = request.args.get('next')
-            return redirect(next_page) if next_page else redirect(url_for('main.index'))
+            if user.otp_enabled:
+                session['user_id_for_2fa'] = user.id
+                session['remember_me_for_2fa'] = form.remember_me.data
+                # Store next_page in session if it exists, to redirect after 2FA
+                next_page_for_2fa = request.args.get('next')
+                if next_page_for_2fa:
+                    session['next_page_for_2fa'] = next_page_for_2fa
+                else:
+                    session.pop('next_page_for_2fa', None) # Clear if not present
+                return redirect(url_for('main.verify_2fa'))
+            else:
+                login_user(user, remember=form.remember_me.data)
+                next_page = request.args.get('next')
+                return redirect(next_page) if next_page else redirect(url_for('main.index'))
         else:
             current_app.logger.warning(f"Failed login attempt for email '{form.email.data}' from IP: {request.remote_addr}")
-            flash('Login Unsuccessful. Please check email and password', 'danger')
-    return render_template('login.html', title='Sign In', form=form)
+            flash(_l('Login Unsuccessful. Please check email and password'), 'danger')
+    return render_template('login.html', title=_l('Sign In'), form=form)
 
 @main.route('/logout')
 def logout():
     logout_user()
+    flash(_l('You have been logged out.'), 'info')
+    return redirect(url_for('main.index'))
+
+@main.route('/language/<lang_code>')
+def set_language(lang_code):
+    if lang_code in current_app.config['LANGUAGES']:
+        session['language'] = lang_code
+        refresh() # Refresh Babel translations for the current request
+        flash(_l('Language changed to %(language)s.', language=current_app.config['LANGUAGES'][lang_code]), 'success')
+    else:
+        flash(_l('Invalid language selected.'), 'warning')
+
+    # Try to redirect to the previous page, otherwise to index
+    # Using request.referrer requires careful validation in production to avoid open redirect vulnerabilities
+    # For simplicity, redirecting to index or a safe default.
+    # A more robust solution might store the intended target URL in session before redirecting to language change.
+    referrer = request.referrer
+    if referrer and url_for('main.set_language', lang_code=lang_code, _external=False) in referrer: # Avoid self-referral loop
+        return redirect(url_for('main.index'))
+
+    # Basic check to prevent open redirect, ensure it's a local URL
+    # This check is very basic. A more robust check would parse the URL.
+    if referrer and referrer.startswith(request.host_url):
+         return redirect(referrer)
     return redirect(url_for('main.index'))
 
 
@@ -400,19 +454,19 @@ def forgot_password():
             reset_url = url_for('main.reset_password', token=token, _external=True)
             email_sent = send_password_reset_email(user.email, user.username, reset_url)
             if email_sent:
-                flash('An email has been sent with instructions to reset your password.', 'info')
+                flash(_l('An email has been sent with instructions to reset your password.'), 'info')
             else:
-                flash('There was an issue sending the password reset email. Please try again later or contact support.', 'danger')
+                flash(_l('There was an issue sending the password reset email. Please try again later or contact support.'), 'danger')
         else:
             # Generic message for security (doesn't reveal if email exists or not)
-            # flash('If an account with that email exists, a password reset link has been sent.', 'info')
+            # flash(_l('If an account with that email exists, a password reset link has been sent.'), 'info')
             # To avoid user confusion if email sending fails, it's better to give the success message always here
             # as the email sending failure is already handled above by a more specific error.
             # However, for strict security against user enumeration, the generic message is preferred.
             # Let's stick to the more user-friendly approach for now, assuming logger captures send errors.
-             flash('If an account with that email exists, instructions to reset your password have been sent.', 'info')
+             flash(_l('If an account with that email exists, instructions to reset your password have been sent.'), 'info')
         return redirect(url_for('main.login'))
-    return render_template('forgot_password.html', title='Forgot Password', form=form)
+    return render_template('forgot_password.html', title=_l('Forgot Password'), form=form)
 
 
 @main.route('/reset_password/<token>', methods=['GET', 'POST'])
@@ -421,17 +475,17 @@ def reset_password(token):
         return redirect(url_for('main.index'))
     user = User.verify_reset_password_token(token)
     if not user:
-        flash('That is an invalid or expired token.', 'warning')
+        flash(_l('That is an invalid or expired token.'), 'warning')
         return redirect(url_for('main.forgot_password'))
 
     form = ResetPasswordForm()
     if form.validate_on_submit():
         user.set_password(form.password.data)
         db.session.commit()
-        flash('Your password has been updated! You are now able to log in.', 'success')
+        flash(_l('Your password has been updated! You are now able to log in.'), 'success')
         return redirect(url_for('main.login'))
 
-    return render_template('reset_password_form.html', title='Reset Password', form=form, token=token)
+    return render_template('reset_password_form.html', title=_l('Reset Password'), form=form, token=token)
 
 
 @main.route('/user/<username>')
@@ -445,12 +499,12 @@ def profile(username):
 
     if user.id != getattr(current_user, 'id', None): # Not viewing own profile
         if user.profile_visibility == PRIVACY_PRIVATE:
-            flash(f"{user.username}'s profile is private.", "info")
+            flash(_l("%(username)s's profile is private.", username=user.username), "info")
             profile_is_private = True # Flag for template
             # posts = [] # Ensure no posts are passed if profile is fully private to others
         elif user.profile_visibility == PRIVACY_FOLLOWERS:
             if not current_user.is_authenticated or not current_user.is_following(user):
-                flash(f"{user.username}'s profile is visible only to followers.", "info")
+                flash(_l("%(username)s's profile is visible only to followers.", username=user.username), "info")
                 profile_is_limited = True # Flag for template
                 # posts = [] # Ensure no posts are passed if profile is limited
 
@@ -541,10 +595,10 @@ def edit_profile():
                     old_picture_path = os.path.join(current_app.root_path, 'static/images', old_picture_url)
                     if os.path.exists(old_picture_path):
                         os.remove(old_picture_path)
-                        # flash('Old profile picture removed.', 'info') # Optional feedback
+                        # flash(_l('Old profile picture removed.'), 'info') # Optional feedback
                 except Exception as e:
                     current_app.logger.error(f"Error deleting old profile picture {old_picture_url}: {e}")
-                    # flash('Error removing old profile picture.', 'warning') # Optional feedback
+                    # flash(_l('Error removing old profile picture.'), 'warning') # Optional feedback
             current_user.profile_picture_url = picture_file
 
         current_user.bio = form.bio.data
@@ -556,13 +610,199 @@ def edit_profile():
         db.session.commit()
         # Invalidate cache for the profile page of the current user
         cache.delete_key(make_user_specific_cache_key(request_path=url_for('main.profile', username=current_user.username)))
-        flash('Your profile has been updated!', 'success')
+        flash(_l('Your profile has been updated!'), 'success')
         return redirect(url_for('main.profile', username=current_user.username))
     elif request.method == 'GET':
         form.bio.data = current_user.bio # Already handled by obj=current_user for WTForms-Alchemy
         form.theme.data = current_user.theme_preference or 'default' # Populate theme for GET
         # The profile picture field is not pre-filled.
-    return render_template('edit_profile.html', title='Edit Profile', form=form)
+    return render_template('edit_profile.html', title=_l('Edit Profile'), form=form)
+
+
+@main.route('/2fa/verify', methods=['GET', 'POST'])
+def verify_2fa():
+    if 'user_id_for_2fa' not in session:
+        flash('2FA process not initiated. Please login first.', 'warning')
+        return redirect(url_for('main.login'))
+
+    user_id = session['user_id_for_2fa']
+    user = User.query.get(user_id)
+
+    if not user:
+        flash('User not found. Please try logging in again.', 'danger')
+        session.pop('user_id_for_2fa', None)
+        session.pop('remember_me_for_2fa', None)
+        session.pop('next_page_for_2fa', None)
+        return redirect(url_for('main.login'))
+
+    form = Verify2FAForm()
+    if form.validate_on_submit():
+        submitted_code = form.code.data
+        totp_verifier = pyotp.TOTP(user.otp_secret)
+
+        verified = False
+        # Try verifying as TOTP
+        if totp_verifier.verify(submitted_code):
+            verified = True
+        else:
+            # Try verifying as backup code
+            if user.otp_backup_codes:
+                hashed_backup_codes = json.loads(user.otp_backup_codes)
+                remaining_hashed_codes = []
+                for hashed_code in hashed_backup_codes:
+                    if sha256_crypt.verify(submitted_code, hashed_code):
+                        verified = True
+                        # Backup code used, do not add it back to remaining_hashed_codes
+                        flash('Backup code used. Remember to generate new codes if you run low.', 'info')
+                        continue # Skip adding this code back
+                    remaining_hashed_codes.append(hashed_code)
+
+                if verified:
+                    user.otp_backup_codes = json.dumps(remaining_hashed_codes)
+                    # db.session.commit() # Commit will happen with login_user or at end of request
+
+        if verified:
+            remember_me = session.get('remember_me_for_2fa', False)
+            login_user(user, remember=remember_me)
+
+            next_page = session.get('next_page_for_2fa') or url_for('main.index')
+
+            # Clear 2FA session variables
+            session.pop('user_id_for_2fa', None)
+            session.pop('remember_me_for_2fa', None)
+            session.pop('next_page_for_2fa', None)
+
+            flash('Successfully logged in.', 'success')
+            return redirect(next_page)
+        else:
+            flash('Invalid verification code.', 'danger')
+            # Potentially add rate limiting here in a real application
+
+    return render_template('2fa_verify.html', title='Verify 2FA', form=form)
+
+
+@main.route('/2fa/setup', methods=['GET', 'POST'])
+@login_required
+def setup_2fa():
+    if current_user.otp_enabled:
+        flash('Two-factor authentication is already enabled.', 'info')
+        return redirect(url_for('main.profile', username=current_user.username)) # Or a dedicated manage_2fa page
+
+    form = TOTPSetupForm()
+
+    # Generate new secret and backup codes for GET request or if POST validation fails and needs re-display
+    # Store them temporarily in session to use during POST validation, rather than re-generating on failed POST
+    if 'otp_secret_temp' not in session:
+        session['otp_secret_temp'] = pyotp.random_base32()
+
+    otp_secret_key = session['otp_secret_temp']
+
+    # Generate backup codes only if not already generated and stored in session for this setup attempt
+    if 'backup_codes_temp' not in session:
+        unhashed_backup_codes = [secrets.token_hex(8) for _ in range(10)] # 10 codes, 16 chars each
+        session['backup_codes_temp'] = unhashed_backup_codes
+    else:
+        unhashed_backup_codes = session['backup_codes_temp']
+
+    if form.validate_on_submit():
+        totp_code = form.totp_code.data
+        # Use the secret from the session for verification
+        totp_verifier = pyotp.TOTP(otp_secret_key)
+        if totp_verifier.verify(totp_code):
+            current_user.otp_secret = otp_secret_key
+            current_user.otp_enabled = True
+
+            # Hash and store backup codes
+            hashed_backup_codes = [sha256_crypt.hash(code) for code in unhashed_backup_codes]
+            current_user.otp_backup_codes = json.dumps(hashed_backup_codes)
+
+            db.session.commit()
+
+            # Clear temporary session data
+            session.pop('otp_secret_temp', None)
+            session.pop('backup_codes_temp', None)
+
+            flash('Two-factor authentication enabled successfully! Make sure you have saved your backup codes.', 'success')
+            return redirect(url_for('main.profile', username=current_user.username)) # Or a dedicated success/manage page
+        else:
+            flash('Invalid authenticator code. Please try again.', 'danger')
+            # QR and backup codes will be re-displayed using session data
+            # No need to re-generate QR image data if secret hasn't changed.
+
+    # For GET request or if POST fails:
+    provisioning_uri = pyotp.totp.TOTP(otp_secret_key).provisioning_uri(
+        name=current_user.email,  # Use email or username
+        issuer_name=current_app.config.get('APP_NAME', 'YourAppName') # Consider adding APP_NAME to config
+    )
+
+    # Generate QR code image
+    qr_img = qrcode.make(provisioning_uri)
+    buffered = io.BytesIO()
+    qr_img.save(buffered, format="PNG")
+    qr_code_image_data = base64.b64encode(buffered.getvalue()).decode('utf-8')
+
+    return render_template('2fa_setup.html', title='Setup 2FA', form=form,
+                           otp_secret_key=otp_secret_key,
+                           qr_code_image_data=qr_code_image_data,
+                           backup_codes=unhashed_backup_codes)
+
+
+@main.route('/2fa/disable', methods=['GET', 'POST'])
+@login_required
+def disable_2fa():
+    if not current_user.otp_enabled:
+        flash('Two-factor authentication is not currently enabled.', 'info')
+        return redirect(url_for('main.edit_profile')) # Or main.profile
+
+    form = Disable2FAForm()
+    if form.validate_on_submit():
+        if current_user.check_password(form.password.data):
+            totp_verifier = pyotp.TOTP(current_user.otp_secret)
+            if totp_verifier.verify(form.totp_code.data):
+                current_user.otp_enabled = False
+                current_user.otp_secret = None
+                current_user.otp_backup_codes = None
+                db.session.commit()
+                flash('Two-factor authentication has been disabled.', 'success')
+                return redirect(url_for('main.edit_profile')) # Or main.profile
+            else:
+                flash('Invalid authenticator code.', 'danger')
+        else:
+            flash('Incorrect password.', 'danger')
+    return render_template('disable_2fa.html', title='Disable 2FA', form=form) # New template needed
+
+@main.route('/2fa/manage_backup_codes', methods=['GET', 'POST'])
+@login_required
+def manage_backup_codes():
+    if not current_user.otp_enabled:
+        flash('Two-factor authentication is not enabled. Cannot manage backup codes.', 'warning')
+        return redirect(url_for('main.edit_profile'))
+
+    form = ConfirmPasswordAndTOTPForm()
+    if form.validate_on_submit():
+        if current_user.check_password(form.password.data):
+            totp_verifier = pyotp.TOTP(current_user.otp_secret)
+            if totp_verifier.verify(form.totp_code.data):
+                # Logic to regenerate or simply re-display existing UNHASHED codes.
+                # For simplicity, we'll re-generate new ones here.
+                # This means the user needs to save them again.
+                new_unhashed_backup_codes = [secrets.token_hex(8) for _ in range(10)]
+                hashed_backup_codes = [sha256_crypt.hash(code) for code in new_unhashed_backup_codes]
+                current_user.otp_backup_codes = json.dumps(hashed_backup_codes)
+                db.session.commit()
+                flash('New backup codes generated. Please save them securely. Your old codes are now invalid.', 'success')
+                # It's crucial to show these new_unhashed_backup_codes to the user ONCE.
+                # We can pass them to a template that shows them, or flash them (less secure for copy-paste).
+                # For this example, let's assume a template part will show them.
+                return render_template('manage_backup_codes.html', title='Manage Backup Codes', form=form, new_backup_codes=new_unhashed_backup_codes, codes_generated=True)
+            else:
+                flash('Invalid authenticator code.', 'danger')
+        else:
+            flash('Incorrect password.', 'danger')
+
+    # For GET request, or if POST validation fails before identity is confirmed
+    return render_template('manage_backup_codes.html', title='Manage Backup Codes', form=form, codes_generated=False)
+
 
 @main.route('/create_post', methods=['GET', 'POST'])
 @login_required

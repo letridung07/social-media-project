@@ -9,8 +9,12 @@ class Config:
     UPLOAD_FOLDER = 'app/static/images' # For profile pictures
     POST_IMAGES_UPLOAD_FOLDER = 'app/static/post_images' # New config for post images
     VIDEO_UPLOAD_FOLDER = 'app/static/videos' # New config for post videos
+    MEDIA_ITEMS_UPLOAD_FOLDER = 'app/static/media_items' # For post albums/galleries
     UPLOAD_FOLDER_GROUP_IMAGES = 'app/static/group_images' # For group images
     STORY_MEDIA_UPLOAD_FOLDER = os.path.join('app', 'static', 'story_media') # For story media
+    AUDIO_UPLOAD_FOLDER_NAME = 'audio_uploads' # Name of the folder under static for audio
+    MEDIA_UPLOAD_BASE_DIR = 'static' # Base directory for user-uploaded media (e.g. 'static' or 'uploads')
+
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16 MB limit
 
     # Flask-Mail configuration
@@ -42,7 +46,9 @@ class TestingConfig(Config):
     SERVER_NAME = 'localhost.test' # Added for url_for to work in tests
     APPLICATION_ROOT = '/'
     PREFERRED_URL_SCHEME = 'http'
+    MEDIA_ITEMS_UPLOAD_FOLDER = 'app/static/media_items_test' # For test media items
     VIDEO_UPLOAD_FOLDER = 'app/static/videos_test' # For test video uploads
     UPLOAD_FOLDER_GROUP_IMAGES = 'app/static/group_images_test' # For test group images
     STORY_MEDIA_UPLOAD_FOLDER = os.path.join('app', 'static', 'story_media_test') # For test story media
+    AUDIO_UPLOAD_FOLDER_NAME = 'audio_uploads_test'
     # LOGIN_DISABLED = True # Useful if you want to bypass login in some tests

@@ -1,29 +1,29 @@
 {# app/templates/profile.html #}
 {% extends "base.html" %}
-{% block title %}{{ user.username }}'s Profile{% endblock %} {# This title block is important #}
+{% block title %}{{ _("%(username)s's Profile", username=user.username) }}{% endblock %} {# This title block is important #}
 
 {% block content %} {# Adjusted from app_content to content #}
     <div class="row mt-4">
         <div class="col-md-4">
             <div class="card">
                 <div class="card-body text-center">
-                    <img src="{{ url_for('static', filename='images/' + user.profile_picture_url) }}" loading="lazy" alt="{{ user.username }}'s profile picture" class="img-fluid rounded-circle mb-3" style="width: 150px; height: 150px;">
+                    <img src="{{ url_for('static', filename='images/' + user.profile_picture_url) }}" loading="lazy" alt="{{ _("%(username)s's profile picture", username=user.username) }}" class="img-fluid rounded-circle mb-3" style="width: 150px; height: 150px;">
                     <h2 class="card-title mt-2">{{ user.username }}</h2>
                     {% if user.bio %}
                         <p class="card-text text-muted mb-3">{{ user.bio }}</p>
                     {% endif %}
                     {% if user == current_user %}
-                        <a href="{{ url_for('main.edit_profile') }}" class="btn btn-secondary btn-sm mb-2">Edit Profile</a>
+                        <a href="{{ url_for('main.edit_profile') }}" class="btn btn-secondary btn-sm mb-2">{{ _('Edit Profile') }}</a>
                     {% elif current_user.is_authenticated %} {# Ensure current_user is authenticated before checking is_following #}
                         {% if current_user.is_following(user) %}
                             <form action="{{ url_for('main.unfollow', username=user.username) }}" method="post" class="d-inline">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token else '' }}"/>
-                                <input type="submit" value="Unfollow" class="btn btn-danger btn-sm mb-2">
+                                <input type="submit" value="{{ _('Unfollow') }}" class="btn btn-danger btn-sm mb-2">
                             </form>
                         {% else %}
                             <form action="{{ url_for('main.follow', username=user.username) }}" method="post" class="d-inline">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token else '' }}"/>
-                                <input type="submit" value="Follow" class="btn btn-primary btn-sm mb-2">
+                                <input type="submit" value="{{ _('Follow') }}" class="btn btn-primary btn-sm mb-2">
                             </form>
                         {% endif %}
                     {% endif %}
@@ -31,7 +31,7 @@
                     {# Display Equipped Virtual Goods #}
                     {% if equipped_badge %}
                         <div class="equipped-badge mt-3">
-                            <h6>Equipped Badge:</h6>
+                            <h6>{{ _('Equipped Badge:') }}</h6>
                             <p>
                                 <img src="{{ equipped_badge.virtual_good.image_url if equipped_badge.virtual_good.image_url and equipped_badge.virtual_good.image_url.startswith('http') else url_for('static', filename='images/' + equipped_badge.virtual_good.image_url if equipped_badge.virtual_good.image_url else 'images/virtual_goods_placeholder.png') }}"
                                      alt="{{ equipped_badge.virtual_good.name }}"
@@ -45,7 +45,7 @@
 
                     {% if equipped_frame %}
                         <div class="equipped-frame mt-2">
-                            <h6>Equipped Frame:</h6>
+                            <h6>{{ _('Equipped Frame:') }}</h6>
                             <p>
                                 {# For frames, the image might be used as an overlay or border via CSS.
                                    For now, just displaying name and a small image like the badge. #}
@@ -73,12 +73,12 @@
         </div>
         <div class="col-md-8">
             {% if profile_is_private %}
-                <div class="alert alert-info mt-3">This profile is private.</div>
+                <div class="alert alert-info mt-3">{{ _('This profile is private.') }}</div>
             {% elif profile_is_limited %}
-                <div class="alert alert-info mt-3">This profile is visible only to followers. Follow to see their posts and other activity.</div>
+                <div class="alert alert-info mt-3">{{ _('This profile is visible only to followers. Follow to see their posts and other activity.') }}</div>
             {% else %}
                 {# Render profile content and posts as normal (posts list will be filtered by route) #}
-                <h3 class="mt-3 mt-md-0">{{ user.username }}'s Posts:</h3>
+                <h3 class="mt-3 mt-md-0">{{ _("%(username)s's Posts:", username=user.username) }}</h3>
                 {% if posts %}
                     {% for post in posts %}
                         {% set item_wrapper = {'type': 'post', 'item': post, 'timestamp': post.timestamp, 'sharer': None} %}
@@ -86,52 +86,52 @@
                     {% endfor %}
                 {% else %}
                     <div class="alert alert-secondary mt-3" role="alert">
-                        {{ user.username }} has not posted anything yet, or their posts are not visible to you.
+                        {{ _("%(username)s has not posted anything yet, or their posts are not visible to you.", username=user.username) }}
                     </div>
                 {% endif %}
 
                 <hr class="my-4"> {# Visual separator #}
 
-                <h3 class="mt-3">Groups {{ user.username }} is a member of:</h3>
+                <h3 class="mt-3">{{ _("Groups %(username)s is a member of:", username=user.username) }}</h3>
                 {% if user.group_memberships and user.group_memberships.count() > 0 %}
                     <div class="list-group">
                         {% for membership in user.group_memberships %}
                             <a href="{{ url_for('main.view_group', group_id=membership.group.id) }}" class="list-group-item list-group-item-action">
                                 {{ membership.group.name }}
-                                {% if membership.role == 'admin' %}<span class="badge bg-info float-right mt-1">Admin</span>{% endif %}
+                                {% if membership.role == 'admin' %}<span class="badge bg-info float-right mt-1">{{ _('Admin') }}</span>{% endif %}
                             </a>
                         {% endfor %}
                     </div>
                 {% else %}
-                    <p>{{ user.username }} is not a member of any groups yet.</p>
+                    <p>{{ _("%(username)s is not a member of any groups yet.", username=user.username) }}</p>
                 {% endif %}
 
                 <hr class="my-4"> {# Visual separator #}
 
-                <h3 class="mt-3">{{ user.username }}'s Articles:</h3>
+                <h3 class="mt-3">{{ _("%(username)s's Articles:", username=user.username) }}</h3>
                 {% if user.articles and user.articles.count() > 0 %}
                     {# Optionally, display a few recent articles here, e.g., user.articles.order_by(Article.timestamp.desc()).limit(3).all() #}
                     {# For now, just a link to the full list #}
                     <p>
                         <a href="{{ url_for('main.user_articles', username=user.username) }}" class="btn btn-outline-primary btn-sm">
-                            View all articles by {{ user.username }} ({{ user.articles.count() }})
+                            {{ _("View all articles by %(username)s (%(count)s)", username=user.username, count=user.articles.count()) }}
                         </a>
                     </p>
                 {% else %}
-                    <p>{{ user.username }} has not published any articles yet.</p>
+                    <p>{{ _("%(username)s has not published any articles yet.", username=user.username) }}</p>
                 {% endif %}
 
                 <hr class="my-4"> {# Visual separator #}
 
-                <h3 class="mt-3">{{ user.username }}'s Audio Contributions:</h3>
+                <h3 class="mt-3">{{ _("%(username)s's Audio Contributions:", username=user.username) }}</h3>
                 {% if user.audio_posts and user.audio_posts.count() > 0 %}
                     <p>
                         <a href="{{ url_for('main.user_audio_list', username=user.username) }}" class="btn btn-outline-info btn-sm">
-                            View all audio by {{ user.username }} ({{ user.audio_posts.count() }})
+                            {{ _("View all audio by %(username)s (%(count)s)", username=user.username, count=user.audio_posts.count()) }}
                         </a>
                     </p>
                 {% else %}
-                    <p>{{ user.username }} has not uploaded any audio yet.</p>
+                    <p>{{ _("%(username)s has not uploaded any audio yet.", username=user.username) }}</p>
                 {% endif %}
             {% endif %}
         </div>

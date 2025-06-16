@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% import "bootstrap/wtf.html" as wtf %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block app_content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-8"> {# Made wider for displaying codes #}
+            <h2>{{ title }}</h2>
+
+            {% if codes_generated and new_backup_codes %}
+                <div class="alert alert-success">
+                    New backup codes have been generated. Please store them securely. Your old codes are now invalid.
+                </div>
+                <h4>Your New Backup Codes:</h4>
+                <ul class="list-group mb-3">
+                    {% for code in new_backup_codes %}
+                        <li class="list-group-item"><code>{{ code }}</code></li>
+                    {% endfor %}
+                </ul>
+                <p><a href="{{ url_for('main.edit_profile') }}" class="btn btn-primary">Return to Profile Settings</a></p>
+            {% else %}
+                <p>To view or regenerate your backup codes, please confirm your identity by providing your current password and an authenticator code.</p>
+                <p class="text-warning"><strong>Warning:</strong> Generating new backup codes will invalidate any existing unused backup codes.</p>
+
+                <form method="POST" action="{{ url_for('main.manage_backup_codes') }}">
+                    {{ form.hidden_tag() }}
+                    <div class="form-group mb-3">
+                        {{ form.password.label(class="form-label") }}
+                        {{ form.password(class="form-control form-control-lg", placeholder="Enter your password") }}
+                        {% if form.password.errors %}
+                            <div class="invalid-feedback d-block">
+                                {% for error in form.password.errors %}{{ error }}{% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+                    <div class="form-group mb-3">
+                        {{ form.totp_code.label(class="form-label") }}
+                        {{ form.totp_code(class="form-control form-control-lg", placeholder="Enter 6-digit code from authenticator") }}
+                        {% if form.totp_code.errors %}
+                            <div class="invalid-feedback d-block">
+                                {% for error in form.totp_code.errors %}{{ error }}{% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+                    <div class="form-group mt-4">
+                        {{ form.submit(class="btn btn-warning w-100", value="Confirm and Regenerate Codes") }}
+                    </div>
+                </form>
+            {% endif %}
+            <hr>
+            <p class="text-center">
+                <a href="{{ url_for('main.edit_profile') }}">Back to Profile Settings</a>
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}
