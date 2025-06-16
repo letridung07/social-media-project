@@ -24,6 +24,12 @@ import stripe # For Stripe integration
 # Import for recommendations
 from app.utils import get_recommendations
 
+# Ensure these specific imports are present for set_theme_preference, though some might be redundant if already imported broadly.
+from flask import request, jsonify, current_app # request, jsonify, current_app
+from flask_login import current_user, login_required # current_user, login_required
+from app import db # db
+# from app.models import User # User model is typically imported with other models
+
 main = Blueprint('main', __name__)
 
 LIKE_MILESTONES = [10, 50, 100, 250, 500, 1000]
@@ -3684,3 +3690,28 @@ def stripe_webhook():
         current_app.logger.info(f"Unhandled Stripe webhook event type: {event['type']}")
 
     return jsonify({'status': 'success'}), 200
+
+
+@main.route('/set-theme-preference', methods=['POST'])
+@login_required
+def set_theme_preference():
+    data = request.get_json()
+    if not data or 'theme' not in data:
+        return jsonify({'status': 'error', 'message': 'Missing theme data.'}), 400
+
+    theme = data['theme']
+    if theme not in ['light', 'dark', 'default']: # Allow 'default' as well
+        return jsonify({'status': 'error', 'message': 'Invalid theme value.'}), 400
+
+    if current_user.is_authenticated: # Redundant due to @login_required, but good for clarity
+        current_user.theme_preference = theme
+        try:
+            db.session.commit()
+            return jsonify({'status': 'success', 'message': 'Theme preference saved.'})
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Error saving theme preference for user {current_user.id}: {e}")
+            return jsonify({'status': 'error', 'message': 'Failed to save theme preference.'}), 500
+    else:
+        # This case should ideally not be hit due to @login_required
+        return jsonify({'status': 'error', 'message': 'User not authenticated.'}), 401
