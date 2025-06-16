@@ -34,32 +34,42 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Function to send theme preference to the backend
     function saveThemePreference(theme) {
-        // Ensure current_user is available (passed via data attribute or other means)
-        // For now, we'll just log it. The actual fetch will be implemented
-        // once the backend endpoint (step 4) is ready.
         console.log('Attempting to save theme preference:', theme);
 
-        // Placeholder for fetch request:
-        // fetch('/set-theme-preference', {
-        //     method: 'POST',
-        //     headers: {
-        //         'Content-Type': 'application/json',
-        //         // Include CSRF token if required by Flask-WTF
-        //         // 'X-CSRFToken': getCsrfToken() // You'd need a function to get this
-        //     },
-        //     body: JSON.stringify({ theme: theme })
-        // })
-        // .then(response => response.json())
-        // .then(data => {
-        //     if (data.status === 'success') {
-        //         console.log('Theme preference saved successfully.');
-        //     } else {
-        //         console.error('Failed to save theme preference.');
-        //     }
-        // })
-        // .catch(error => {
-        //     console.error('Error saving theme preference:', error);
-        // });
+        // Attempt to get CSRF token from meta tag
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+
+        const headers = {
+            'Content-Type': 'application/json'
+        };
+        if (csrfToken) {
+            headers['X-CSRFToken'] = csrfToken;
+        }
+
+        fetch('/set-theme-preference', {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify({ theme: theme })
+        })
+        .then(response => {
+            if (!response.ok) {
+                // If response is not OK, throw an error to be caught by .catch()
+                return response.json().then(errData => {
+                    throw new Error(errData.message || `Request failed with status ${response.status}`);
+                });
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.status === 'success') {
+                console.log('Theme preference saved successfully.');
+            } else {
+                console.error('Failed to save theme preference:', data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error saving theme preference:', error);
+        });
     }
 
     if (themeToggle) {
