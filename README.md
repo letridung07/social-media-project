@@ -665,3 +665,12 @@ classDiagram
     note for Mention "Represents a @username tag in a post or comment."
     note for Notification "Consolidated notification relationships."
 ```
+
+## Dark Mode
+
+This application now supports a Dark Mode theme for improved readability in low-light environments and user preference.
+
+### How to Toggle Dark Mode
+-   You can switch between Light and Dark Mode using the toggle switch located in the navigation bar.
+-   Your preference is saved locally in your browser.
+-   If you are a logged-in user, your theme preference will also be saved to your account and applied automatically on your next visit from any browser.

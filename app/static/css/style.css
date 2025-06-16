@@ -6,6 +6,14 @@
     --theme-secondary: #00B8A9; /* Vibrant teal */
     --theme-light-bg: #F8F9FA;
     --theme-dark-text: #343A40;
+
+    /* Dark Mode Variables */
+    --dark-mode-bg: #121212;
+    --dark-mode-text: #e0e0e0;
+    --dark-mode-surface: #1e1e1e; /* For cards, navbars */
+    --dark-mode-border: #2c2c2c;
+    --dark-mode-primary: #7B8AFF; /* Adjusted primary for dark bg */
+    --dark-mode-secondary: #00D8C9; /* Adjusted secondary */
 }
 
 body {
@@ -577,4 +585,510 @@ footer p {
     font-size: 0.9rem; /* From inline */
     color: #666; /* From inline */
     line-height: 1.5; /* From prompt */
+}
+
+/* ========= Dark Mode Styles ========= */
+
+body.dark-mode {
+    --theme-light-bg: var(--dark-mode-bg);
+    --theme-dark-text: var(--dark-mode-text);
+    --theme-primary: var(--dark-mode-primary);
+    --theme-primary-rgb: 123, 138, 255; /* Corresponds to #7B8AFF */
+    --theme-secondary: var(--dark-mode-secondary);
+
+    background-color: var(--dark-mode-bg);
+    color: var(--dark-mode-text);
+}
+
+/* General Text & Headings */
+body.dark-mode h1,
+body.dark-mode h2,
+body.dark-mode h3,
+body.dark-mode h4,
+body.dark-mode h5,
+body.dark-mode h6 {
+    color: var(--dark-mode-text);
+}
+
+/* Navbar */
+body.dark-mode .navbar.bg-light {
+    background-color: var(--dark-mode-surface) !important;
+    border-bottom: 1px solid var(--dark-mode-border);
+}
+
+body.dark-mode .navbar.bg-light .navbar-brand,
+body.dark-mode .navbar.bg-light .nav-link {
+    color: var(--dark-mode-text) !important;
+}
+
+body.dark-mode .navbar.bg-light .nav-link:hover {
+    color: var(--dark-mode-primary) !important;
+}
+
+body.dark-mode .navbar.bg-light .navbar-toggler-icon {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba(224, 224, 224, 0.55)' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e") !important;
+}
+
+
+/* Cards */
+body.dark-mode .card {
+    background-color: var(--dark-mode-surface);
+    border: 1px solid var(--dark-mode-border);
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.15); /* Adjusted shadow for dark mode */
+}
+
+body.dark-mode .card-header {
+    color: var(--dark-mode-text);
+    border-bottom: 1px solid var(--dark-mode-border);
+    background-color: transparent; /* Keep transparent */
+}
+
+/* Buttons */
+body.dark-mode .btn-primary {
+    background-color: var(--dark-mode-primary);
+    border-color: var(--dark-mode-primary);
+    color: #000; /* Dark text for lighter primary */
+}
+body.dark-mode .btn-primary:hover {
+    filter: brightness(110%); /* General approach for hover on dark buttons */
+}
+
+
+body.dark-mode .btn-secondary {
+    background-color: var(--dark-mode-secondary);
+    border-color: var(--dark-mode-secondary);
+    color: #000; /* Dark text for lighter secondary */
+}
+body.dark-mode .btn-secondary:hover {
+    filter: brightness(110%);
+}
+
+
+body.dark-mode .btn-outline-success { /* Used for search button */
+    color: var(--dark-mode-secondary);
+    border-color: var(--dark-mode-secondary);
+}
+
+body.dark-mode .btn-outline-success:hover {
+    background-color: var(--dark-mode-secondary);
+    color: #000;
+}
+
+/* Form Inputs */
+body.dark-mode .form-control {
+    background-color: var(--dark-mode-surface);
+    color: var(--dark-mode-text);
+    border-color: var(--dark-mode-border);
+}
+
+body.dark-mode .form-control:focus {
+    border-color: var(--dark-mode-primary);
+    background-color: var(--dark-mode-surface); /* Ensure focus doesn't revert to light */
+    color: var(--dark-mode-text);
+    box-shadow: 0 0 0 0.2rem rgba(var(--theme-primary-rgb), 0.35); /* Use the re-assigned --theme-primary-rgb */
+}
+
+/* Alerts */
+body.dark-mode .alert-success {
+    background-color: #0d2c1c; color: #66cdaa; border-color: #1a4d32;
+}
+body.dark-mode .alert-danger {
+    background-color: #331216; color: #f87171; border-color: #5c2128;
+}
+body.dark-mode .alert-warning {
+    background-color: #332714; color: #f8c171; border-color: #4d381f;
+}
+body.dark-mode .alert-info {
+    background-color: #122a3f; color: #70b3ec; border-color: #1a3c58;
+}
+body.dark-mode .alert-light {
+    background-color: var(--dark-mode-surface); color: var(--dark-mode-text); border-color: var(--dark-mode-border);
+}
+body.dark-mode .alert-dark { /* For completeness, though less common */
+    background-color: #101010; color: #c0c0c0; border-color: #1a1a1a;
+}
+
+
+/* Footer */
+body.dark-mode footer {
+    background-color: var(--dark-mode-surface); /* Or var(--dark-mode-bg) for deeper black */
+    color: var(--dark-mode-text);
+    border-top: 3px solid var(--dark-mode-primary) !important;
+}
+
+body.dark-mode footer p {
+    color: var(--dark-mode-text);
+}
+
+/* General Links */
+body.dark-mode a {
+    color: var(--dark-mode-primary);
+}
+
+body.dark-mode a:hover {
+    color: var(--dark-mode-secondary);
+}
+/* Ensure links within other components (like nav, buttons) are handled by their specific rules */
+body.dark-mode .nav-link, body.dark-mode .btn { /* Reset if general 'a' is too broad */
+    /* color property is handled by their specific selectors above */
+}
+body.dark-mode .nav-link:hover, body.dark-mode .btn:hover {
+    /* color property is handled by their specific selectors above */
+}
+
+
+/* Tables */
+body.dark-mode .table {
+    border-color: var(--dark-mode-border);
+    color: var(--dark-mode-text);
+}
+body.dark-mode .table th,
+body.dark-mode .table td {
+    border-color: var(--dark-mode-border);
+    color: var(--dark-mode-text);
+}
+
+body.dark-mode .table-striped tbody tr:nth-of-type(odd) {
+    background-color: rgba(255, 255, 255, 0.03); /* Subtle striping */
+}
+body.dark-mode .table-hover tbody tr:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+    color: var(--dark-mode-text);
+}
+
+/* List Groups */
+body.dark-mode .list-group-item {
+    background-color: var(--dark-mode-surface);
+    border-color: var(--dark-mode-border);
+    color: var(--dark-mode-text);
+}
+body.dark-mode .list-group-item a {
+    color: var(--dark-mode-primary); /* Ensure links within list items are styled */
+}
+body.dark-mode .list-group-item a:hover {
+    color: var(--dark-mode-secondary);
+}
+body.dark-mode .list-group-item.active {
+    background-color: var(--dark-mode-primary);
+    border-color: var(--dark-mode-primary);
+    color: #000;
+}
+
+/* Modals */
+body.dark-mode .modal-content {
+    background-color: var(--dark-mode-surface);
+    color: var(--dark-mode-text);
+    border: 1px solid var(--dark-mode-border);
+}
+body.dark-mode .modal-header {
+    border-bottom-color: var(--dark-mode-border);
+}
+body.dark-mode .modal-header .close,
+body.dark-mode .modal-header .btn-close { /* Bootstrap 5 uses .btn-close */
+    color: var(--dark-mode-text);
+    /* If using SVG icon for close, may need filter: invert(1) brightness(2); */
+}
+body.dark-mode .modal-footer {
+    border-top-color: var(--dark-mode-border);
+}
+
+/* Specific component adjustments that may not use variables directly */
+/* Example: Article specific content */
+body.dark-mode .article-view {
+    background-color: var(--dark-mode-surface);
+    border-color: var(--dark-mode-border);
+}
+body.dark-mode .article-view h1, body.dark-mode .article-meta, body.dark-mode .article-body-content {
+    color: var(--dark-mode-text);
+}
+body.dark-mode .article-body-content blockquote {
+    border-left-color: var(--dark-mode-secondary);
+    background-color: rgba(0,0,0,0.1); /* Darker blockquote bg */
+    color: var(--dark-mode-text);
+}
+body.dark-mode .article-body-content table th, body.dark-mode .article-body-content td {
+    border-color: var(--dark-mode-border);
+}
+body.dark-mode .article-body-content th { /* Table header within article */
+    background-color: rgba(255, 255, 255, 0.05);
+}
+body.dark-mode .article-actions {
+    border-top-color: var(--dark-mode-border);
+}
+
+body.dark-mode .list-group-item.article-list-entry {
+    background-color: var(--dark-mode-surface);
+    border-color: var(--dark-mode-border);
+}
+body.dark-mode .list-group-item.article-list-entry:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25); /* Adjusted shadow */
+}
+body.dark-mode .article-list-item h3 a,
+body.dark-mode .article-title {
+    color: var(--dark-mode-primary);
+}
+body.dark-mode .article-list-item h3 a:hover,
+body.dark-mode .article-title:hover {
+    color: var(--dark-mode-secondary);
+}
+body.dark-mode .article-list-metadata, body.dark-mode .article-list-snippet {
+    color: var(--dark-mode-text);
+    opacity: 0.8; /* Slightly muted metadata/snippet */
+}
+
+/* Audio Post specific content */
+body.dark-mode .audio-post-view .card-title {
+    /* Already covered by general h1-h6 and card-title if it's inside a card */
+}
+body.dark-mode .audio-meta, body.dark-mode .audio-description {
+    color: var(--dark-mode-text);
+    opacity: 0.8;
+}
+body.dark-mode .audio-player-container {
+    background-color: var(--dark-mode-surface);
+    border: 1px solid var(--dark-mode-border);
+}
+body.dark-mode .audio-actions {
+    border-top-color: var(--dark-mode-border);
+}
+
+body.dark-mode .audio-list-entry {
+    background-color: var(--dark-mode-surface);
+    border-color: var(--dark-mode-border);
+}
+body.dark-mode .audio-list-entry:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+body.dark-mode .audio-title a {
+    color: var(--dark-mode-primary);
+}
+body.dark-mode .audio-title a:hover {
+    color: var(--dark-mode-secondary);
+}
+body.dark-mode .audio-list-metadata, body.dark-mode .audio-list-snippet {
+    color: var(--dark-mode-text);
+    opacity: 0.8;
+}
+
+/* Group specific styles */
+body.dark-mode .group-profile-image {
+    border-color: var(--dark-mode-surface); /* Adjust border if it was white */
+}
+body.dark-mode .group-list-item {
+    border-color: var(--dark-mode-border);
+}
+body.dark-mode .group-list-item:hover {
+    background-color: rgba(255, 255, 255, 0.03);
+}
+body.dark-mode .group-list-item h5 {
+    color: var(--dark-mode-primary);
+}
+body.dark-mode .manage-group-section {
+    background-color: var(--dark-mode-surface);
+    border: 1px solid var(--dark-mode-border);
+    box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.15);
+}
+body.dark-mode .manage-group-section h4 {
+    border-bottom-color: var(--dark-mode-border);
+}
+body.dark-mode .delete-group-section {
+    border-color: #a83843; /* Darker red border */
+    background-color: #4d181f; /* Dark red background */
+}
+body.dark-mode .delete-group-section h4 {
+    color: #f5c6cb; /* Lighter red text */
+    border-bottom-color: #a83843;
+}
+
+/* Chat specific styles */
+body.dark-mode .chat-message .message-body {
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3); /* Darker shadow */
+}
+body.dark-mode .chat-message.text-right .message-body { /* Outgoing */
+    background-color: var(--dark-mode-primary) !important; /* Override .bg-primary if it's not using variable */
+    color: #000 !important; /* Override .text-white */
+}
+body.dark-mode .chat-message.text-left .message-body { /* Incoming */
+    background-color: var(--dark-mode-surface) !important; /* Override .bg-light */
+    color: var(--dark-mode-text) !important;
+    border: 1px solid var(--dark-mode-border);
+}
+body.dark-mode .message-timestamp, body.dark-mode .read-receipt-status small {
+    color: #868e96; /* Lighter muted color for dark mode */
+}
+body.dark-mode #emoji-option:hover { /* Assuming #emoji-option is a typo for .emoji-option */
+    background-color: rgba(255, 255, 255, 0.1);
+}
+body.dark-mode .emoji-option:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Ensure search input group in navbar is styled */
+body.dark-mode .navbar .form-control { /* More specific for navbar search if needed */
+    background-color: var(--dark-mode-surface); /* Or a slightly lighter/darker variant if desired for navbar context */
+    color: var(--dark-mode-text);
+    border-color: var(--dark-mode-border);
+}
+body.dark-mode .navbar .form-control::placeholder {
+    color: #aaa;
+}
+body.dark-mode .navbar .btn-outline-success {
+    color: var(--dark-mode-secondary);
+    border-color: var(--dark-mode-secondary);
+}
+body.dark-mode .navbar .btn-outline-success:hover {
+    background-color: var(--dark-mode-secondary);
+    color: #000;
+}
+/* Fix for existing elements not using variables */
+body.dark-mode .card-header { /* Already defined above, but ensuring it overrides */
+    color: var(--dark-mode-text);
+}
+body.dark-mode footer { /* Already defined above, but ensuring it overrides */
+    background-color: var(--dark-mode-surface);
+    color: var(--dark-mode-text);
+}
+body.dark-mode footer p { /* Already defined above */
+    color: var(--dark-mode-text);
+}
+
+/* Poll vote update animation */
+body.dark-mode .vote-updated-animation {
+  animation-name: vote-bg-flash-dark; /* Use a dark-mode specific animation if colors differ */
+}
+
+@keyframes vote-bg-flash-dark { /* if needed, or adjust original with CSS vars */
+  0% {
+    background-color: transparent;
+  }
+  50% {
+    background-color: rgba(var(--dark-mode-secondary-rgb, 0, 216, 201), 0.2); /* Using secondary with alpha */
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+/* Add --dark-mode-secondary-rgb to :root if using the above animation */
+/* :root { ... --dark-mode-secondary-rgb: 0, 216, 201; ... } */
+/* For simplicity, I'll assume the original animation is acceptable or will be adjusted later if needed. */
+/* The provided prompt doesn't ask for --dark-mode-secondary-rgb, so I will stick to the prompt. */
+
+/* Ensure specific text colors are overridden if they were set with specific values */
+body.dark-mode .text-muted {
+    color: #a0a0a0 !important; /* Lighter muted text for dark mode */
+}
+
+body.dark-mode .dropdown-menu {
+    background-color: var(--dark-mode-surface);
+    border: 1px solid var(--dark-mode-border);
+    color: var(--dark-mode-text);
+}
+body.dark-mode .dropdown-item {
+    color: var(--dark-mode-text);
+}
+body.dark-mode .dropdown-item:hover, body.dark-mode .dropdown-item:focus {
+    color: var(--dark-mode-text); /* Or slightly lighter for better contrast on hover */
+    background-color: rgba(255, 255, 255, 0.05);
+}
+body.dark-mode .dropdown-divider {
+    border-top-color: var(--dark-mode-border);
+}
+
+/* Pagination */
+body.dark-mode .page-link {
+    background-color: var(--dark-mode-surface);
+    border-color: var(--dark-mode-border);
+    color: var(--dark-mode-primary);
+}
+body.dark-mode .page-link:hover {
+    background-color: rgba(var(--dark-mode-primary-rgb, 123, 138, 255), 0.2); /* Use primary with alpha */
+    border-color: var(--dark-mode-border);
+}
+body.dark-mode .page-item.disabled .page-link {
+    color: #868e96; /* Muted color */
+    background-color: var(--dark-mode-surface);
+    border-color: var(--dark-mode-border);
+}
+body.dark-mode .page-item.active .page-link {
+    background-color: var(--dark-mode-primary);
+    border-color: var(--dark-mode-primary);
+    color: #000; /* Dark text on light primary bg */
+}
+
+/* Breadcrumbs */
+body.dark-mode .breadcrumb {
+    background-color: var(--dark-mode-surface); /* Or transparent if preferred */
+    color: var(--dark-mode-text);
+}
+body.dark-mode .breadcrumb-item a {
+    color: var(--dark-mode-primary);
+}
+body.dark-mode .breadcrumb-item.active {
+    color: #a0a0a0; /* Muted color for active breadcrumb */
+}
+body.dark-mode .breadcrumb-item + .breadcrumb-item::before {
+    color: var(--dark-mode-text);
+}
+
+/* Close button for alerts, modals etc. */
+body.dark-mode .btn-close { /* For Bootstrap 5 close buttons */
+    filter: invert(1) grayscale(100%) brightness(200%); /* Makes a black SVG white */
+}
+/* Fallback for older .close if not using .btn-close */
+body.dark-mode .close {
+    color: var(--dark-mode-text);
+    text-shadow: none; /* Remove default text shadow if any */
+}
+body.dark-mode .close:hover {
+    color: var(--dark-mode-text);
+    opacity: 0.75;
+}
+
+/* Progress bars */
+body.dark-mode .progress {
+    background-color: var(--dark-mode-border); /* Background of the progress bar track */
+}
+body.dark-mode .progress-bar {
+    background-color: var(--dark-mode-primary); /* Filler of the progress bar */
+    color: #000; /* Text on progress bar */
+}
+body.dark-mode .progress-bar-striped {
+    /* Striping might need adjustment if default is not visible */
+}
+
+/* Badges */
+body.dark-mode .badge {
+    /* Default badge may need color adjustments if it's too dark/light */
+}
+body.dark-mode .badge.bg-primary { /* Assuming Bootstrap 5 naming */
+    background-color: var(--dark-mode-primary) !important;
+    color: #000 !important;
+}
+body.dark-mode .badge.bg-secondary {
+    background-color: var(--dark-mode-secondary) !important;
+    color: #000 !important;
+}
+body.dark-mode .badge.bg-success {
+    background-color: #0d2c1c !important; /* From alert */
+    color: #66cdaa !important;
+}
+body.dark-mode .badge.bg-danger {
+    background-color: #331216 !important;
+    color: #f87171 !important;
+}
+body.dark-mode .badge.bg-warning {
+    background-color: #332714 !important;
+    color: #f8c171 !important;
+}
+body.dark-mode .badge.bg-info {
+    background-color: #122a3f !important;
+    color: #70b3ec !important;
+}
+body.dark-mode .badge.bg-light {
+    background-color: var(--dark-mode-border) !important; /* A bit distinct from surface */
+    color: var(--dark-mode-text) !important;
+}
+body.dark-mode .badge.bg-dark {
+    background-color: var(--dark-mode-surface) !important;
+    color: var(--dark-mode-text) !important;
 }
