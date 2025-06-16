@@ -15,9 +15,14 @@ A social media platform built with Flask, featuring user authentication, profile
     *   Modern, responsive UI built with Bootstrap 4.5.2 and a custom theme.
     *   Improved visual styling for enhanced readability and aesthetics.
     *   Intuitive navigation and user flows.
+    *   **Multi-Language Support (i18n/l10n):** The application supports multiple languages to cater to a diverse user base.
+        *   Currently available languages include English and Spanish.
+        *   Users can switch their preferred language using a selector in the navigation bar. The selected language is stored in their session.
+        *   Implemented using Flask-Babel, with translatable strings marked in templates (using `_()`) and Python code (forms, flash messages using `_l()`).
+        *   *Note: Translation files (`.po`, `.mo`) are set up with a dummy structure due to current sandbox limitations preventing `pybabel compile` commands. Full translations will be active once the environment supports these build steps.*
 *   **Content Posting & Organization:**
     *   Users can create and share text-based posts.
-        *   **Albums/Galleries:** Create posts containing multiple images and/or videos, displayed as a swipeable gallery. The post's main text serves as the caption for the entire album.
+        *   **Albums/Galleries:** Create posts containing multiple images and/or videos. These are displayed as an interactive Bootstrap carousel if multiple items exist, or as a single media item if only one is uploaded. The post's main text serves as the caption for the entire album/gallery.
         *   **Long-form Articles/Blogs:** Publish detailed articles with rich text formatting using an integrated editor, allowing for more structured and comprehensive content sharing. Articles have unique, viewable URLs.
         *   **Audio Posts/Podcasts:** Share audio content such as podcast episodes or individual audio clips. Uploaded audio files can be played directly on the platform using an HTML5 audio player.
     *   **Content Scheduling:**
@@ -34,6 +39,10 @@ A social media platform built with Flask, featuring user authentication, profile
         *   Posts can be tagged with hashtags (e.g., `#Flask`, `#PythonTips`) to improve content discoverability.
         *   Hashtags are automatically parsed from the post body.
         *   Clicking on a hashtag displays a feed of all posts associated with that tag.
+    *   **Trending Hashtags:** Helps users discover popular and currently discussed topics.
+        *   Accessible via a "Trending" link in the main navigation.
+        *   Displays a list of trending hashtags, linking to their respective feed pages.
+        *   *Current Implementation Note:* This feature is currently simulated by displaying a random sample of available hashtags. Full trend analysis based on usage count and recency is planned for future development once backend environment capabilities allow for robust database migrations and processing.
     *   **User Tagging (Mentions):**
         *   Tag other users in posts and comments using the `@username` syntax.
         *   Autocomplete suggestions for usernames appear while typing `@...`.
@@ -439,6 +448,9 @@ classDiagram
         email: String
         bio: String
         profile_picture_url: String
+        otp_secret: String
+        otp_enabled: Boolean
+        otp_backup_codes: Text
         +posts: Post[]
         +comments: Comment[]
         +likes: Like[]
@@ -665,6 +677,19 @@ classDiagram
     note for Mention "Represents a @username tag in a post or comment."
     note for Notification "Consolidated notification relationships."
 ```
+
+## Security Features
+
+### Two-Factor Authentication (2FA)
+To enhance account security, Two-Factor Authentication (2FA) via TOTP (Time-based One-Time Passwords) is implemented.
+*   **Setup:** Users can enable 2FA in their profile settings. The setup process involves:
+    *   Displaying a QR code for easy scanning with authenticator apps (e.g., Google Authenticator, Authy).
+    *   Providing the secret key for manual entry if QR scanning is not possible.
+    *   Generating a set of 10 one-time backup codes for account recovery if the authenticator device is unavailable. These codes should be stored securely by the user.
+*   **Login:** When 2FA is enabled, after successful password verification, the user is prompted to enter a 6-digit code from their authenticator app or one of their backup codes to complete the login.
+*   **Management:** Users can manage their 2FA settings via their profile:
+    *   **Disable 2FA:** Requires confirming identity with the current password and a valid TOTP code.
+    *   **Regenerate Backup Codes:** Allows users to generate a new set of backup codes (invalidating all previous ones), also requiring password and TOTP confirmation.
 
 ## Dark Mode
 

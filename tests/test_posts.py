@@ -133,8 +133,202 @@ class PostModelCase(unittest.TestCase):
 
         # Check for carousel class if multiple items
         if len(media_items) > 1:
-            self.assertIn(b'media-gallery mb-3 carousel', response.data) # Check for carousel class
-            self.assertIn(b'carousel-nav', response.data) # Check for nav buttons structure
+        self.assertIn(b'carousel slide mb-3', response.data) # Check for Bootstrap carousel classes
+        self.assertIn(b'carousel-indicators', response.data)
+        self.assertIn(b'carousel-inner', response.data)
+        self.assertIn(b'carousel-item active', response.data) # First item should be active
+        self.assertIn(b'carousel-control-prev', response.data)
+        self.assertIn(b'carousel-control-next', response.data)
+
+        self._logout()
+
+    def test_create_post_with_multiple_images(self):
+        self._login('john@example.com', 'cat')
+        png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+
+        files_to_upload = []
+        expected_filenames = []
+        for i in range(3):
+            img_data = io.BytesIO(base64.b64decode(png_b64))
+            filename = f"test_multi_image_{i+1}.png"
+            files_to_upload.append(FileStorage(stream=img_data, filename=filename, content_type="image/png"))
+            expected_filenames.append(filename)
+
+        post_caption = "A post with multiple images"
+        response = self.client.post('/create_post', data={
+            'body': post_caption,
+            'media_files': files_to_upload
+        }, content_type='multipart/form-data', follow_redirects=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Your post is now live!', response.data)
+
+        post = Post.query.filter_by(body=post_caption).first()
+        self.assertIsNotNone(post)
+        self.assertEqual(post.media_items.count(), 3)
+
+        retrieved_filenames = sorted([item.filename for item in post.media_items.all()])
+        # Filenames might get a unique prefix from secure_filename/save_media_file
+        # So, we check if the original filenames are part of the saved ones.
+        for item in post.media_items.all():
+            self.assertEqual(item.media_type, 'image')
+            self.assertTrue(any(expected_fn in item.filename for expected_fn in expected_filenames))
+            self.assertTrue(os.path.exists(os.path.join(self.media_items_path, item.filename)))
+
+        # Verify carousel structure in response
+        self.assertIn(b'id="carouselPost' + str(post.id).encode() + b'"', response.data)
+        self.assertIn(b'class="carousel slide mb-3"', response.data)
+        self.assertEqual(response.data.count(b'<div class="carousel-item'), 3)
+        self.assertIn(b'carousel-indicators', response.data) # Should be present for >1 item
+        self._logout()
+
+    def test_create_post_with_multiple_videos(self):
+        self._login('john@example.com', 'cat')
+
+        files_to_upload = []
+        expected_filenames = []
+        for i in range(2): # Two videos
+            vid_data = io.BytesIO(f"dummy video data {i+1}".encode('utf-8'))
+            filename = f"test_multi_video_{i+1}.mp4"
+            files_to_upload.append(FileStorage(stream=vid_data, filename=filename, content_type="video/mp4"))
+            expected_filenames.append(filename)
+
+        post_caption = "A post with multiple videos"
+        response = self.client.post('/create_post', data={
+            'body': post_caption,
+            'media_files': files_to_upload
+        }, content_type='multipart/form-data', follow_redirects=True)
+
+        self.assertEqual(response.status_code, 200)
+        post = Post.query.filter_by(body=post_caption).first()
+        self.assertIsNotNone(post)
+        self.assertEqual(post.media_items.count(), 2)
+
+        for item in post.media_items.all():
+            self.assertEqual(item.media_type, 'video')
+            self.assertTrue(any(expected_fn in item.filename for expected_fn in expected_filenames))
+            self.assertTrue(os.path.exists(os.path.join(self.media_items_path, item.filename)))
+
+        self.assertIn(b'class="carousel slide mb-3"', response.data)
+        self.assertEqual(response.data.count(b'<div class="carousel-item'), 2)
+        self.assertIn(b'carousel-indicators', response.data)
+        self._logout()
+
+    def test_create_post_with_mixed_media(self):
+        self._login('john@example.com', 'cat')
+        png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+        img_data = io.BytesIO(base64.b64decode(png_b64))
+        vid_data = io.BytesIO(b"mixed dummy video data")
+
+        files_to_upload = [
+            FileStorage(stream=img_data, filename="mixed_image.png", content_type="image/png"),
+            FileStorage(stream=vid_data, filename="mixed_video.mp4", content_type="video/mp4")
+        ]
+        expected_filenames = ["mixed_image.png", "mixed_video.mp4"]
+
+        post_caption = "A post with mixed media types"
+        response = self.client.post('/create_post', data={
+            'body': post_caption,
+            'media_files': files_to_upload
+        }, content_type='multipart/form-data', follow_redirects=True)
+
+        self.assertEqual(response.status_code, 200)
+        post = Post.query.filter_by(body=post_caption).first()
+        self.assertIsNotNone(post)
+        self.assertEqual(post.media_items.count(), 2)
+
+        media_types_found = sorted([item.media_type for item in post.media_items.all()])
+        self.assertEqual(media_types_found, ['image', 'video'])
+
+        for item in post.media_items.all():
+            self.assertTrue(any(expected_fn in item.filename for expected_fn in expected_filenames))
+            self.assertTrue(os.path.exists(os.path.join(self.media_items_path, item.filename)))
+
+        self.assertIn(b'class="carousel slide mb-3"', response.data)
+        self.assertEqual(response.data.count(b'<div class="carousel-item'), 2)
+        self.assertIn(b'carousel-indicators', response.data) # Should be present for 2 items
+        self._logout()
+
+    def test_carousel_rendering_in_post_template(self):
+        # This test focuses specifically on the _post.html rendering of a carousel
+        self._login('john@example.com', 'cat')
+        post = Post(body="Carousel test post", author=self.user1)
+        db.session.add(post)
+        db.session.commit() # Commit to get post.id
+
+        # Create mock media items manually for this post
+        media_item1 = MediaItem(post_id=post.id, filename="c_img1.png", media_type="image")
+        media_item2 = MediaItem(post_id=post.id, filename="c_vid1.mp4", media_type="video")
+        media_item3 = MediaItem(post_id=post.id, filename="c_img2.png", media_type="image")
+        db.session.add_all([media_item1, media_item2, media_item3])
+        db.session.commit()
+
+        # Fetch a page where this post would be rendered using _post.html
+        # (e.g., the user's profile page)
+        response = self.client.get(url_for('main.profile', username=self.user1.username))
+        self.assertEqual(response.status_code, 200)
+
+        # Check for Bootstrap carousel structure
+        carousel_id_str = f'carouselPost{post.id}'
+        self.assertIn(f'id="{carousel_id_str}"'.encode(), response.data)
+        self.assertIn(b'class="carousel slide mb-3"', response.data)
+        self.assertIn(b'<ol class="carousel-indicators">', response.data)
+        self.assertEqual(response.data.count(f'<li data-target="#{carousel_id_str}"'.encode()), 3)
+        self.assertIn(b'<div class="carousel-inner">', response.data)
+        self.assertEqual(response.data.count(b'<div class="carousel-item'), 3)
+        self.assertIn(b'class="carousel-item active"', response.data) # One item must be active
+        self.assertIn(b'class="carousel-control-prev"', response.data)
+        self.assertIn(b'class="carousel-control-next"', response.data)
+        # Check for media content (simplified check for filenames)
+        self.assertIn(b'c_img1.png', response.data)
+        self.assertIn(b'c_vid1.mp4', response.data)
+        self.assertIn(b'c_img2.png', response.data)
+        self._logout()
+
+    def test_edit_post_add_more_media(self):
+        self._login('john@example.com', 'cat')
+        # 1. Create initial post with one image
+        png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+        initial_image_data = io.BytesIO(base64.b64decode(png_b64))
+        initial_image_file = FileStorage(stream=initial_image_data, filename="edit_initial_image.png", content_type="image/png")
+
+        initial_caption = "Initial album for edit test - adding more"
+        create_resp = self.client.post('/create_post', data={
+            'body': initial_caption,
+            'media_files': [initial_image_file]
+        }, content_type='multipart/form-data', follow_redirects=True)
+        self.assertEqual(create_resp.status_code, 200)
+        post = Post.query.filter_by(body=initial_caption).first()
+        self.assertIsNotNone(post)
+        self.assertEqual(post.media_items.count(), 1)
+        initial_item_filename = post.media_items.first().filename
+
+        # 2. Edit the post to add two more media items (one image, one video)
+        new_image_data = io.BytesIO(base64.b64decode(png_b64))
+        new_image_file = FileStorage(stream=new_image_data, filename="edit_new_image.png", content_type="image/png")
+        new_video_data = io.BytesIO(b"new video data for edit")
+        new_video_file = FileStorage(stream=new_video_data, filename="edit_new_video.mp4", content_type="video/mp4")
+
+        updated_caption = "Caption updated, two new media items added"
+        edit_response = self.client.post(f'/edit_post/{post.id}', data={
+            'body': updated_caption,
+            'media_files': [new_image_file, new_video_file],
+            # No delete_media_ids[], so initial image should remain
+        }, content_type='multipart/form-data', follow_redirects=True)
+
+        self.assertEqual(edit_response.status_code, 200)
+        self.assertIn(b'Your post has been updated!', edit_response.data)
+        db.session.refresh(post) # Refresh post object from DB
+        self.assertEqual(post.body, updated_caption)
+        self.assertEqual(post.media_items.count(), 3) # 1 initial + 2 new
+
+        filenames_in_post = {item.filename for item in post.media_items.all()}
+        self.assertTrue(any(initial_item_filename in fn for fn in filenames_in_post)) # Initial image still there
+        self.assertTrue(any("edit_new_image.png" in fn for fn in filenames_in_post))
+        self.assertTrue(any("edit_new_video.mp4" in fn for fn in filenames_in_post))
+
+        for item in post.media_items.all():
+            self.assertTrue(os.path.exists(os.path.join(self.media_items_path, item.filename)))
 
         self._logout()
 

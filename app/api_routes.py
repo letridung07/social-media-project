@@ -426,7 +426,7 @@ def get_post(post_id):
 
     return jsonify(serialize_post_data(post)), 200
 
-from app.utils import process_hashtags, process_mentions # For creating/updating posts
+# from app.utils import process_hashtags, process_mentions # For creating/updating posts
 from app.models import FriendList # For custom list validation
 
 @api_bp.route('/posts', methods=['POST'])

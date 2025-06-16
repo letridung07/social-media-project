@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block app_content %}
+<div class="container">
+    <h2>{{ title }}</h2>
+    {% if hashtags %}
+        <ul class="list-group">
+            {% for hashtag in hashtags %}
+                <li class="list-group-item">
+                    <a href="{{ url_for('main.hashtag_feed', tag_text=hashtag.tag_text) }}">#{{ hashtag.tag_text }}</a>
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p>No hashtags to display at the moment.</p>
+    {% endif %}
+</div>
+{% endblock %}

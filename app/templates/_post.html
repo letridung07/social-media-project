@@ -41,35 +41,49 @@
         </div>
     </div>
     <div class="card-body">
-        {# Display media gallery #}
+        {# Display media gallery using Bootstrap Carousel #}
         {% if post.media_items and post.media_items.count() > 0 %}
-            <div class="media-gallery mb-3 {% if post.media_items.count() > 1 %}carousel{% endif %}">
-                <div class="carousel-track">
+            {% set carousel_id = "carouselPost" ~ post.id %}
+            <div id="{{ carousel_id }}" class="carousel slide mb-3" data-ride="carousel">
+                {% if post.media_items.count() > 1 %}
+                    <ol class="carousel-indicators">
+                        {% for item in post.media_items %}
+                            <li data-target="#{{ carousel_id }}" data-slide-to="{{ loop.index0 }}" class="{{ 'active' if loop.first }}"></li>
+                        {% endfor %}
+                    </ol>
+                {% endif %}
+                <div class="carousel-inner">
                     {% for item in post.media_items %}
-                        <div class="media-gallery-item"> {# Removed col-md- classes, carousel item takes full width #}
+                        <div class="carousel-item {{ 'active' if loop.first }}">
                             {% if item.media_type == 'image' %}
                                 <img src="{{ url_for('static', filename=(config.MEDIA_ITEMS_UPLOAD_FOLDER + '/' + item.filename) if config.MEDIA_ITEMS_UPLOAD_FOLDER else ('media_items/' + item.filename) ) }}"
                                      alt="{{ item.alt_text or ('Gallery image ' ~ loop.index ~ ' for post by ' ~ post.author.username) }}"
-                                     class="img-fluid rounded" loading="lazy">
+                                     class="d-block w-100 rounded" loading="lazy" style="max-height: 500px; object-fit: contain;">
                             {% elif item.media_type == 'video' %}
-                                <video controls class="img-fluid rounded" {% if item.alt_text %}aria-describedby="video-alt-text-{{ post.id }}-{{ item.id }}"{% endif %}>
-                                    <source src="{{ url_for('static', filename=(config.MEDIA_ITEMS_UPLOAD_FOLDER + '/' + item.filename) if config.MEDIA_ITEMS_UPLOAD_FOLDER else ('media_items/' + item.filename) ) }}" type="video/mp4"> {# Adjust type as needed based on actual video types #}
+                                <video controls class="d-block w-100 rounded" style="max-height: 500px; object-fit: contain;" {% if item.alt_text %}aria-describedby="video-alt-text-{{ post.id }}-{{ item.id }}"{% endif %}>
+                                    <source src="{{ url_for('static', filename=(config.MEDIA_ITEMS_UPLOAD_FOLDER + '/' + item.filename) if config.MEDIA_ITEMS_UPLOAD_FOLDER else ('media_items/' + item.filename) ) }}" type="video/mp4"> {# Adjust type as needed #}
                                     Your browser does not support the video tag.
                                 </video>
                                 {% if item.alt_text %}
                                     <p id="video-alt-text-{{ post.id }}-{{ item.id }}" class="sr-only">{{ item.alt_text }}</p>
                                 {% endif %}
                             {% else %}
-                                <p class="text-muted">Unsupported media: {{ item.filename }}</p>
+                                <div class="text-center p-5 border rounded bg-light">
+                                    <p class="text-muted">Unsupported media: {{ item.filename }}</p>
+                                </div>
                             {% endif %}
                         </div>
                     {% endfor %}
                 </div>
                 {% if post.media_items.count() > 1 %}
-                <div class="carousel-nav">
-                    <button class="carousel-prev">&lt; Previous</button>
-                    <button class="carousel-next">Next &gt;</button>
-                </div>
+                    <a class="carousel-control-prev" href="#{{ carousel_id }}" role="button" data-slide="prev">
+                        <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+                        <span class="sr-only">Previous</span>
+                    </a>
+                    <a class="carousel-control-next" href="#{{ carousel_id }}" role="button" data-slide="next">
+                        <span class="carousel-control-next-icon" aria-hidden="true"></span>
+                        <span class="sr-only">Next</span>
+                    </a>
                 {% endif %}
             </div>
         {% endif %}

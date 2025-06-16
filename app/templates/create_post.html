@@ -40,22 +40,14 @@
                 </div>
 
                 <div class="form-group mb-3">
-                    {{ form.image_file.label(class="form-label") }}
-                    {{ form.image_file(class="form-control") }}
-                    {% if form.image_file.errors %}
+                    {{ form.media_files.label(class="form-label") }}
+                    {{ form.media_files(class="form-control") }} {# Updated to media_files #}
+                    {% if form.media_files.errors %}
                          <div class="invalid-feedback d-block">
-                            {% for error in form.image_file.errors %}{{ error }}{% endfor %}
+                            {% for error in form.media_files.errors %}{{ error }}{% endfor %}
                         </div>
-                    {% endif %}
-                </div>
-
-                <div class="form-group mb-3">
-                    {{ form.video_file.label(class="form-label") }}
-                    {{ form.video_file(class="form-control") }}
-                    {% if form.video_file.errors %}
-                        <div class="invalid-feedback d-block">
-                            {% for error in form.video_file.errors %}{{ error }}{% endfor %}
-                        </div>
+                    {% else %}
+                        <small class="form-text text-muted">Select one or more image or video files for your post.</small>
                     {% endif %}
                 </div>
 
@@ -87,7 +79,7 @@
 
                 <div class="form-group mb-3">
                     {{ form.alt_text.label(class="form-label") }}
-                    {{ form.alt_text(class="form-control", rows="2", placeholder="Describe your image/video for accessibility...") }}
+                    {{ form.alt_text(class="form-control", rows="2", placeholder="Describe your media for accessibility...") }} {# Updated placeholder #}
                     <small class="form-text text-muted">{{ form.alt_text.description }}</small>
                     {% if form.alt_text.errors %}
                         <div class="invalid-feedback d-block">

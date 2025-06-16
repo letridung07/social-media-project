@@ -77,7 +77,8 @@ conversation_participants = db.Table('conversation_participants',
 # Define the association table for post_hashtags
 post_hashtags = db.Table('post_hashtags',
     db.Column('post_id', db.Integer, db.ForeignKey('post.id'), primary_key=True),
-    db.Column('hashtag_id', db.Integer, db.ForeignKey('hashtag.id'), primary_key=True)
+    db.Column('hashtag_id', db.Integer, db.ForeignKey('hashtag.id'), primary_key=True),
+    db.Column('usage_count', db.Integer, default=1)  # Added usage_count
 )
 
 # Association table for FriendList members
@@ -121,6 +122,11 @@ class User(db.Model, UserMixin):
     default_story_privacy = db.Column(db.String(50), nullable=False, default=PRIVACY_PUBLIC)
     # Relationship to FriendList
     friend_lists = db.relationship('FriendList', backref='owner', lazy='dynamic', cascade='all, delete-orphan')
+
+    # 2FA Fields
+    otp_secret = db.Column(db.String(32), nullable=True)
+    otp_enabled = db.Column(db.Boolean, default=False, nullable=False)
+    otp_backup_codes = db.Column(db.Text, nullable=True) # Store as JSON list of hashed codes
 
     # Relationship to Post
     posts = db.relationship('Post', backref='author', lazy='dynamic')
@@ -353,6 +359,7 @@ class Hashtag(db.Model):
     __tablename__ = 'hashtag' # Explicit table name
     id = db.Column(db.Integer, primary_key=True)
     tag_text = db.Column(db.String(100), unique=True, nullable=False, index=True)
+    last_used = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)  # Added last_used
 
     def __repr__(self):
         return f'<Hashtag {self.tag_text}>'
