@@ -1,4 +1,5 @@
 import math
+from collections import defaultdict
 
 def _factorial(n):
     """
@@ -292,6 +293,9 @@ class Constant(Expression):
             return NotImplemented
         return self.value == other.value
 
+    def __hash__(self):
+        return hash(self.value)
+
     def simplify(self):
         """Simplifies a constant, which is just itself."""
         return self
@@ -319,6 +323,9 @@ class Variable(Expression):
             return NotImplemented
         return self.name == other.name
 
+    def __hash__(self):
+        return hash(self.name)
+
     def simplify(self):
         """Simplifies a variable, which is just itself."""
         return self
@@ -342,6 +349,9 @@ class BinaryOperation(Expression):
             return NotImplemented
         # Relies on operand __eq__ being defined for recursive comparison.
         return self.left == other.left and self.right == other.right
+
+    def __hash__(self):
+        return hash((type(self).__name__, self.left, self.right))
 
     def simplify(self):
         """
@@ -377,6 +387,73 @@ class Add(BinaryOperation):
         return f"({self.left} + {self.right})"
 
     def simplify(self):
+
+        def _extract_coeff_base(term):
+            if isinstance(term, Constant):
+                return (term.value, Constant(1)) # Base for a pure constant is 1
+            elif isinstance(term, Variable):
+                return (1, term)
+            elif isinstance(term, Multiply):
+                # This BFS-like approach aims to correctly find the total coefficient
+                # and the canonical base from a potentially complex Multiply term.
+                current_coeff = 1.0 # Use float for coefficient consistency
+                non_const_factors = []
+
+                queue = [term]
+                # visited_multiply_ops = set() # Not strictly needed if simplify ensures no cycles and proper structure
+                                            # and if Multiply.simplify itself doesn't create redundant Multiply(Multiply(...))
+
+                head = 0
+                while head < len(queue):
+                    sub_expr = queue[head]
+                    head += 1
+
+                    if isinstance(sub_expr, Multiply):
+                        # Process left child
+                        if isinstance(sub_expr.left, Constant):
+                            current_coeff *= sub_expr.left.value
+                        elif isinstance(sub_expr.left, Multiply):
+                            queue.append(sub_expr.left)
+                        else:
+                            non_const_factors.append(sub_expr.left)
+
+                        # Process right child
+                        if isinstance(sub_expr.right, Constant):
+                            current_coeff *= sub_expr.right.value
+                        elif isinstance(sub_expr.right, Multiply):
+                            queue.append(sub_expr.right)
+                        else:
+                            non_const_factors.append(sub_expr.right)
+                    elif isinstance(sub_expr, Constant):
+                        # This case handles if a Constant was directly part of a Multiply structure
+                        # that wasn't simplified away by Multiply.simplify() or if the term itself is a Constant
+                        # passed to _extract_coeff_base (but the initial if takes care of that).
+                        # This branch might be redundant if term is guaranteed to be Multiply here.
+                        current_coeff *= sub_expr.value
+                    else: # It's a non-Multiply, non-Constant factor
+                        non_const_factors.append(sub_expr)
+
+                if not non_const_factors:
+                    return (current_coeff, Constant(1)) # e.g. term was Multiply(Constant(2), Constant(3))
+
+                # Sort non_const_factors to ensure canonical base
+                if len(non_const_factors) > 1:
+                    non_const_factors.sort(key=str)
+
+                base_expr = non_const_factors[0]
+                if len(non_const_factors) > 1:
+                    for i in range(1, len(non_const_factors)):
+                        base_expr = Multiply(base_expr, non_const_factors[i])
+
+                # Ensure base_expr itself is simplified (it should be if factors were simplified)
+                # but if Multiply() constructor is used directly, it might not be.
+                # However, factors coming from collect_terms should already be simplified.
+                # base_expr = base_expr.simplify() # Potentially simplify the reconstructed base.
+
+                return (current_coeff, base_expr)
+            else: # Other expression types (Log, Exp, Power, Sign, Abs, etc.)
+                return (1, term)
+
         # First, simplify operands
         left_simple = self.left.simplify()
         right_simple = self.right.simplify()
@@ -418,40 +495,93 @@ class Add(BinaryOperation):
         constants = [term for term in terms if isinstance(term, Constant)]
         non_constants = [term for term in terms if not isinstance(term, Constant)]
 
-        # Sum constants
-        sum_of_constants_val = sum(c.value for c in constants)
-        final_constant_term = Constant(sum_of_constants_val)
+        # Sum constants from initial flattening
+        sum_of_initial_constants_val = sum(c.value for c in constants)
+        # non_constants_terms is now just 'non_constants' from the previous step of Add.simplify
 
-        # If all terms were constants, they are already summed up.
-        if not non_constants:
-            return final_constant_term
+        # --- Start of new logic for collecting like terms ---
+        term_map = defaultdict(float)
+        base_objects_map = {}
 
-        # Build the new list of terms
+        for term in non_constants: # Iterate over the previously identified non_constants terms
+            coeff_val, base_expr = _extract_coeff_base(term)
+
+            base_expr_str = str(base_expr)
+            term_map[base_expr_str] += coeff_val
+            if base_expr_str not in base_objects_map:
+                 base_objects_map[base_expr_str] = base_expr
+
+        # Handle coefficients that were attached to Constant(1) as base
+        # These are effectively constants and should be merged with sum_of_initial_constants_val
+        const_one_str = str(Constant(1)) # Key for Constant(1) base
+        if const_one_str in term_map:
+            sum_of_initial_constants_val += term_map[const_one_str]
+            del term_map[const_one_str] # Remove from map as it's now part of constants
+
+        final_total_constant_term = Constant(sum_of_initial_constants_val)
+
+        # Rebuild new_terms list from term_map and the final_total_constant_term
         new_terms = []
-        if final_constant_term.value != 0 or not non_constants: # Add constant if non-zero or only term
-            new_terms.append(final_constant_term)
 
-        new_terms.extend(non_constants)
+        # Add the consolidated constant term if it's not zero, or if it's the only term (i.e., term_map is empty)
+        if final_total_constant_term.value != 0.0 or not term_map:
+            new_terms.append(final_total_constant_term)
 
-        # Filter out Constant(0) if other terms exist
-        if final_constant_term.value == 0 and len(non_constants) > 0:
-            new_terms.remove(final_constant_term)
+        for base_expr_str, summed_coeff_val in term_map.items():
+            if summed_coeff_val == 0.0: # Skip terms that cancelled out
+                continue
 
+            base_expr = base_objects_map[base_expr_str]
 
-        if not new_terms: # Should be caught by "if not non_constants" earlier, or only Constant(0)
-             return Constant(0)
+            if summed_coeff_val == 1.0:
+                new_terms.append(base_expr)
+            else:
+                # Let Constant(value) * expr handle simplification via __mul__
+                new_terms.append(Constant(summed_coeff_val) * base_expr)
+
+        # Final cleanup of new_terms:
+        # If after all processing, new_terms is empty, it means result is 0
+        if not new_terms:
+            return Constant(0)
+
+        # If new_terms contains only a Constant(0) (e.g. final_total_constant_term was 0 and term_map was empty)
+        # and it wasn't caught by "if not new_terms" (e.g. if new_terms = [Constant(0.0)])
+        if len(new_terms) == 1 and isinstance(new_terms[0], Constant) and new_terms[0].value == 0.0:
+             return Constant(0.0)
+
+        # If there's more than one term, and one of them is Constant(0.0), remove it.
+        # This is if final_total_constant_term was 0 and was added because term_map was initially empty,
+        # but then term_map processing added actual terms.
+        if len(new_terms) > 1:
+            new_terms = [t for t in new_terms if not (isinstance(t, Constant) and t.value == 0.0)]
+
+        # After potential removal of Constant(0.0), re-check counts
+        if not new_terms: # If all terms were Constant(0.0) or cancelled out
+            return Constant(0)
         if len(new_terms) == 1:
-            return new_terms[0] # This could be Constant(0) if all other terms cancelled out
+            return new_terms[0]
 
-        # Rebuild the Add expression from the new terms, using original __add__ for its simplifications
-        # This ensures left-associativity for ((a+b)+c) type structure
+        # Rebuild the Add expression from new_terms, using Expression.__add__ for its simplifications
+        # Sort terms to ensure canonical form: constants first, then by string representation
+        # The constant term (if not zero and new_terms has it) should ideally be first.
+        # Other terms (non-constants) are sorted by their string representation.
+
+        # Separate the constant term (if present and first) from others for sorting
+        processed_constant_term = None
+        if isinstance(new_terms[0], Constant):
+            processed_constant_term = new_terms.pop(0)
+
+        new_terms.sort(key=str) # Sort remaining (non-constant or mixed) terms
+
+        if processed_constant_term is not None:
+            new_terms.insert(0, processed_constant_term) # Add constant back to the front
+
         current_sum = new_terms[0]
         for i in range(1, len(new_terms)):
-            # Using Expression.__add__ ensures that Add() is called,
-            # and its simplifications (like X+0 -> X) are applied.
-            current_sum = current_sum + new_terms[i]
+            current_sum = current_sum + new_terms[i] # Uses Expression.__add__
 
         return current_sum
+        # --- End of new logic ---
 
 
 class Subtract(BinaryOperation):
@@ -519,33 +649,39 @@ class Multiply(BinaryOperation):
         final_constant_factor = Constant(product_of_constants_val)
 
         if final_constant_factor.value == 0:
-            return Constant(0)
+            return Constant(0) # Entire product is 0
 
+        # Sort non-constant factors for a canonical form
+        if len(non_constants) > 1:
+            non_constants.sort(key=str)
+
+        # If all factors were constants (already handled if product is 0)
         if not non_constants:
-            return final_constant_factor # This could be Constant(1) if all factors cancelled to 1
+            return final_constant_factor # This will be Constant(product_of_constants_val)
 
-        # Build the new list of factors
+        # Build the new list of factors, deciding whether to include the constant factor
         new_factors = []
-        # Add constant factor if it's not 1 or if it's the only factor remaining (i.e. no non_constants)
-        if final_constant_factor.value != 1 or not non_constants:
+        if final_constant_factor.value != 1:
             new_factors.append(final_constant_factor)
 
-        new_factors.extend(non_constants)
+        new_factors.extend(non_constants) # Add sorted non-constant factors
 
-        # If Constant(1) was appended but there are other non_constant factors, remove it.
-        if final_constant_factor.value == 1 and len(non_constants) > 0:
-             new_factors.remove(final_constant_factor)
-
-
-        if not new_factors: # Should typically mean product is 1 if it didn't return Constant(0) earlier
+        # If the list is empty at this point (e.g. only factor was Constant(1) and no non_constants),
+        # the result is Constant(1). This case is covered if not non_constants returned final_constant_factor (which was 1).
+        # If new_factors ended up containing only Constant(1) because non_constants was empty and final_constant_factor was 1,
+        # or if non_constants became empty and the only remaining factor is Constant(1) after the extend.
+        # More directly:
+        if not new_factors: # This would happen if non_constants was empty and final_constant_factor was 1
              return Constant(1)
+
         if len(new_factors) == 1:
-            return new_factors[0] # This could be Constant(1)
+            return new_factors[0]
 
         # Rebuild the Multiply expression from the new factors using __mul__
+        # This will ensure left-associativity for ((a*b)*c) structure from the list.
         current_product = new_factors[0]
         for i in range(1, len(new_factors)):
-            current_product = current_product * new_factors[i] # Leverages __mul__
+            current_product = current_product * new_factors[i] # Leverages __mul__ for its own simplifications
 
         return current_product
 
@@ -624,6 +760,9 @@ class UnaryOperation(Expression):
             return NotImplemented
         # Relies on operand __eq__ being defined for recursive comparison.
         return self.operand == other.operand
+
+    def __hash__(self):
+        return hash((type(self).__name__, self.operand))
 
     def simplify(self):
         """

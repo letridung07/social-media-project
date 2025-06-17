@@ -780,6 +780,127 @@ class TestSymbolicExpressions(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Order must be a non-negative integer."):
             expr.taylor_series(x, 0, -1)
 
+
+    def test_multiply_simplify_factor_sorting(self):
+        x, y, z = Variable('x'), Variable('y'), Variable('z')
+        c2 = Constant(2)
+
+        # Basic Sorting: y*x -> (x*y)
+        expr_yx = Multiply(y, x)
+        simplified_yx = expr_yx.simplify()
+        self.assertEqual(str(simplified_yx), "(x * y)")
+
+        expr_xy = Multiply(x, y) # Already sorted
+        simplified_xy = expr_xy.simplify()
+        self.assertEqual(str(simplified_xy), "(x * y)")
+
+        # With Constant: (2*y)*x -> (2.0 * (x*y))
+        expr_c_y_x = Multiply(Multiply(c2, y), x)
+        simplified_c_y_x = expr_c_y_x.simplify()
+        self.assertEqual(str(simplified_c_y_x), "(2.0 * (x * y))")
+
+        # y_c_x (y*2)*x needs to be constructed carefully if __mul__ auto-sorts Constant to left
+        # Multiply(y,c2) might become Multiply(c2,y) via __mul__ if that's implemented.
+        # Assuming Multiply constructor does not auto-sort, but simplify does.
+        expr_y_c_x = Multiply(y, Multiply(c2, x)) # y * (2*x)
+        simplified_y_c_x = expr_y_c_x.simplify() # -> y * (2.0 * x) -> (2.0 * (y*x)) -> (2.0 * (x*y))
+        self.assertEqual(str(simplified_y_c_x), "(2.0 * (x * y))")
+
+        expr_y_x_c = Multiply(Multiply(y,x), c2) # (y*x)*2
+        simplified_y_x_c = expr_y_x_c.simplify() # ((x*y)*2.0) -> (2.0 * (x*y))
+        self.assertEqual(str(simplified_y_x_c), "(2.0 * (x * y))")
+
+
+        # More Factors: z*y*x -> ((x*y)*z)
+        expr_zyx = Multiply(Multiply(z,y),x)
+        simplified_zyx = expr_zyx.simplify()
+        self.assertEqual(str(simplified_zyx), "((x * y) * z)")
+
+        # (2 * (z*y) * x) -> (2.0 * ((x*y)*z))
+        expr_c_z_y_x = Multiply(c2, Multiply(Multiply(z,y),x))
+        simplified_c_z_y_x = expr_c_z_y_x.simplify()
+        self.assertEqual(str(simplified_c_z_y_x), "(2.0 * ((x * y) * z))")
+
+    def test_add_simplify_collect_like_terms(self):
+        x, y = Variable('x'), Variable('y')
+        c1, c2, c3, c5 = Constant(1), Constant(2), Constant(3), Constant(5)
+        c_neg2 = Constant(-2)
+        log_y = Log(y)
+
+        # Basic Collection: (2*x) + (3*x) -> (5.0 * x)
+        expr_basic = Add(Multiply(c2,x), Multiply(c3,x))
+        simplified_basic = expr_basic.simplify()
+        self.assertEqual(str(simplified_basic), "(5.0 * x)")
+        self.assertAlmostEqual(simplified_basic.eval(x=2), 10.0)
+
+        # With Variables and Constants: (x+1)+(2+x)+y -> ((2.0*x)+y)+3.0
+        # Add.simplify sorts const first: (3.0 + ((2.0*x)+y))
+        expr_mixed = Add(Add(Add(x, c1), Add(c2, x)), y)
+        simplified_mixed = expr_mixed.simplify()
+        self.assertEqual(str(simplified_mixed), "(3.0 + ((2.0 * x) + y))")
+        self.assertAlmostEqual(simplified_mixed.eval(x=1, y=1), 2+1+3) # 6
+
+        # Involving Subtraction (formulated as Add with negative coefficient)
+        # 5*x + (-2*x) -> (3.0 * x)
+        expr_sub1 = Add(Multiply(c5, x), Multiply(c_neg2, x))
+        simplified_sub1 = expr_sub1.simplify()
+        self.assertEqual(str(simplified_sub1), "(3.0 * x)")
+
+        # x + (-3*x) -> (-2.0 * x)
+        expr_sub2 = Add(x, Multiply(Constant(-3), x))
+        simplified_sub2 = expr_sub2.simplify()
+        self.assertEqual(str(simplified_sub2), "(-2.0 * x)")
+
+        # Mixed Terms and Order (relies on factor sorting in Multiply for base canonicalization)
+        # x*y + 2*y*x -> x*y + 2*x*y -> (3.0 * (x*y))
+        expr_xy_yx = Add(Multiply(x,y), Multiply(c2, Multiply(y,x)))
+        simplified_xy_yx = expr_xy_yx.simplify()
+        self.assertEqual(str(simplified_xy_yx), "(3.0 * (x * y))")
+        self.assertAlmostEqual(simplified_xy_yx.eval(x=2,y=3), 3*2*3) #18
+
+        # Cancellation to Zero: 2*x + (-2*x) -> 0.0
+        expr_cancel1 = Add(Multiply(c2,x), Multiply(c_neg2,x))
+        simplified_cancel1 = expr_cancel1.simplify()
+        self.assertIsInstance(simplified_cancel1, Constant)
+        self.assertAlmostEqual(simplified_cancel1.value, 0.0)
+        self.assertEqual(str(simplified_cancel1), "0.0")
+
+        # (2*x*y) + (-2*y*x) -> 0.0
+        expr_cancel2 = Add(Multiply(c2, Multiply(x,y)), Multiply(c_neg2, Multiply(y,x)))
+        simplified_cancel2 = expr_cancel2.simplify()
+        self.assertIsInstance(simplified_cancel2, Constant)
+        self.assertAlmostEqual(simplified_cancel2.value, 0.0)
+        self.assertEqual(str(simplified_cancel2), "0.0")
+
+        # Terms with Non-Variable Bases (e.g., Log(y))
+        # 3*Log(y) + 2*Log(y) -> (5.0 * log(y))
+        expr_log = Add(Multiply(c3, log_y), Multiply(c2, log_y))
+        simplified_log = expr_log.simplify()
+        self.assertEqual(str(simplified_log), "(5.0 * log(y))")
+        self.assertAlmostEqual(simplified_log.eval(y=math.e), 5.0)
+
+        # No Like Terms (should preserve terms, order might change due to Add.simplify sort)
+        # (2*x) + (3*y) -> sorted: ((2.0*x)+(3.0*y)) if x sorts before y
+        expr_no_like = Add(Multiply(c2,x), Multiply(c3,y))
+        simplified_no_like = expr_no_like.simplify()
+        # Assuming 'x' sorts before 'y' string-wise for base "(2.0*x)" vs "(3.0*y)"
+        # The Add.simplify sorts terms by str. str(2.0*x) is "(2.0 * x)". str(3.0*y) is "(3.0 * y)"
+        # "(2.0 * x)" sorts before "(3.0 * y)"
+        self.assertEqual(str(simplified_no_like), "((2.0 * x) + (3.0 * y))")
+        self.assertAlmostEqual(simplified_no_like.eval(x=1,y=1), 5.0)
+
+        # Complex Expression with Multiple Like Terms and Constants
+        # 2x+1+3y+3x+2+2y -> 5x+5y+3
+        # Add.simplify puts const first, then sorts other terms by str
+        # Terms: Constant(3.0), (5.0*x), (5.0*y)
+        # str((5.0*x)) is "(5.0 * x)", str((5.0*y)) is "(5.0 * y)"
+        # "(5.0 * x)" sorts before "(5.0 * y)"
+        # Expected: (3.0 + ((5.0 * x) + (5.0 * y)))
+        expr_complex = Add(Add(Add(Add(Add(Multiply(c2,x), c1), Multiply(c3,y)), Multiply(c3,x)), c2), Multiply(c2,y))
+        simplified_complex = expr_complex.simplify()
+        self.assertEqual(str(simplified_complex), "(3.0 + ((5.0 * x) + (5.0 * y)))")
+        self.assertAlmostEqual(simplified_complex.eval(x=1,y=1), 5+5+3) #13.0
+
     def test_expression_equality(self):
         x = Variable('x')
         y = Variable('y')
