@@ -274,6 +274,10 @@ class Expression:
         """
         return self
 
+    def integrate(self, var: 'Variable'):
+        """Symbolically integrates the expression with respect to 'var'."""
+        raise NotImplementedError("Symbolic integration not implemented for this expression type.")
+
 
 class Constant(Expression):
     def __init__(self, value):
@@ -300,8 +304,59 @@ class Constant(Expression):
         """Simplifies a constant, which is just itself."""
         return self
 
+    def integrate(self, var: 'Variable'):
+        """
+        Integrates a constant c with respect to var, returning c*var.
+        Example: integrate(Constant(5), Variable('x')) -> Multiply(Constant(5), Variable('x'))
+        """
+        # __mul__ will handle Constant(0)*var -> Constant(0) and Constant(1)*var -> var
+        return Multiply(self, var)
+
 
 class Variable(Expression):
+    def __init__(self, name):
+        self.name = name
+
+    def diff(self, var):
+        if self.name == var.name:
+            return Constant(1)
+        return Constant(0)
+
+    def eval(self, **kwargs):
+        if self.name not in kwargs:
+            raise ValueError(f"Variable {self.name} not found in evaluation context")
+        return kwargs[self.name]
+
+    def __str__(self):
+        return self.name
+
+    def __eq__(self, other):
+        if not isinstance(other, Variable):
+            return NotImplemented
+        return self.name == other.name
+
+    def __hash__(self):
+        return hash(self.name)
+
+    def simplify(self):
+        """Simplifies a variable, which is just itself."""
+        return self
+
+    def integrate(self, var: 'Variable'):
+        """
+        Integrates a variable.
+        If integrating 'x' w.r.t 'x', returns x^2/2.
+        If integrating 'y' w.r.t 'x', returns y*x.
+        """
+        if self == var:
+            # Integral of x dx is x^2 / 2
+            return Divide(Power(self, Constant(2)), Constant(2))
+        else:
+            # Integral of y dx (where y is a variable different from x) is y*x
+            return Multiply(self, var)
+
+
+class Variable(Expression): # This class definition seems duplicated in the prompt, will only modify the first one.
     def __init__(self, name):
         self.name = name
 
@@ -375,6 +430,10 @@ class BinaryOperation(Expression):
                     pass # Return self as is
         return self
 
+    def integrate(self, var: 'Variable'):
+        """Base implementation for integrating binary operations."""
+        raise NotImplementedError("Symbolic integration not implemented for this binary operation.")
+
 
 class Add(BinaryOperation):
     def diff(self, var):
@@ -392,67 +451,34 @@ class Add(BinaryOperation):
             if isinstance(term, Constant):
                 return (term.value, Constant(1)) # Base for a pure constant is 1
             elif isinstance(term, Variable):
-                return (1, term)
+                return (1.0, term) # Return float for coefficient consistency
             elif isinstance(term, Multiply):
-                # This BFS-like approach aims to correctly find the total coefficient
-                # and the canonical base from a potentially complex Multiply term.
-                current_coeff = 1.0 # Use float for coefficient consistency
+                current_coeff = 1.0
                 non_const_factors = []
-
                 queue = [term]
-                # visited_multiply_ops = set() # Not strictly needed if simplify ensures no cycles and proper structure
-                                            # and if Multiply.simplify itself doesn't create redundant Multiply(Multiply(...))
-
                 head = 0
                 while head < len(queue):
                     sub_expr = queue[head]
                     head += 1
-
                     if isinstance(sub_expr, Multiply):
-                        # Process left child
-                        if isinstance(sub_expr.left, Constant):
-                            current_coeff *= sub_expr.left.value
-                        elif isinstance(sub_expr.left, Multiply):
-                            queue.append(sub_expr.left)
-                        else:
-                            non_const_factors.append(sub_expr.left)
+                        if isinstance(sub_expr.left, Constant): current_coeff *= sub_expr.left.value
+                        elif isinstance(sub_expr.left, Multiply): queue.append(sub_expr.left)
+                        else: non_const_factors.append(sub_expr.left)
 
-                        # Process right child
-                        if isinstance(sub_expr.right, Constant):
-                            current_coeff *= sub_expr.right.value
-                        elif isinstance(sub_expr.right, Multiply):
-                            queue.append(sub_expr.right)
-                        else:
-                            non_const_factors.append(sub_expr.right)
-                    elif isinstance(sub_expr, Constant):
-                        # This case handles if a Constant was directly part of a Multiply structure
-                        # that wasn't simplified away by Multiply.simplify() or if the term itself is a Constant
-                        # passed to _extract_coeff_base (but the initial if takes care of that).
-                        # This branch might be redundant if term is guaranteed to be Multiply here.
-                        current_coeff *= sub_expr.value
-                    else: # It's a non-Multiply, non-Constant factor
-                        non_const_factors.append(sub_expr)
+                        if isinstance(sub_expr.right, Constant): current_coeff *= sub_expr.right.value
+                        elif isinstance(sub_expr.right, Multiply): queue.append(sub_expr.right)
+                        else: non_const_factors.append(sub_expr.right)
+                    elif isinstance(sub_expr, Constant): current_coeff *= sub_expr.value
+                    else: non_const_factors.append(sub_expr)
 
-                if not non_const_factors:
-                    return (current_coeff, Constant(1)) # e.g. term was Multiply(Constant(2), Constant(3))
+                if not non_const_factors: return (current_coeff, Constant(1))
 
-                # Sort non_const_factors to ensure canonical base
-                if len(non_const_factors) > 1:
-                    non_const_factors.sort(key=str)
-
+                if len(non_const_factors) > 1: non_const_factors.sort(key=str)
                 base_expr = non_const_factors[0]
-                if len(non_const_factors) > 1:
-                    for i in range(1, len(non_const_factors)):
-                        base_expr = Multiply(base_expr, non_const_factors[i])
-
-                # Ensure base_expr itself is simplified (it should be if factors were simplified)
-                # but if Multiply() constructor is used directly, it might not be.
-                # However, factors coming from collect_terms should already be simplified.
-                # base_expr = base_expr.simplify() # Potentially simplify the reconstructed base.
-
+                for i in range(1, len(non_const_factors)): base_expr = Multiply(base_expr, non_const_factors[i])
                 return (current_coeff, base_expr)
-            else: # Other expression types (Log, Exp, Power, Sign, Abs, etc.)
-                return (1, term)
+            else:
+                return (1.0, term) # Return float for coefficient consistency
 
         # First, simplify operands
         left_simple = self.left.simplify()
@@ -497,91 +523,58 @@ class Add(BinaryOperation):
 
         # Sum constants from initial flattening
         sum_of_initial_constants_val = sum(c.value for c in constants)
-        # non_constants_terms is now just 'non_constants' from the previous step of Add.simplify
+        # 'non_constants' is the list of terms that were not Constant after initial pass
 
-        # --- Start of new logic for collecting like terms ---
+        # --- Collect like terms ---
         term_map = defaultdict(float)
         base_objects_map = {}
 
-        for term in non_constants: # Iterate over the previously identified non_constants terms
+        for term in non_constants:
             coeff_val, base_expr = _extract_coeff_base(term)
-
             base_expr_str = str(base_expr)
             term_map[base_expr_str] += coeff_val
             if base_expr_str not in base_objects_map:
                  base_objects_map[base_expr_str] = base_expr
 
-        # Handle coefficients that were attached to Constant(1) as base
-        # These are effectively constants and should be merged with sum_of_initial_constants_val
-        const_one_str = str(Constant(1)) # Key for Constant(1) base
+        const_one_str = str(Constant(1))
         if const_one_str in term_map:
             sum_of_initial_constants_val += term_map[const_one_str]
-            del term_map[const_one_str] # Remove from map as it's now part of constants
+            del term_map[const_one_str]
 
         final_total_constant_term = Constant(sum_of_initial_constants_val)
 
-        # Rebuild new_terms list from term_map and the final_total_constant_term
         new_terms = []
-
-        # Add the consolidated constant term if it's not zero, or if it's the only term (i.e., term_map is empty)
         if final_total_constant_term.value != 0.0 or not term_map:
             new_terms.append(final_total_constant_term)
 
-        for base_expr_str, summed_coeff_val in term_map.items():
-            if summed_coeff_val == 0.0: # Skip terms that cancelled out
+        # Sort term_map items by base_expr_str for canonical order of non-constant terms
+        sorted_term_map_items = sorted(term_map.items(), key=lambda item: item[0])
+
+        for base_expr_str, summed_coeff_val in sorted_term_map_items:
+            if summed_coeff_val == 0.0:
                 continue
-
             base_expr = base_objects_map[base_expr_str]
-
             if summed_coeff_val == 1.0:
                 new_terms.append(base_expr)
             else:
-                # Let Constant(value) * expr handle simplification via __mul__
                 new_terms.append(Constant(summed_coeff_val) * base_expr)
 
-        # Final cleanup of new_terms:
-        # If after all processing, new_terms is empty, it means result is 0
-        if not new_terms:
-            return Constant(0)
+        # Final cleanup and reconstruction
+        if not new_terms: return Constant(0.0)
 
-        # If new_terms contains only a Constant(0) (e.g. final_total_constant_term was 0 and term_map was empty)
-        # and it wasn't caught by "if not new_terms" (e.g. if new_terms = [Constant(0.0)])
-        if len(new_terms) == 1 and isinstance(new_terms[0], Constant) and new_terms[0].value == 0.0:
-             return Constant(0.0)
+        # Remove Constant(0.0) if it's not the only term.
+        # This can happen if final_total_constant_term was 0.0 but other terms existed.
+        if len(new_terms) > 1 and isinstance(new_terms[0], Constant) and new_terms[0].value == 0.0:
+            new_terms.pop(0)
 
-        # If there's more than one term, and one of them is Constant(0.0), remove it.
-        # This is if final_total_constant_term was 0 and was added because term_map was initially empty,
-        # but then term_map processing added actual terms.
-        if len(new_terms) > 1:
-            new_terms = [t for t in new_terms if not (isinstance(t, Constant) and t.value == 0.0)]
-
-        # After potential removal of Constant(0.0), re-check counts
-        if not new_terms: # If all terms were Constant(0.0) or cancelled out
-            return Constant(0)
-        if len(new_terms) == 1:
-            return new_terms[0]
-
-        # Rebuild the Add expression from new_terms, using Expression.__add__ for its simplifications
-        # Sort terms to ensure canonical form: constants first, then by string representation
-        # The constant term (if not zero and new_terms has it) should ideally be first.
-        # Other terms (non-constants) are sorted by their string representation.
-
-        # Separate the constant term (if present and first) from others for sorting
-        processed_constant_term = None
-        if isinstance(new_terms[0], Constant):
-            processed_constant_term = new_terms.pop(0)
-
-        new_terms.sort(key=str) # Sort remaining (non-constant or mixed) terms
-
-        if processed_constant_term is not None:
-            new_terms.insert(0, processed_constant_term) # Add constant back to the front
+        if not new_terms: return Constant(0.0) # Should not happen if logic is correct
+        if len(new_terms) == 1: return new_terms[0]
 
         current_sum = new_terms[0]
         for i in range(1, len(new_terms)):
-            current_sum = current_sum + new_terms[i] # Uses Expression.__add__
+            current_sum = current_sum + new_terms[i]
 
         return current_sum
-        # --- End of new logic ---
 
 
 class Subtract(BinaryOperation):
@@ -593,6 +586,13 @@ class Subtract(BinaryOperation):
 
     def __str__(self):
         return f"({self.left} - {self.right})"
+
+    def integrate(self, var: 'Variable'):
+        """Integrates a subtraction: Integral(f-g)dx = Integral(f)dx - Integral(g)dx."""
+        integrated_left = self.left.integrate(var)
+        integrated_right = self.right.integrate(var)
+        # The __sub__ operator (Expression.__sub__) will handle potential simplifications.
+        return integrated_left - integrated_right
 
 
 class Multiply(BinaryOperation):
@@ -685,6 +685,23 @@ class Multiply(BinaryOperation):
 
         return current_product
 
+    def integrate(self, var: 'Variable'):
+        """
+        Integrates a product. Only handles Constant Factor Rule: Int(c*f)dx = c*Int(f)dx.
+        General product integration (integration by parts) is not implemented yet.
+        """
+        if isinstance(self.left, Constant):
+            # Case: Constant * f(var) -> Constant * Integral(f(var) dx)
+            # __mul__ will handle if self.left is 0 or 1.
+            return self.left * self.right.integrate(var)
+        elif isinstance(self.right, Constant):
+            # Case: f(var) * Constant -> Integral(f(var) dx) * Constant
+            # __mul__ will handle if self.right is 0 or 1.
+            return self.left.integrate(var) * self.right
+        else:
+            # Case: f(var) * g(var) (general product)
+            raise NotImplementedError("General product integration (integration by parts) not implemented yet.")
+
 
 class Divide(BinaryOperation):
     def diff(self, var):
@@ -743,6 +760,53 @@ class Power(BinaryOperation):
     def __str__(self):
         return f"({self.left} ** {self.right})"
 
+    def integrate(self, var: 'Variable'):
+        """
+        Integrates a power. Handles Int(x^n)dx and Int(K)dx (where K is const w.r.t var).
+        K can be c^k or f(y)^k if var is x.
+        """
+        expr_base = self.left
+        exponent = self.right
+
+        # Case 1: x^n (base is the integration variable, exponent is constant)
+        if expr_base == var and isinstance(exponent, Constant):
+            n = exponent.value
+            if n == -1:
+                # Integral of x^-1 dx is Log(|x|)
+                return Log(Absolute(var))
+            else:
+                # Integral of x^n dx is x^(n+1) / (n+1)
+                new_exponent = Constant(n + 1)
+                denominator = Constant(n + 1)
+                # Denominator being zero (n=-1) is handled above.
+                return Divide(Power(var, new_exponent), denominator)
+
+        # Case 2: The entire Power expression self is constant w.r.t. var
+        # This covers c^k, f(y)^k (where var is x), etc.
+        # Check if self.diff(var) is Constant(0).
+        # Need to be careful not to call self.diff(var) if var is not in self,
+        # as diff might not be fully implemented for all types yet or might be complex.
+        # A more direct check: are base and exponent constant w.r.t var?
+
+        # Simplified check for "is self constant w.r.t. var"
+        # This relies on diff working correctly for base and exponent.
+        # If base.diff(var) is 0 AND exponent.diff(var) is 0, then self is constant w.r.t var.
+        # However, a more direct check is if self.diff(var) itself is Constant(0)
+
+        # Let's use the diff check on the whole expression as it's more general
+        # We need to ensure Constant(0) comparison works (it should with __eq__)
+        if self.diff(var) == Constant(0):
+             # The whole expression self (e.g. c^k, or f(y)^k if var is x) is a constant w.r.t var.
+             # Integral of a constant K is K*var
+            return Multiply(self, var)
+
+        # Case 3: Other cases (e.g., f(x)^n general u-sub, c^f(x))
+        else:
+            raise NotImplementedError(
+                "General Power integration (e.g., u-substitution for f(x)^n "
+                "or integration of c^f(x)) not implemented yet."
+            )
+
 
 class UnaryOperation(Expression):
     def __init__(self, operand):
@@ -785,6 +849,10 @@ class UnaryOperation(Expression):
                     pass # Return self as is
         return self
 
+    def integrate(self, var: 'Variable'):
+        """Base implementation for integrating unary operations."""
+        raise NotImplementedError("Symbolic integration not implemented for this unary operation.")
+
 
 class Negate(UnaryOperation):
     def diff(self, var):
@@ -795,6 +863,13 @@ class Negate(UnaryOperation):
 
     def __str__(self):
         return f"(-{self.operand})"
+
+    def integrate(self, var: 'Variable'):
+        """Integrates a negation: Integral(-f)dx = -Integral(f)dx."""
+        integrated_operand = self.operand.integrate(var)
+        # Using the unary minus operator will call Expression.__neg__,
+        # which correctly constructs a Negate object and handles simplifications.
+        return -integrated_operand
 
 
 class Absolute(UnaryOperation):
