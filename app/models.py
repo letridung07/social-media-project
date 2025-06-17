@@ -133,6 +133,7 @@ class User(db.Model, UserMixin):
     stories = db.relationship('Story', backref='author', lazy='dynamic')
     articles = db.relationship('Article', backref='author', lazy='dynamic', cascade='all, delete-orphan') # New relationship for Articles
     audio_posts = db.relationship('AudioPost', backref='uploader', lazy='dynamic', cascade='all, delete-orphan') # New relationship for AudioPosts
+    bookmarks = db.relationship('Bookmark', backref='user', lazy='dynamic', cascade='all, delete-orphan')
     historical_analytics = db.relationship('HistoricalAnalytics', backref='user', lazy='dynamic')
     polls = db.relationship('Poll', backref='author', lazy='dynamic', foreign_keys='Poll.user_id')
     poll_votes = db.relationship('PollVote', backref='user', lazy='dynamic')
@@ -298,6 +299,8 @@ class Post(db.Model):
 
     scheduled_for = db.Column(db.DateTime, nullable=True, index=True)
     is_published = db.Column(db.Boolean, default=False, nullable=False, index=True)
+
+    bookmarked_by = db.relationship('Bookmark', backref='post', lazy='dynamic', cascade='all, delete-orphan')
 
     def __repr__(self):
         return f'<Post {self.body[:50]}...>'
@@ -529,6 +532,19 @@ class Group(db.Model):
 
     def __repr__(self):
         return f'<Group {self.name}>'
+
+
+class Bookmark(db.Model):
+    __tablename__ = 'bookmark'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False)
+    timestamp = db.Column(db.DateTime, index=True, default=datetime.utcnow)
+
+    __table_args__ = (db.UniqueConstraint('user_id', 'post_id', name='_user_post_bookmark_uc'),)
+
+    def __repr__(self):
+        return f'<Bookmark user_id={self.user_id} post_id={self.post_id}>'
 
 # GroupMembership Model
 class GroupMembership(db.Model):

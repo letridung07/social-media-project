@@ -188,6 +188,23 @@
                 <small class="text-muted d-block mt-2">Login to react to this post.</small>
             {% endif %}
 
+            {# Bookmark Button/Form #}
+            {% if current_user.is_authenticated %}
+                {% set is_bookmarked = current_user.bookmarks.filter_by(post_id=post.id).first() %}
+                <form action="{{ url_for('main.bookmark_post', post_id=post.id) }}" method="POST" class="d-inline ml-2">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token else '' }}"/>
+                    {% if is_bookmarked %}
+                        <button type="submit" class="btn btn-sm btn-danger" title="Unbookmark Post">
+                            <i class="fas fa-bookmark"></i> <!-- Filled bookmark icon -->
+                        </button>
+                    {% else %}
+                        <button type="submit" class="btn btn-sm btn-outline-primary" title="Bookmark Post">
+                            <i class="far fa-bookmark"></i> <!-- Outline bookmark icon -->
+                        </button>
+                    {% endif %}
+                </form>
+            {% endif %}
+
             {# Share Button/Form #}
             {% if current_user.is_authenticated and post.author != current_user %}
                 <form action="{{ url_for('main.share_post', post_id=post.id) }}" method="post" class="d-inline ml-2">

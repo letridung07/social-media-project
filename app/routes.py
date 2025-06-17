@@ -14,7 +14,7 @@ from sqlalchemy.orm import joinedload # Import joinedload
 from werkzeug.utils import secure_filename
 from app import db, socketio, cache # Import cache
 from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm, FriendListForm, AddUserToFriendListForm, PRIVACY_CHOICES, ArticleForm, AudioPostForm, SubscriptionPlanForm, TOTPSetupForm, Verify2FAForm, Disable2FAForm, ConfirmPasswordAndTOTPForm # Added Disable2FAForm, ConfirmPasswordAndTOTPForm
-from app.models import User, Post, MediaItem, Reaction, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus, Mention, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE, FriendList, Article, AudioPost, SubscriptionPlan, UserSubscription # Like removed from import
+from app.models import User, Post, MediaItem, Reaction, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus, Mention, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE, FriendList, Article, AudioPost, SubscriptionPlan, UserSubscription, Bookmark # Like removed from import, Bookmark added
 from app.utils import save_picture, save_group_image, save_story_media, process_mentions, get_historical_engagement, get_top_performing_hashtags, get_top_performing_groups, save_media_file, slugify, save_audio_file, get_audio_duration # Added save_audio_file, get_audio_duration
 from app.email_utils import send_password_reset_email # Import email utility
 import pyotp
@@ -1493,6 +1493,38 @@ def react_to_post(post_id, reaction_type):
 
 
     return redirect(request.referrer or url_for('main.index'))
+
+
+@main.route('/bookmark/<int:post_id>', methods=['POST'])
+@login_required
+def bookmark_post(post_id):
+    post = Post.query.get_or_404(post_id)
+    existing_bookmark = Bookmark.query.filter_by(user_id=current_user.id, post_id=post.id).first()
+
+    if existing_bookmark:
+        db.session.delete(existing_bookmark)
+        flash('Post unbookmarked.', 'success')
+    else:
+        new_bookmark = Bookmark(user_id=current_user.id, post_id=post.id)
+        db.session.add(new_bookmark)
+        flash('Post bookmarked.', 'success')
+
+    db.session.commit()
+    return redirect(request.referrer or url_for('main.index'))
+
+
+@main.route('/bookmarks')
+@login_required
+def list_bookmarks():
+    # Fetch Post objects bookmarked by the current_user, ordered by Bookmark.timestamp desc
+    bookmarked_posts_query = Post.query.join(Bookmark, Post.id == Bookmark.post_id)\
+        .filter(Bookmark.user_id == current_user.id)\
+        .order_by(Bookmark.timestamp.desc())
+
+    bookmarked_posts = bookmarked_posts_query.all()
+
+    comment_form = CommentForm()  # For the _post.html partial
+    return render_template('bookmarks.html', title=_l('My Bookmarks'), posts=bookmarked_posts, comment_form=comment_form)
 
 
 @main.route('/chat')
