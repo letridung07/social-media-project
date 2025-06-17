@@ -179,6 +179,73 @@ To enhance the user experience and ensure the platform runs efficiently, several
 
 These optimizations contribute to a faster, more responsive, and scalable platform.
 
+## `pymath` Mathematics Library
+
+The project includes a utility library named `pymath` for mathematical operations. Recently, this library has been significantly enhanced with a symbolic mathematics module.
+
+### `pymath.symbolic` - Symbolic Mathematics
+
+The `pymath.symbolic` module provides tools for symbolic computation, allowing for the representation and manipulation of mathematical expressions rather than just numerical values. This can be a powerful tool for features requiring algebraic manipulation, calculus, or complex formula handling.
+
+**Key Capabilities:**
+
+*   **Symbolic Variables and Constants:**
+    *   Define variables (e.g., `x`, `y`) and constants that can be used in expressions.
+    *   Example:
+        ```python
+        from pymath.symbolic.expression import Variable, Constant
+        x = Variable('x')
+        y = Variable('y')
+        c = Constant(5)
+        ```
+
+*   **Expression Building:**
+    *   Construct complex mathematical expressions using standard Python operators.
+    *   Example:
+        ```python
+        expr = (x**2 + Constant(2)*x*y + y**2) / (x - y)
+        print(expr)  # Output: (((x ** 2) + ((2 * x) * y)) + (y ** 2)) / (x - y))
+        ```
+
+*   **Automatic Simplification:**
+    *   Basic algebraic simplifications are applied automatically during expression creation.
+    *   Examples:
+        ```python
+        expr_sum_zero = x + Constant(0)
+        print(expr_sum_zero)  # Output: x
+
+        expr_mul_one = y * Constant(1)
+        print(expr_mul_one)   # Output: y
+
+        expr_const_fold = Constant(2) + Constant(3)
+        print(expr_const_fold) # Output: 5
+        ```
+
+*   **Evaluation:**
+    *   Substitute numerical values for variables to evaluate expressions.
+    *   Example:
+        ```python
+        result = expr.eval(x=10, y=2)
+        # ((10^2 + 2*10*2 + 2^2) / (10-2)) = (100 + 40 + 4) / 8 = 144 / 8 = 18
+        print(result)  # Output: 18.0
+        ```
+
+*   **Differentiation:**
+    *   Perform symbolic differentiation with respect to a variable.
+    *   Supports common differentiation rules (sum, product, quotient, power, chain rule for log/exp).
+    *   Example:
+        ```python
+        from pymath.symbolic.expression import Log
+
+        # Differentiate x^3 + 2x + log(x) with respect to x
+        expr_to_diff = x**Constant(3) + Constant(2)*x + Log(x)
+        diff_expr = expr_to_diff.diff(x)
+        # Expected: 3*(x**2) + 2 + (1/x)
+        print(diff_expr) # Output: (((3 * (x ** 2)) + 2) + (1 / x)) (or similar based on internal structure)
+        ```
+
+This module is tested via unit tests in `pymath/tests/test_symbolic.py`. It can be leveraged for future features requiring advanced mathematical processing within the platform.
+
 ## Real-time Chat
 
 The platform includes a real-time chat feature allowing users to engage in one-on-one conversations.
