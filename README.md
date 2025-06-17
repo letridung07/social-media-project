@@ -244,7 +244,7 @@ The `pymath.symbolic` module provides tools for symbolic computation, allowing f
         print(diff_expr) # Output: (((3 * (x ** 2)) + 2) + (1 / x)) (or similar based on internal structure)
         ```
 
-This module is tested via unit tests in `pymath/tests/test_symbolic.py`. It can be leveraged for future features requiring advanced mathematical processing within the platform.
+This module is tested via unit tests in `app/libs/pymath/tests/test_symbolic.py`. It can be leveraged for future features requiring advanced mathematical processing within the platform.
 
 ## Real-time Chat
 
@@ -381,11 +381,17 @@ Follow these instructions to get a copy of the project up and running on your lo
 ### Running Tests
 
 1.  Ensure your virtual environment is activated and development dependencies are installed.
-2.  From the project root directory, run the tests:
-    ```bash
-    python3 -m unittest discover tests
-    ```
-    This command will discover and run all tests located in the `tests` directory.
+2.  From the project root directory:
+    *   To run the main application tests:
+        ```bash
+        python3 -m unittest discover tests
+        ```
+        This command will discover and run all tests located in the main `tests/` directory.
+    *   To run the `pymath` library tests:
+        ```bash
+        python3 -m unittest discover -s app/libs/pymath/tests -p 'test_*.py'
+        ```
+        This command will discover and run tests specifically for the `pymath` module.
 
 ## Project Structure
 ```
