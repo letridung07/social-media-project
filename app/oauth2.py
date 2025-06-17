@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from app import db
-from app.models import User, Application, AccessToken # OAuth models
+from app.core.models import User, Application, AccessToken # OAuth models
 import secrets # For generating tokens if not done in model
 
 # Configuration for token expiry (e.g., 1 hour)

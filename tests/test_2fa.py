@@ -1,7 +1,7 @@
 import unittest
 from app import create_app, db
-from app.models import User
-from app.forms import TOTPSetupForm, Verify2FAForm, Disable2FAForm, ConfirmPasswordAndTOTPForm
+from app.core.models import User
+from app.core.forms import TOTPSetupForm, Verify2FAForm, Disable2FAForm, ConfirmPasswordAndTOTPForm
 from unittest.mock import patch, MagicMock
 import pyotp
 import json

@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from app.models import Application, User # User is needed to fetch app owner
+from app.core.models import Application, User # User is needed to fetch app owner
 from app.oauth2 import generate_access_token, ACCESS_TOKEN_EXPIRES_IN_SECONDS
 from app import db # For database session if needed directly, though models handle it
 from app import limiter # Assuming limiter is the instance from app/__init__.py
@@ -126,7 +126,7 @@ def oauth_token():
         return jsonify(error="UnsupportedGrantType", message=f"Grant type '{grant_type}' is not supported."), 400
 
 # Example of a protected route (to be implemented/tested later)
-from app.models import Post, PRIVACY_PUBLIC, PRIVACY_PRIVATE, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST
+from app.core.models import Post, PRIVACY_PUBLIC, PRIVACY_PRIVATE, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST
 from app.oauth2 import token_required
 from flask import g, abort # For g.current_user
 
@@ -426,8 +426,8 @@ def get_post(post_id):
 
     return jsonify(serialize_post_data(post)), 200
 
-# from app.utils import process_hashtags, process_mentions # For creating/updating posts
-from app.models import FriendList # For custom list validation
+from app.utils.helpers import process_hashtags, process_mentions # For creating/updating posts
+from app.core.models import FriendList # For custom list validation
 
 @api_bp.route('/posts', methods=['POST'])
 @token_required
@@ -662,7 +662,7 @@ def update_post(post_id):
         # For hashtags, process_hashtags usually handles additions/removals correctly if it clears existing tags first
         # For mentions, it's more complex if we want to remove old ones that are no longer in body
         # A simple approach: delete all existing mentions for this post and re-create.
-        from app.models import Mention, Hashtag # Import here to avoid circular if not already at top
+        from app.core.models import Mention, Hashtag # Import here to avoid circular if not already at top
         Mention.query.filter_by(post_id=post.id).delete()
         # For hashtags, if process_hashtags doesn't clear them:
         post.hashtags.clear() # Clear existing many-to-many hashtag associations
@@ -725,7 +725,7 @@ def delete_post_api(post_id): # Renamed to avoid conflict if a web route `delete
     post.hashtags.clear() # Clear many-to-many for hashtags before deleting post.
 
     # Manually delete associated mentions if not cascaded perfectly by DB or ORM config.
-    from app.models import Mention # Import here if not at top
+    from app.core.models import Mention # Import here if not at top
     Mention.query.filter_by(post_id=post.id).delete()
 
     # Note: If there are other related items that don't cascade (e.g., notifications referencing this post),
@@ -737,11 +737,12 @@ def delete_post_api(post_id): # Renamed to avoid conflict if a web route `delete
 
     return jsonify({"message": "Post deleted successfully"}), 200 # Or 204 No Content, but 200 with message is also common.
 
-from app.models import Reaction, Comment # For interactions, Like replaced with Reaction
+from app.core.models import Reaction, Comment # For interactions, Like replaced with Reaction
 from werkzeug.exceptions import HTTPException
 from flask import json, current_app, request, g # Added request, g for logging
 import time # For logging request duration
 import logging # For setting log level if needed
+from datetime import datetime # Added for Reaction timestamp update
 
 # Standardized JSON Error Handling for API Blueprint
 @api_bp.errorhandler(HTTPException)
@@ -799,7 +800,7 @@ def log_api_request_before():
     g.api_start_time = time.time()
     # Ensure logger is at least INFO level if not in DEBUG mode.
     # This might be better placed in app creation, but can be checked here.
-    if not current_app.debug and current_app.logger.level > logging.INFO:
+    if not current_app.debug and current_app.logger.level > logging.INFO: # pragma: no cover
         current_app.logger.setLevel(logging.INFO) # Or directly in config.py
 
     log_message = (

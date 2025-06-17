@@ -53,14 +53,14 @@ def create_app(config_class=Config):
     limiter.init_app(app)
     # bootstrap.init_app(app) # Initialize Bootstrap with the app
 
-    from app.routes import main as main_blueprint
+    from app.core.routes import main as main_blueprint
     app.register_blueprint(main_blueprint)
 
-    from app.admin_routes import admin_bp # Import admin blueprint
+    from app.admin.routes import admin_bp # Import admin blueprint
     app.register_blueprint(admin_bp) # Register admin blueprint
 
     # Register API blueprint
-    from app.api_routes import api_bp
+    from app.api.routes import api_bp
     app.register_blueprint(api_bp, url_prefix='/api/v1') # Example prefix
 
     # If you have authentication routes, import and register them here
@@ -71,7 +71,7 @@ def create_app(config_class=Config):
     # @babel.localeselector # Use the decorator from the global, initialized babel instance
     # def get_locale():
     #     # For User model to be available for g.user.locale
-    #     from app.models import User # Import here to avoid circular import if User model uses _l
+    #     from app.core.models import User # Import here to avoid circular import if User model uses _l
     #
     #     # 1. Try to get language from user profile (if user is logged in and has locale set)
     #     # For now, this part is commented out as User.locale is an optional enhancement.
@@ -98,7 +98,7 @@ def create_app(config_class=Config):
     #             default_lang = list(app.config['LANGUAGES'].keys())[0]
     #     return default_lang
 
-    from app.utils import inject_unread_notification_count, inject_search_form, linkify_mentions # Import inject_search_form and linkify_mentions
+    from app.utils.helpers import inject_unread_notification_count, inject_search_form, linkify_mentions # Import inject_search_form and linkify_mentions
     @app.context_processor
     def _inject_unread_notification_count():
         return inject_unread_notification_count()
@@ -108,11 +108,11 @@ def create_app(config_class=Config):
         return inject_search_form()
 
     # Ensure models are imported so SQLAlchemy and Flask-Migrate are aware of them
-    from app import models # noqa
+    from app.core import models # noqa
 
     # Initialize the scheduler
     if not app.config.get('TESTING', False): # Optionally disable scheduler during tests
-        from app.scheduler import init_scheduler # MOVED HERE
+        from app.core.scheduler import init_scheduler # MOVED HERE
         with app.app_context(): # Ensure app context for scheduler init if it needs it
             init_scheduler(app)
 
@@ -123,7 +123,7 @@ def create_app(config_class=Config):
     # Register custom Jinja2 filters
     app.jinja_env.filters['linkify_mentions'] = linkify_mentions
 
-    from app import events # noqa
+    from app.core import events # noqa
 
     @app.after_request
     def add_security_headers(response):
@@ -165,5 +165,5 @@ def create_app(config_class=Config):
 def load_user(user_id):
     # Since the user_id is just the primary key of our user table,
     # use it in the query for the user directly.
-    from app.models import User # Import User model here to avoid circular imports
+    from app.core.models import User # Import User model here to avoid circular imports
     return User.query.get(int(user_id))

@@ -13,10 +13,10 @@ import csv # For CSV export
 from sqlalchemy.orm import joinedload # Import joinedload
 from werkzeug.utils import secure_filename
 from app import db, socketio, cache # Import cache
-from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm, FriendListForm, AddUserToFriendListForm, PRIVACY_CHOICES, ArticleForm, AudioPostForm, SubscriptionPlanForm, TOTPSetupForm, Verify2FAForm, Disable2FAForm, ConfirmPasswordAndTOTPForm # Added Disable2FAForm, ConfirmPasswordAndTOTPForm
-from app.models import User, Post, MediaItem, Reaction, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus, Mention, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE, FriendList, Article, AudioPost, SubscriptionPlan, UserSubscription, Bookmark # Like removed from import, Bookmark added
-from app.utils import save_picture, save_group_image, save_story_media, process_mentions, get_historical_engagement, get_top_performing_hashtags, get_top_performing_groups, save_media_file, slugify, save_audio_file, get_audio_duration # Added save_audio_file, get_audio_duration
-from app.email_utils import send_password_reset_email # Import email utility
+from app.core.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm, FriendListForm, AddUserToFriendListForm, PRIVACY_CHOICES, ArticleForm, AudioPostForm, SubscriptionPlanForm, TOTPSetupForm, Verify2FAForm, Disable2FAForm, ConfirmPasswordAndTOTPForm # Added Disable2FAForm, ConfirmPasswordAndTOTPForm
+from app.core.models import User, Post, MediaItem, Reaction, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus, Mention, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE, FriendList, Article, AudioPost, SubscriptionPlan, UserSubscription, Bookmark # Like removed from import, Bookmark added
+from app.utils.helpers import save_picture, save_group_image, save_story_media, process_mentions, get_historical_engagement, get_top_performing_hashtags, get_top_performing_groups, save_media_file, slugify, save_audio_file, get_audio_duration, process_hashtags # Added process_hashtags
+from app.utils.email import send_password_reset_email # Import email utility
 import pyotp
 import qrcode
 import io
@@ -25,17 +25,17 @@ import json
 from passlib.hash import sha256_crypt
 import secrets # For slug generation
 from wtforms.validators import DataRequired # For dynamic validator modification
-from app.utils import generate_ics_file, subscription_required # For ICS export
+from app.utils.helpers import generate_ics_file, subscription_required # For ICS export
 import stripe # For Stripe integration
 
 # Import for recommendations
-from app.utils import get_recommendations
+from app.utils.helpers import get_recommendations
 
 # Ensure these specific imports are present for set_theme_preference, though some might be redundant if already imported broadly.
 from flask import request, jsonify, current_app # request, jsonify, current_app
 from flask_login import current_user, login_required # current_user, login_required
 from app import db # db
-# from app.models import User # User model is typically imported with other models
+# from app.core.models import User # User model is typically imported with other models
 import time # For rate limiting
 
 main = Blueprint('main', __name__)
@@ -49,26 +49,6 @@ LOGIN_LOCKOUT_PERIOD_SECONDS = 300 # 5 minutes
 failed_login_attempts = {}
 
 LIKE_MILESTONES = [10, 50, 100, 250, 500, 1000]
-
-# Helper function for processing hashtags
-def process_hashtags(post_body, post_object):
-    # Clear existing hashtags for the post (important for edits)
-    post_object.hashtags = []
-
-    # Regex to find hashtags: words starting with #, alphanumeric characters and underscores
-    hashtag_regex = r"#([a-zA-Z0-9_]+)"
-    found_tags_texts = re.findall(hashtag_regex, post_body)
-
-    for tag_text in set(found_tags_texts): # Use set to avoid duplicate processing for same tag in one post
-        normalized_tag = tag_text.lower() # Normalize to lowercase
-        hashtag = Hashtag.query.filter_by(tag_text=normalized_tag).first()
-        if not hashtag:
-            hashtag = Hashtag(tag_text=normalized_tag)
-            db.session.add(hashtag)
-            # No commit here yet, will be committed with the post
-
-        if hashtag not in post_object.hashtags: # Ensure not to add duplicates
-             post_object.hashtags.append(hashtag)
 
 # Cache key generation function for user-specific caching
 def make_user_specific_cache_key(*args, **kwargs):
@@ -135,7 +115,7 @@ def index():
     return render_template('index.html', title=_l('Home'), posts=posts, comment_form=comment_form, pagination=posts_pagination)
 
 
-from app.models import post_hashtags # For hashtag popularity sort
+from app.core.models import post_hashtags # For hashtag popularity sort
 
 @main.route('/search')
 # Apply user-specific caching to search results if query_term is present OR if recommendations are shown
@@ -1211,100 +1191,8 @@ def unfollow(username):
     flash(f'You have unfollowed {username}.', 'success')
     return redirect(url_for('main.profile', username=username))
 
-@main.route('/like/<int:post_id>', methods=['POST'])
-@login_required
-def like_post(post_id): # Renamed function to avoid conflict with Like model
-    post = Post.query.get_or_404(post_id)
-    if Like.query.filter_by(user_id=current_user.id, post_id=post.id).first():
-        flash('You have already liked this post.', 'info')
-    else:
-        like = Like(user_id=current_user.id, post_id=post.id)
-        db.session.add(like)
-        db.session.commit() # Commit the like first to update post.like_count()
-        flash('You liked the post!', 'success')
-
-        # Notification and event for like (and milestones)
-        if post.author.id != current_user.id:
-            # Standard 'like' notification
-            std_like_notification = Notification(
-                recipient_id=post.author.id,
-                actor_id=current_user.id,
-                type='like',
-                related_post_id=post.id
-            )
-            db.session.add(std_like_notification)
-            # Commit the standard 'like' notification first if it's the only one or before milestone processing
-            # This ensures its availability if milestone logic depends on it, though it doesn't directly.
-            # More importantly, it makes its emission happen after its commit.
-
-            # db.session.add(std_like_notification) # This was duplicated and part of the syntax error source
-
-            # Buffer for milestone notifications to be created
-            # new_milestone_notifications_to_emit = [] # Not strictly needed if we iterate milestones_hit_this_like
-            milestones_hit_this_like = [] # To store (milestone_obj, milestone_count)
-
-            current_like_count = post.like_count()
-            for milestone_val in LIKE_MILESTONES:
-                if current_like_count == milestone_val:
-                    existing_milestone_notif = Notification.query.filter_by(
-                        recipient_id=post.author.id,
-                        related_post_id=post.id,
-                        type=f'like_milestone_{milestone_val}'
-                    ).first()
-                    if not existing_milestone_notif:
-                        milestone_notif = Notification(
-                            recipient_id=post.author.id,
-                            actor_id=current_user.id,
-                            type=f'like_milestone_{milestone_val}',
-                            related_post_id=post.id
-                        )
-                        db.session.add(milestone_notif)
-                        # Prepare data for emit, but don't emit yet
-                        milestones_hit_this_like.append({'milestone_obj': milestone_notif, 'milestone_count': milestone_val})
-
-            # Commit all new notifications (standard like + any milestones) together
-            db.session.commit()
-
-            # Now emit events after commit
-            # Standard like notification (if post author is not current user)
-            socketio.emit('new_notification',
-                          {'message': f'{current_user.username} liked your post.',
-                           'type': 'like',
-                           'actor_username': current_user.username,
-                           'post_id': post.id,
-                           'post_author_username': post.author.username
-                           },
-                          room=str(post.author.id))
-
-            # Milestone notifications
-            for item in milestones_hit_this_like:
-                # milestone_notif_obj = item['milestone_obj'] # Object reference if needed later
-                milestone_count = item['milestone_count']
-                socketio.emit('new_notification',
-                              {'message': f"Your post '{post.body[:30]}{'...' if len(post.body) > 30 else ''}' reached {milestone_count} likes!",
-                               'type': f'like_milestone_{milestone_count}',
-                               'actor_username': current_user.username,
-                               'post_id': post.id,
-                               'post_author_username': post.author.username,
-                               'milestone_count': milestone_count
-                               },
-                              room=str(post.author.id))
-
-    # Consider redirecting to request.referrer if available and safe, otherwise index or post permalink
-    return redirect(request.referrer or url_for('main.index'))
-
-@main.route('/unlike/<int:post_id>', methods=['POST'])
-@login_required
-def unlike_post(post_id): # Renamed function
-    post = Post.query.get_or_404(post_id) # Ensure post exists
-    like = Like.query.filter_by(user_id=current_user.id, post_id=post.id).first()
-    if like:
-        db.session.delete(like)
-        db.session.commit()
-        flash('You unliked the post.', 'success')
-    else:
-        flash('You have not liked this post yet.', 'info')
-    return redirect(request.referrer or url_for('main.index'))
+# Removed old /like and /unlike routes as Like model is deprecated
+# New /react route handles likes and other reactions.
 
 @main.route('/post/<int:post_id>/comment', methods=['POST'])
 @login_required
@@ -2792,8 +2680,8 @@ def share_to_facebook(post_id):
 
 # -------------------- Live Stream Routes --------------------
 import secrets
-from app.models import LiveStream # Already have User, Post
-from app.forms import StreamSetupForm # Already have other forms
+from app.core.models import LiveStream # Already have User, Post
+from app.core.forms import StreamSetupForm # Already have other forms
 
 @main.route('/stream/manage', methods=['GET', 'POST'])
 @login_required
@@ -3280,7 +3168,7 @@ def user_audio_list(username):
 
 
 # -------------------- Virtual Goods Storefront Routes --------------------
-from app.models import VirtualGood, UserVirtualGood # Added UserVirtualGood
+from app.core.models import VirtualGood, UserVirtualGood # Added UserVirtualGood
 from sqlalchemy.exc import SQLAlchemyError # Added SQLAlchemyError
 
 @main.route('/store')
@@ -3540,8 +3428,8 @@ def my_subscriptions():
 
 
 # Developer Portal Routes
-from app.forms import ApplicationRegistrationForm, ApplicationEditForm # New forms
-from app.models import Application # OAuth Application model
+from app.core.forms import ApplicationRegistrationForm, ApplicationEditForm # New forms
+from app.core.models import Application # OAuth Application model
 import secrets # For client secret generation
 
 @main.route('/developer/dashboard')

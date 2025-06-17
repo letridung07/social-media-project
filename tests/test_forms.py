@@ -2,11 +2,11 @@ import unittest
 from flask import Flask # Flask is used by create_app
 from datetime import datetime, timedelta, timezone
 from app import create_app, db
-from app.forms import (
+from app.core.forms import (
     PostForm, StoryForm, RegistrationForm, CommentForm,
     EditProfileForm, PollForm, PollOptionEntryForm
 )
-from app.models import User, FriendList, PRIVACY_CUSTOM_LIST # For PostForm custom list test, User for setUp
+from app.core.models import User, FriendList, PRIVACY_CUSTOM_LIST # For PostForm custom list test, User for setUp
 from config import TestingConfig # Import TestingConfig
 from wtforms.validators import ValidationError
 from werkzeug.datastructures import FileStorage

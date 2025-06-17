@@ -1,7 +1,7 @@
 import unittest
 from flask import url_for # Added for redirect checks
 from app import create_app, db
-from app.models import User
+from app.core.models import User
 from config import TestingConfig # Import TestingConfig
 
 class AuthTestCase(unittest.TestCase):

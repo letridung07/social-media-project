@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from flask import url_for, get_flashed_messages # get_flashed_messages can be useful
 from app import create_app, db, cache
-from app.models import User, Post, Like, Comment, Hashtag, Group, GroupMembership, HistoricalAnalytics, UserAnalytics, post_hashtags # Added new models
+from app.core.models import User, Post, Reaction, Comment, Hashtag, Group, GroupMembership, HistoricalAnalytics, UserAnalytics, post_hashtags # Added new models, replaced Like with Reaction
 from config import TestingConfig # Use TestingConfig as in existing file
 
 class AnalyticsTestCase(unittest.TestCase): # Use existing class name
@@ -61,11 +61,11 @@ class AnalyticsTestCase(unittest.TestCase): # Use existing class name
         db.session.commit()
         return post
 
-    def _create_like(self, user_id, post_id):
-        like = Like(user_id=user_id, post_id=post_id)
-        db.session.add(like)
+    def _create_reaction(self, user_id, post_id, reaction_type='like'): # Changed from _create_like
+        reaction = Reaction(user_id=user_id, post_id=post_id, reaction_type=reaction_type)
+        db.session.add(reaction)
         db.session.commit()
-        return like
+        return reaction
 
     def _create_comment(self, user_id, post_id, body="Test comment"):
         comment = Comment(user_id=user_id, post_id=post_id, body=body)
@@ -150,7 +150,7 @@ class AnalyticsTestCase(unittest.TestCase): # Use existing class name
 
 
     def test_get_historical_engagement_util(self): # Renamed to avoid clash if a route test is named similarly
-        from app.utils import get_historical_engagement
+        from app.utils.helpers import get_historical_engagement
         user = self.user1 # Use one of the pre-created users
         now = datetime.now(timezone.utc)
 
@@ -174,7 +174,7 @@ class AnalyticsTestCase(unittest.TestCase): # Use existing class name
 
 
     def test_get_top_performing_hashtags_util(self): # Renamed
-        from app.utils import get_top_performing_hashtags
+        from app.utils.helpers import get_top_performing_hashtags
         user = self.user1
 
         ht1 = self._create_hashtag("popular")
@@ -183,15 +183,15 @@ class AnalyticsTestCase(unittest.TestCase): # Use existing class name
         post1 = self._create_post(user.id, body="#popular #average")
         self._add_hashtag_to_post(post1, ht1)
         self._add_hashtag_to_post(post1, ht2)
-        self._create_like(self.user2.id, post1.id) # Liked by user2
+        self._create_reaction(self.user2.id, post1.id, reaction_type='like') # Liked by user2
         self._create_comment(self.user3.id, post1.id, "Great post!") # Comment by user3
         # ht1: 1 like, 1 comment -> engagement 2
         # ht2: 1 like, 1 comment -> engagement 2
 
         post2 = self._create_post(user.id, body="More #popular stuff")
         self._add_hashtag_to_post(post2, ht1)
-        self._create_like(self.user2.id, post2.id)
-        self._create_like(self.user3.id, post2.id)
+        self._create_reaction(self.user2.id, post2.id, reaction_type='like')
+        self._create_reaction(self.user3.id, post2.id, reaction_type='like')
         # ht1: now has 1+2=3 likes, 1 comment -> engagement 4
 
         top_hashtags = get_top_performing_hashtags(user.id, limit=2)
@@ -207,7 +207,7 @@ class AnalyticsTestCase(unittest.TestCase): # Use existing class name
         self.assertEqual(top_hashtags[1]['comments'], 1)
 
     def test_get_top_performing_groups_util(self): # Renamed
-        from app.utils import get_top_performing_groups
+        from app.utils.helpers import get_top_performing_groups
         user = self.user1
 
         group1 = self._create_group(user.id, name="Active Group Util") # Unique name
@@ -238,7 +238,7 @@ class AnalyticsTestCase(unittest.TestCase): # Use existing class name
         ht_top = self._create_hashtag("topone")
         post_for_ht = self._create_post(self.user1.id, body="#topone content")
         self._add_hashtag_to_post(post_for_ht, ht_top)
-        self._create_like(self.user2.id, post_for_ht.id)
+        self._create_reaction(self.user2.id, post_for_ht.id, reaction_type='like')
 
         group_top = self._create_group(self.user1.id, name="Top Test Group")
         post_for_group = self._create_post(self.user1.id, body="Content for top group", group_id=group_top.id)
@@ -291,7 +291,7 @@ class AnalyticsTestCase(unittest.TestCase): # Use existing class name
         ht_export_csv = self._create_hashtag("csvexportable")
         post_for_ht_csv = self._create_post(self.user1.id, body="#csvexportable content")
         self._add_hashtag_to_post(post_for_ht_csv, ht_export_csv)
-        self._create_like(self.user2.id, post_for_ht_csv.id)
+        self._create_reaction(self.user2.id, post_for_ht_csv.id, reaction_type='like')
 
         group_export_csv = self._create_group(self.user1.id, name="CSV Export Group")
         post_for_group_csv = self._create_post(self.user1.id, body="Content for CSV export group", group_id=group_export_csv.id)

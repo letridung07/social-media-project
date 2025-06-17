@@ -25,7 +25,7 @@ except ImportError:
 # Imports for recommendation functions
 from sqlalchemy import func, desc, not_, and_, or_, distinct
 from app import db # Assuming db instance is available in app package
-from app.models import User, Post, Reaction, Comment, Hashtag, Group, GroupMembership, followers, Mention, HistoricalAnalytics, post_hashtags, Article, Event as AppEvent, UserSubscription, SubscriptionPlan # Added Article and AppEvent, replaced Like with Reaction
+from app.core.models import User, Post, Reaction, Comment, Hashtag, Group, GroupMembership, followers, Mention, HistoricalAnalytics, post_hashtags, Article, Event as AppEvent, UserSubscription, SubscriptionPlan # Added Article and AppEvent, replaced Like with Reaction
 from datetime import datetime, timedelta, timezone # Ensure timezone is imported
 
 # Imports for iCalendar generation
@@ -218,8 +218,8 @@ def save_group_image(form_image_field):
     return image_fn
 
 from flask_login import current_user
-from app.models import Notification # Keep this specific import for Notification
-from app.forms import SearchForm # Import SearchForm
+from app.core.models import Notification # Keep this specific import for Notification
+from app.core.forms import SearchForm # Import SearchForm
 
 def inject_unread_notification_count():
     if current_user.is_authenticated:
@@ -276,6 +276,29 @@ def save_story_media(form_media_file):
         form_media_file.save(media_full_path)
 
     return media_fn, media_type
+
+
+# Helper function for processing hashtags (moved from app/core/routes.py)
+def process_hashtags(post_body, post_object):
+    # Clear existing hashtags for the post (important for edits)
+    post_object.hashtags = []
+
+    # Regex to find hashtags: words starting with #, alphanumeric characters and underscores
+    hashtag_regex = r"#([a-zA-Z0-9_]+)"
+    found_tags_texts = re.findall(hashtag_regex, post_body)
+
+    for tag_text in set(found_tags_texts): # Use set to avoid duplicate processing for same tag in one post
+        normalized_tag = tag_text.lower() # Normalize to lowercase
+        # Ensure Hashtag and db are available (they are, via global imports in this file)
+        hashtag = Hashtag.query.filter_by(tag_text=normalized_tag).first()
+        if not hashtag:
+            hashtag = Hashtag(tag_text=normalized_tag)
+            db.session.add(hashtag)
+            # No commit here yet, will be committed with the post
+
+        if hashtag not in post_object.hashtags: # Ensure not to add duplicates
+             post_object.hashtags.append(hashtag)
+
 
 def process_mentions(text_content: str, owner_object, actor_user: User) -> list[User]:
     """

@@ -2,7 +2,7 @@ from flask_socketio import join_room, leave_room, emit
 from flask_login import current_user
 from flask import request, current_app # Import current_app
 from app import socketio, db # Assuming socketio and db are initialized in app/__init__.py
-from app.models import Conversation, ChatMessage, User, Notification, MessageReadStatus, LiveStream # Import LiveStream
+from app.core.models import Conversation, ChatMessage, User, Notification, MessageReadStatus, LiveStream # Import LiveStream
 from datetime import datetime, timezone
 
 poll_room_viewers = {}

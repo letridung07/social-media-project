@@ -2,9 +2,9 @@ import unittest
 import io # For simulating file uploads
 from flask import url_for # Added for consistency if needed
 from app import create_app, db
-from app.models import User, Post, PRIVACY_PUBLIC, PRIVACY_PRIVATE, PRIVACY_FOLLOWERS # Added Post and privacy constants
+from app.core.models import User, Post, PRIVACY_PUBLIC, PRIVACY_PRIVATE, PRIVACY_FOLLOWERS # Added Post and privacy constants
 from config import TestingConfig
-from app.utils import save_picture # For potential mocking or direct call
+from app.utils.helpers import save_picture # For potential mocking or direct call
 import os
 
 # Ensure the images directory exists for save_picture utility, even for tests
