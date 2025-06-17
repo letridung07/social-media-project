@@ -230,6 +230,28 @@ The frontend of this platform is built using:
 *   Post Engagement
 *   *(Chat screenshots are now in the dedicated "Real-time Chat" section)*
 
+## Potential Future Developments
+
+While the platform is already rich in features, here are some exciting ideas for future enhancements:
+
+*   **Related Posts:**
+    *   Implement a system to suggest related posts to users, either at the bottom of a post they are viewing or in a dedicated section.
+    *   This could be based on shared tags, content similarity (e.g., using TF-IDF or other NLP techniques), or user engagement patterns.
+*   **Post Reactions:**
+    *   Expand beyond simple "likes" to include a range of reactions (e.g., "love," "haha," "wow," "sad," "angry").
+    *   This would allow for more nuanced user expression and feedback on content.
+*   **Rate Limiting:**
+    *   Introduce rate limiting for various actions (e.g., login attempts, post creation, comment submission, API requests) to improve security and prevent abuse.
+    *   This could be implemented using Flask-Limiter or a similar extension.
+*   **Enhanced Content Discovery:**
+    *   Further improve algorithms for personalized recommendations and trending content.
+*   **Gamification:**
+    *   Introduce badges, points, or leaderboards to encourage user engagement.
+*   **Full Media Server Recording Playback:**
+    *   Develop the functionality to access and play back recorded live streams.
+*   **Advanced Group Moderation Tools:**
+    *   Provide group admins with more tools for managing content and members.
+
 ## Getting Started
 
 Follow these instructions to get a copy of the project up and running on your local machine for development and testing purposes.

@@ -157,19 +157,35 @@
         {# End of poll display section #}
 
         <div class="post-actions mb-2">
-            <small class="text-muted">{{ post.like_count() }} like{% if post.like_count() != 1 %}s{% endif %}</small>
+            {% set current_reaction = post.get_reaction_by_user(current_user) if current_user.is_authenticated else None %}
+            {% set reaction_types = {'like': '👍', 'love': '❤️', 'haha': '😂', 'wow': '😮', 'sad': '😢', 'angry': '😠'} %}
+
+            <div class="d-flex align-items-center flex-wrap">
+                {# Display reaction counts #}
+                {% for r_type, r_emoji in reaction_types.items() %}
+                    {% set count = post.reaction_count(reaction_type=r_type) %}
+                    {% if count > 0 %}
+                        <span class="badge badge-pill badge-light mr-1 mb-1 reaction-count-pill">
+                            {{ r_emoji }} {{ count }}
+                        </span>
+                    {% endif %}
+                {% endfor %}
+            </div>
+
             {% if current_user.is_authenticated %}
-                {% if post.is_liked_by(current_user) %}
-                    <form action="{{ url_for('main.unlike_post', post_id=post.id) }}" method="post" class="d-inline ml-2">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token else '' }}"/>
-                        <button type="submit" class="btn btn-link btn-sm p-0">Unlike</button>
-                    </form>
-                {% else %}
-                    <form action="{{ url_for('main.like_post', post_id=post.id) }}" method="post" class="d-inline ml-2">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token else '' }}"/>
-                        <button type="submit" class="btn btn-link btn-sm p-0">Like</button>
-                    </form>
-                {% endif %}
+                <div class="reaction-buttons mt-2">
+                    {% for r_type, r_emoji in reaction_types.items() %}
+                        <form action="{{ url_for('main.react_to_post', post_id=post.id, reaction_type=r_type) }}" method="post" class="d-inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token else '' }}"/>
+                            <button type="submit" class="btn btn-sm {{ 'btn-primary' if current_reaction and current_reaction.reaction_type == r_type else 'btn-outline-secondary' }} mr-1 mb-1 reaction-button"
+                                    title="{{ r_type|capitalize }}">
+                                {{ r_emoji }}
+                            </button>
+                        </form>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <small class="text-muted d-block mt-2">Login to react to this post.</small>
             {% endif %}
 
             {# Share Button/Form #}
@@ -250,4 +266,50 @@
             </div>
         {% endif %}
     </div>
+
+    {# Related Posts Section #}
+    {% set related_posts_list = item_wrapper.item.related_posts() %}
+    {% if related_posts_list %}
+        <div class="card-footer related-posts-section">
+            <h5 class="mb-3">Related Posts</h5>
+            <div class="row">
+                {% for related_post_item in related_posts_list %}
+                    <div class="col-md-6 mb-3">
+                        <div class="card">
+                            <div class="card-body">
+                                <h6 class="card-title">
+                                    {# Assuming a direct link to a post view page is not straightforwardly available,
+                                       link to author's profile and show post body snippet.
+                                       If a route like view_post(post_id=related_post_item.id) exists, use that.
+                                       For now, let's assume no direct post view URL, so we show a snippet.
+                                       A better approach would be to have a dedicated page for each post.
+                                       Let's try to link to the post if a route like 'main.post_detail' or 'main.view_post' might exist.
+                                       Fallback to profile if not. The current app structure doesn't show a clear single post view route readily.
+                                       However, posts are usually part of a feed or profile.
+                                       Let's assume a hypothetical 'main.view_post_page' that takes post_id.
+                                       If this route doesn't exist, this link will fail.
+                                       A safer bet is to link to the user's profile and show the content.
+                                    #}
+                                    <a href="{{ url_for('main.profile', username=related_post_item.author.username) }}#post-{{ related_post_item.id }}">
+                                        Post by {{ related_post_item.author.username }}
+                                    </a>
+                                </h6>
+                                <p class="card-text small">
+                                    {{ related_post_item.body[:100] }}{% if related_post_item.body|length > 100 %}...{% endif %}
+                                </p>
+                                {% if related_post_item.hashtags.all() %}
+                                    <p class="card-text">
+                                        {% for tag in related_post_item.hashtags %}
+                                            <a href="{{ url_for('main.hashtag_feed', tag_text=tag.tag_text) }}" class="badge badge-info mr-1">#{{ tag.tag_text }}</a>
+                                        {% endfor %}
+                                    </p>
+                                {% endif %}
+                                <small class="text-muted">{{ related_post_item.timestamp.strftime('%Y-%m-%d %H:%M') }} UTC</small>
+                            </div>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    {% endif %}
 </article>

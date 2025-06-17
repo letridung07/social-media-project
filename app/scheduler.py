@@ -5,7 +5,7 @@ from sqlalchemy import func
 
 # Removed: from app import db
 # Imported Post and Story models
-from app.models import User, Post, Story, Like, Comment, HistoricalAnalytics, UserAnalytics, followers, Notification, Mention, Group, GroupMembership # Added Notification, Mention, Group, GroupMembership
+from app.models import User, Post, Story, Reaction, Comment, HistoricalAnalytics, UserAnalytics, followers, Notification, Mention, Group, GroupMembership # Added Notification, Mention, Group, GroupMembership, Replaced Like with Reaction
 from app.utils import process_mentions # Added process_mentions
 
 def collect_daily_analytics():
@@ -19,10 +19,10 @@ def collect_daily_analytics():
 
     for user in users:
         print(f"Processing analytics for user ID: {user.id} ({user.username})")
-        # Calculate total likes received on user's posts
-        total_likes_received = db.session.query(func.count(Like.id))\
-            .join(Post, Post.id == Like.post_id)\
-            .filter(Post.user_id == user.id)\
+        # Calculate total likes received on user's posts (specifically 'like' reactions)
+        total_likes_received = db.session.query(func.count(Reaction.id))\
+            .join(Post, Post.id == Reaction.post_id)\
+            .filter(Post.user_id == user.id, Reaction.reaction_type == 'like')\
             .scalar() or 0
 
         # Calculate total comments received on user's posts

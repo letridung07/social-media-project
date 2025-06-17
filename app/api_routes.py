@@ -737,7 +737,7 @@ def delete_post_api(post_id): # Renamed to avoid conflict if a web route `delete
 
     return jsonify({"message": "Post deleted successfully"}), 200 # Or 204 No Content, but 200 with message is also common.
 
-from app.models import Like, Comment # For interactions
+from app.models import Reaction, Comment # For interactions, Like replaced with Reaction
 from werkzeug.exceptions import HTTPException
 from flask import json, current_app, request, g # Added request, g for logging
 import time # For logging request duration
@@ -909,22 +909,31 @@ def toggle_like_post(post_id):
     if not can_interact:
         return jsonify(error="Forbidden", message="You do not have permission to interact with this post."), 403
 
-    existing_like = Like.query.filter_by(user_id=requesting_user.id, post_id=post.id).first()
-    action_taken = None
+    # Check for any existing reaction by the user on this post
+    existing_reaction = Reaction.query.filter_by(user_id=requesting_user.id, post_id=post.id).first()
+    action_taken = "neutral" # Default, if no change or reaction removed and wasn't 'like'
 
-    if existing_like:
-        db.session.delete(existing_like)
-        action_taken = "unliked"
+    if existing_reaction:
+        if existing_reaction.reaction_type == 'like':
+            # User is unliking the post
+            db.session.delete(existing_reaction)
+            action_taken = "unliked"
+        else:
+            # User had a different reaction, now changing it to 'like'
+            existing_reaction.reaction_type = 'like'
+            existing_reaction.timestamp = datetime.utcnow() # Update timestamp
+            action_taken = "liked"
     else:
-        new_like = Like(user_id=requesting_user.id, post_id=post.id)
-        db.session.add(new_like)
+        # No existing reaction, so create a new 'like' reaction
+        new_reaction = Reaction(user_id=requesting_user.id, post_id=post.id, reaction_type='like')
+        db.session.add(new_reaction)
         action_taken = "liked"
 
     db.session.commit()
 
     return jsonify({
-        "status": action_taken,
-        "like_count": post.like_count() # Assumes like_count() method on Post model correctly reflects changes
+        "status": action_taken, # 'liked', 'unliked', or if they changed from 'love' to 'like', it's still 'liked'
+        "like_count": post.reaction_count(reaction_type='like')
     }), 200
 
 # Helper to serialize comment data

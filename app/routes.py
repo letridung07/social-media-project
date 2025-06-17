@@ -14,7 +14,7 @@ from sqlalchemy.orm import joinedload # Import joinedload
 from werkzeug.utils import secure_filename
 from app import db, socketio, cache # Import cache
 from app.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm, FriendListForm, AddUserToFriendListForm, PRIVACY_CHOICES, ArticleForm, AudioPostForm, SubscriptionPlanForm, TOTPSetupForm, Verify2FAForm, Disable2FAForm, ConfirmPasswordAndTOTPForm # Added Disable2FAForm, ConfirmPasswordAndTOTPForm
-from app.models import User, Post, MediaItem, Like, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus, Mention, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE, FriendList, Article, AudioPost, SubscriptionPlan, UserSubscription # Added AudioPost, SubscriptionPlan, UserSubscription
+from app.models import User, Post, MediaItem, Reaction, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus, Mention, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE, FriendList, Article, AudioPost, SubscriptionPlan, UserSubscription # Like removed from import
 from app.utils import save_picture, save_group_image, save_story_media, process_mentions, get_historical_engagement, get_top_performing_hashtags, get_top_performing_groups, save_media_file, slugify, save_audio_file, get_audio_duration # Added save_audio_file, get_audio_duration
 from app.email_utils import send_password_reset_email # Import email utility
 import pyotp
@@ -36,8 +36,17 @@ from flask import request, jsonify, current_app # request, jsonify, current_app
 from flask_login import current_user, login_required # current_user, login_required
 from app import db # db
 # from app.models import User # User model is typically imported with other models
+import time # For rate limiting
 
 main = Blueprint('main', __name__)
+
+# Constants for login rate limiting
+MAX_FAILED_LOGIN_ATTEMPTS = 5
+LOGIN_LOCKOUT_PERIOD_SECONDS = 300 # 5 minutes
+
+# Global dictionary to store failed login attempts
+# Structure: {'ip_address': {'attempts': count, 'lockout_until': timestamp}}
+failed_login_attempts = {}
 
 LIKE_MILESTONES = [10, 50, 100, 250, 500, 1000]
 
@@ -193,9 +202,10 @@ def search():
             if sort_by == 'date':
                 post_q = post_q.order_by(Post.timestamp.desc())
             elif sort_by == 'popularity':
-                post_q = post_q.outerjoin(Post.likes).outerjoin(Post.comments)\
+                # Updated to join with Reaction model, specifically counting 'like' reactions for popularity
+                post_q = post_q.outerjoin(Post.reactions.and_(Reaction.reaction_type == 'like')).outerjoin(Post.comments)\
                                .group_by(Post.id)\
-                               .order_by((func.coalesce(func.count(Like.id), 0) + func.coalesce(func.count(Comment.id), 0)).desc(), Post.timestamp.desc())
+                               .order_by((func.coalesce(func.count(Reaction.id), 0) + func.coalesce(func.count(Comment.id), 0)).desc(), Post.timestamp.desc())
             else:
                 post_q = post_q.order_by(Post.timestamp.desc())
             posts_found = post_q.all()
@@ -290,8 +300,8 @@ def search_recommendations():
             'group_id': post.group_id,
             'group_name': post.group.name if post.group else None, # Add group name
             'user_id': post.user_id,
-            'like_count': post.like_count(), # Add like count
-            'comment_count': post.comment_count(), # Add comment count
+            'like_count': post.reaction_count('like'), # Updated to use reaction_count for 'like'
+            'comment_count': post.comments.count(), # Assuming Comment model has direct count or a method like post.comments.count()
             'url': url_for('main.view_post_page', post_id=post.id) if hasattr(main, 'view_post_page') else '#' # Placeholder for post view URL
         })
 
@@ -389,27 +399,78 @@ def register():
 def login():
     if current_user.is_authenticated:
         return redirect(url_for('main.index'))
+
+    ip_address = request.headers.get('X-Forwarded-For', request.remote_addr)
+    now = time.time()
+
+    # Check if IP is currently locked out
+    if ip_address in failed_login_attempts:
+        attempt_info = failed_login_attempts[ip_address]
+        if attempt_info.get('lockout_until', 0) > now:
+            remaining_lockout = int(attempt_info['lockout_until'] - now)
+            flash(_l('Too many failed login attempts. Please try again in %(seconds)s seconds.', seconds=remaining_lockout), 'danger')
+            return redirect(url_for('main.login')) # Redirect to GET to show the flash message
+        # If lockout has expired, clear old lockout_until but keep attempts if relevant, or reset fully.
+        # For simplicity, we'll let a successful login clear it, or a new failed attempt re-evaluate.
+
     form = LoginForm()
     if form.validate_on_submit():
         user = User.query.filter_by(email=form.email.data).first()
         if user and user.check_password(form.password.data):
+            # Successful login
+            if ip_address in failed_login_attempts:
+                failed_login_attempts.pop(ip_address, None) # Clear any previous failed attempts for this IP
+
             if user.otp_enabled:
                 session['user_id_for_2fa'] = user.id
                 session['remember_me_for_2fa'] = form.remember_me.data
-                # Store next_page in session if it exists, to redirect after 2FA
                 next_page_for_2fa = request.args.get('next')
                 if next_page_for_2fa:
                     session['next_page_for_2fa'] = next_page_for_2fa
                 else:
-                    session.pop('next_page_for_2fa', None) # Clear if not present
+                    session.pop('next_page_for_2fa', None)
                 return redirect(url_for('main.verify_2fa'))
             else:
                 login_user(user, remember=form.remember_me.data)
                 next_page = request.args.get('next')
                 return redirect(next_page) if next_page else redirect(url_for('main.index'))
         else:
-            current_app.logger.warning(f"Failed login attempt for email '{form.email.data}' from IP: {request.remote_addr}")
-            flash(_l('Login Unsuccessful. Please check email and password'), 'danger')
+            # Failed login attempt
+            current_app.logger.warning(f"Failed login attempt for email '{form.email.data}' from IP: {ip_address}")
+
+            if ip_address not in failed_login_attempts:
+                failed_login_attempts[ip_address] = {'attempts': 0, 'lockout_until': 0}
+
+            attempt_info = failed_login_attempts[ip_address]
+            # Ensure lockout_until is not in the future before incrementing if it's an old record
+            if attempt_info.get('lockout_until', 0) > now:
+                 remaining_lockout = int(attempt_info['lockout_until'] - now)
+                 flash(_l('Too many failed login attempts. Please try again in %(seconds)s seconds.', seconds=remaining_lockout), 'danger')
+                 return render_template('login.html', title=_l('Sign In'), form=form)
+
+
+            attempt_info['attempts'] += 1
+
+            if attempt_info['attempts'] >= MAX_FAILED_LOGIN_ATTEMPTS:
+                attempt_info['lockout_until'] = now + LOGIN_LOCKOUT_PERIOD_SECONDS
+                # Reset attempts count after locking out, or it will stay high
+                # attempt_info['attempts'] = 0 # Or keep it to show they hit the max
+                flash(_l('Too many failed login attempts. Your account has been locked for %(minutes)s minutes.', minutes=int(LOGIN_LOCKOUT_PERIOD_SECONDS/60)), 'danger')
+            else:
+                remaining_attempts = MAX_FAILED_LOGIN_ATTEMPTS - attempt_info['attempts']
+                flash(_l('Login Unsuccessful. Please check email and password. You have %(attempts)s attempts remaining.', attempts=remaining_attempts), 'danger')
+
+            failed_login_attempts[ip_address] = attempt_info # Ensure dictionary is updated
+            return render_template('login.html', title=_l('Sign In'), form=form) # Re-render form with error
+
+    # For GET request, also check lockout status in case user refreshes page
+    if request.method == 'GET' and ip_address in failed_login_attempts:
+        attempt_info = failed_login_attempts[ip_address]
+        if attempt_info.get('lockout_until', 0) > now:
+            remaining_lockout = int(attempt_info['lockout_until'] - now)
+            flash(_l('Too many failed login attempts. Please try again in %(seconds)s seconds.', seconds=remaining_lockout), 'danger')
+            # No redirect here, just let the template render with the message
+
     return render_template('login.html', title=_l('Sign In'), form=form)
 
 @main.route('/logout')
@@ -1347,6 +1408,92 @@ def notifications():
     socketio.emit('notifications_cleared', {'message': 'All notifications marked as read.'}, room=str(current_user.id))
     return render_template('notifications.html', title='Your Notifications', notifications=user_notifications)
 
+# Define allowed reaction types
+ALLOWED_REACTIONS = {'like', 'love', 'haha', 'wow', 'sad', 'angry'}
+
+@main.route('/react/<int:post_id>/<string:reaction_type>', methods=['POST'])
+@login_required
+def react_to_post(post_id, reaction_type):
+    post = Post.query.get_or_404(post_id)
+
+    if reaction_type not in ALLOWED_REACTIONS:
+        flash('Invalid reaction type.', 'danger')
+        return redirect(request.referrer or url_for('main.index'))
+
+    existing_reaction = Reaction.query.filter_by(user_id=current_user.id, post_id=post.id).first()
+
+    if existing_reaction:
+        if existing_reaction.reaction_type == reaction_type:
+            # User clicked the same reaction again, so remove it (toggle off)
+            db.session.delete(existing_reaction)
+            db.session.commit()
+            flash(f'Your reaction "{reaction_type}" has been removed.', 'success')
+        else:
+            # User changed their reaction
+            existing_reaction.reaction_type = reaction_type
+            existing_reaction.timestamp = datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow()
+            db.session.commit()
+            flash(f'Your reaction has been updated to "{reaction_type}".', 'success')
+            # Notification logic for changed reaction can be added here if needed
+    else:
+        # New reaction
+        new_reaction = Reaction(user_id=current_user.id, post_id=post.id, reaction_type=reaction_type)
+        db.session.add(new_reaction)
+        db.session.commit()
+        flash(f'You reacted with "{reaction_type}" to the post!', 'success')
+
+        # Notification for the post author (if not reacting to own post)
+        if post.author.id != current_user.id:
+            notification = Notification(
+                recipient_id=post.author.id,
+                actor_id=current_user.id,
+                type=f'reaction_{reaction_type}', # More specific notification type
+                related_post_id=post.id
+            )
+            db.session.add(notification)
+            db.session.commit()
+            socketio.emit('new_notification', {
+                'message': f'{current_user.username} reacted with "{reaction_type}" to your post.',
+                'type': f'reaction_{reaction_type}',
+                'reaction_type': reaction_type,
+                'actor_username': current_user.username,
+                'post_id': post.id,
+                'post_author_username': post.author.username
+            }, room=str(post.author.id))
+
+            # Milestone notifications specifically for 'like' reactions
+            if reaction_type == 'like':
+                current_like_count = post.reaction_count('like') # Use new method
+                for milestone_val in LIKE_MILESTONES:
+                    if current_like_count == milestone_val:
+                        # Check if a milestone notification of this type already exists for this post for this author
+                        # To prevent duplicate notifications if something causes a recount or re-trigger
+                        existing_milestone_notif = Notification.query.filter_by(
+                            recipient_id=post.author.id, # Should be post.author.id
+                            related_post_id=post.id,
+                            type=f'like_milestone_{milestone_val}'
+                        ).first()
+                        if not existing_milestone_notif:
+                            milestone_notif = Notification(
+                                recipient_id=post.author.id,
+                                actor_id=current_user.id, # The user whose 'like' caused the milestone
+                                type=f'like_milestone_{milestone_val}',
+                                related_post_id=post.id
+                            )
+                            db.session.add(milestone_notif)
+                            db.session.commit() # Commit milestone notification
+                            socketio.emit('new_notification', {
+                                'message': f"Your post '{post.body[:30]}{'...' if len(post.body) > 30 else ''}' reached {milestone_val} likes!",
+                                'type': f'like_milestone_{milestone_val}',
+                                'actor_username': current_user.username, # Or system/generic for milestones
+                                'post_id': post.id,
+                                'post_author_username': post.author.username,
+                                'milestone_count': milestone_val
+                            }, room=str(post.author.id))
+
+
+    return redirect(request.referrer or url_for('main.index'))
+
 
 @main.route('/chat')
 @main.route('/conversations')
@@ -1478,15 +1625,16 @@ def analytics():
 
     # Top posts logic (can remain as is or be enhanced)
     user_posts = current_user.posts.all() # Get all posts for sorting if needed by existing logic
-    sorted_posts = sorted(user_posts, key=lambda p: p.likes.count() + p.comments.count(), reverse=True) # Sort by total engagement
+    # Updated to use reaction_count('like') for sorting by engagement
+    sorted_posts = sorted(user_posts, key=lambda p: p.reaction_count(reaction_type='like') + p.comments.count(), reverse=True)
     top_5_posts_list = sorted_posts[:5]
 
     top_posts_chart_data_json = []
     if top_5_posts_list:
         top_posts_chart_data_json = json.dumps([
             {'label': f"Post ID {post.id}: {post.body[:20]}..." if len(post.body) > 20 else f"Post ID {post.id}: {post.body}",
-             'likes': post.likes.count(),
-             'comments': post.comments.count()}
+             'likes': post.reaction_count(reaction_type='like'), # Use reaction_count for 'like'
+             'comments': post.comments.count()} # Assuming post.comments.count() is correct
             for post in top_5_posts_list
         ])
 
@@ -1610,7 +1758,11 @@ def update_analytics_route():
 
     users = User.query.all()
     for user in users:
-        total_likes = db.session.query(func.count(Like.id)).join(Post).filter(Post.user_id == user.id).scalar()
+        # Updated to count 'like' reactions for total_likes_received
+        total_likes = db.session.query(func.count(Reaction.id))\
+            .join(Post, Reaction.post_id == Post.id)\
+            .filter(Post.user_id == user.id, Reaction.reaction_type == 'like')\
+            .scalar()
         total_comments = db.session.query(func.count(Comment.id)).join(Post).filter(Post.user_id == user.id).scalar()
 
         analytics_entry = UserAnalytics.query.filter_by(user_id=user.id).first()

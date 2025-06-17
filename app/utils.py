@@ -25,7 +25,7 @@ except ImportError:
 # Imports for recommendation functions
 from sqlalchemy import func, desc, not_, and_, or_, distinct
 from app import db # Assuming db instance is available in app package
-from app.models import User, Post, Like, Comment, Hashtag, Group, GroupMembership, followers, Mention, HistoricalAnalytics, post_hashtags, Article, Event as AppEvent, UserSubscription, SubscriptionPlan # Added Article and AppEvent
+from app.models import User, Post, Reaction, Comment, Hashtag, Group, GroupMembership, followers, Mention, HistoricalAnalytics, post_hashtags, Article, Event as AppEvent, UserSubscription, SubscriptionPlan # Added Article and AppEvent, replaced Like with Reaction
 from datetime import datetime, timedelta, timezone # Ensure timezone is imported
 
 # Imports for iCalendar generation
@@ -388,10 +388,10 @@ def recommend_posts(user, limit=5):
         return []
 
     # Collect hashtags from posts liked by the user
-    liked_hashtags_q = db.session.query(distinct(Hashtag.id)).select_from(Like)\
-        .join(Post, Like.post_id == Post.id)\
+    liked_hashtags_q = db.session.query(distinct(Hashtag.id)).select_from(Reaction)\
+        .join(Post, Reaction.post_id == Post.id)\
         .join(Post.hashtags)\
-        .filter(Like.user_id == user.id)
+        .filter(Reaction.user_id == user.id, Reaction.reaction_type == 'like') # Consider only 'like' reactions for this logic
 
     # Collect hashtags from posts commented on by the user
     # Assuming Comment model has a 'post_id' attribute/relationship to Post model
@@ -407,7 +407,7 @@ def recommend_posts(user, limit=5):
         return []
 
     # Posts already interacted with by the user
-    liked_post_ids = {like.post_id for like in user.likes if like.post_id is not None}
+    liked_post_ids = {reaction.post_id for reaction in user.reactions.filter_by(reaction_type='like') if reaction.post_id is not None} # Filter for 'like' reactions
     # Assuming Comment model has 'post_id'
     commented_post_ids = {comment.post_id for comment in user.comments if hasattr(comment, 'post_id') and comment.post_id is not None}
     authored_post_ids = {post.id for post in user.posts if post.id is not None}
@@ -495,10 +495,10 @@ def recommend_groups(user, limit=5):
 
     # 1. Interest-Based (Hashtags from liked posts)
     # Score by number of relevant hashtags found in group's posts
-    liked_post_hashtags_ids_q = db.session.query(distinct(Hashtag.id)).select_from(Like)\
-        .join(Post, Like.post_id == Post.id)\
+    liked_post_hashtags_ids_q = db.session.query(distinct(Hashtag.id)).select_from(Reaction)\
+        .join(Post, Reaction.post_id == Post.id)\
         .join(Post.hashtags)\
-        .filter(Like.user_id == user.id)
+        .filter(Reaction.user_id == user.id, Reaction.reaction_type == 'like') # Consider only 'like' reactions
     liked_post_hashtags_ids = {h_id for (h_id,) in liked_post_hashtags_ids_q.all()}
 
     if liked_post_hashtags_ids:
@@ -597,10 +597,10 @@ def get_top_performing_hashtags(user_id, limit=5):
     # Subquery for likes per post-hashtag combination for the user's posts
     likes_subquery = db.session.query(
         post_hashtags.c.hashtag_id.label('hashtag_id'),
-        func.count(distinct(Like.id)).label('likes_count')
+        func.count(distinct(Reaction.id)).label('likes_count') # Changed Like.id to Reaction.id
     ).select_from(post_hashtags)\
     .join(Post, Post.id == post_hashtags.c.post_id)\
-    .outerjoin(Like, Like.post_id == Post.id)\
+    .outerjoin(Reaction, and_(Reaction.post_id == Post.id, Reaction.reaction_type == 'like'))\
     .filter(Post.user_id == user_id)\
     .group_by(post_hashtags.c.hashtag_id).subquery()
 
@@ -639,8 +639,8 @@ def get_top_performing_groups(user_id, limit=5):
     # Subquery for likes on user's posts, aggregated by group_id
     likes_per_group_sq = db.session.query(
         Post.group_id,
-        func.count(distinct(Like.id)).label('likes_count')
-    ).join(Like, Like.post_id == Post.id)\
+        func.count(distinct(Reaction.id)).label('likes_count') # Changed Like.id to Reaction.id
+    ).join(Reaction, and_(Reaction.post_id == Post.id, Reaction.reaction_type == 'like'))\
     .filter(Post.user_id == user_id)\
     .filter(Post.group_id.isnot(None))\
     .group_by(Post.group_id)\
