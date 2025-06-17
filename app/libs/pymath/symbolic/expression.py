@@ -1,5 +1,6 @@
 import math
 from collections import defaultdict
+from typing import Union
 
 def _factorial(n):
     """
@@ -11,6 +12,87 @@ def _factorial(n):
     # math.factorial already raises ValueError for negative integers.
     # It also handles 0! = 1 correctly.
     return math.factorial(n)
+
+def _get_linear_coeffs(expr: 'Expression', var: 'Variable') -> 'tuple[Union[Expression, None], Union[Expression, None]]':
+    """
+    Represents expr as a*var + b.
+    Returns (a, b) where 'a' is the coefficient of 'var' and 'b' is the constant part.
+    'a' and 'b' are Expressions. 'a' should be constant w.r.t 'var'.
+    If expr is not linear in 'var' in this form, returns (None, None).
+    Assumes expr is simplified before calling.
+    """
+    if not isinstance(var, Variable):
+        raise TypeError("Solving variable 'var' must be an instance of Variable.")
+
+    # Base cases:
+    if isinstance(expr, Constant):
+        return (Constant(0), expr) # 0*var + expr
+
+    if isinstance(expr, Variable):
+        if expr == var:
+            return (Constant(1), Constant(0)) # 1*var + 0
+        else:
+            # Other variable, so it's constant w.r.t. var
+            return (Constant(0), expr)
+
+    # Recursive cases for operations:
+    if isinstance(expr, Add):
+        a_left, b_left = _get_linear_coeffs(expr.left, var)
+        a_right, b_right = _get_linear_coeffs(expr.right, var)
+        if a_left is None or a_right is None: return (None, None)
+        return ((a_left + a_right).simplify(), (b_left + b_right).simplify())
+
+    if isinstance(expr, Subtract):
+        a_left, b_left = _get_linear_coeffs(expr.left, var)
+        a_right, b_right = _get_linear_coeffs(expr.right, var)
+        if a_left is None or a_right is None: return (None, None)
+        return ((a_left - a_right).simplify(), (b_left - b_right).simplify())
+
+    if isinstance(expr, Negate):
+        a_operand, b_operand = _get_linear_coeffs(expr.operand, var)
+        if a_operand is None: return (None, None)
+        return ((-a_operand).simplify(), (-b_operand).simplify())
+
+    if isinstance(expr, Multiply):
+        is_left_const_wrt_var = (expr.left.diff(var) == Constant(0))
+        is_right_const_wrt_var = (expr.right.diff(var) == Constant(0))
+
+        if is_left_const_wrt_var and is_right_const_wrt_var:
+            return (Constant(0), expr.simplify())
+
+        elif is_left_const_wrt_var:
+            a_right, b_right = _get_linear_coeffs(expr.right, var)
+            if a_right is None: return (None, None)
+            # Important: a_right itself must be constant w.r.t var for the whole expression to be linear
+            if not (a_right.diff(var) == Constant(0)): return (None, None)
+            return ((expr.left * a_right).simplify(), (expr.left * b_right).simplify())
+
+        elif is_right_const_wrt_var:
+            a_left, b_left = _get_linear_coeffs(expr.left, var)
+            if a_left is None: return (None, None)
+            # Important: a_left itself must be constant w.r.t var
+            if not (a_left.diff(var) == Constant(0)): return (None, None)
+            return ((a_left * expr.right).simplify(), (b_left * expr.right).simplify())
+
+        else:
+            return (None, None)
+
+    # Power checks need to be specific for linearity
+    if isinstance(expr, Power):
+        # If expr is var^1 (i.e., var)
+        if expr.left == var and isinstance(expr.right, Constant) and expr.right.value == 1:
+            return (Constant(1), Constant(0))
+        # If expr is var^0 (i.e., 1)
+        if expr.left == var and isinstance(expr.right, Constant) and expr.right.value == 0:
+            return (Constant(0), Constant(1))
+
+    # If the expression itself is constant w.r.t. var (this catches f(y), Log(c), etc.)
+    # This check should come after specific linear forms like var^1 are handled.
+    if expr.diff(var) == Constant(0):
+        return (Constant(0), expr)
+
+    # Default for any other expression type that contains 'var' and is not caught above: non-linear.
+    return (None, None)
 
 class Expression:
     def __add__(self, other):
@@ -277,6 +359,63 @@ class Expression:
     def integrate(self, var: 'Variable'):
         """Symbolically integrates the expression with respect to 'var'."""
         raise NotImplementedError("Symbolic integration not implemented for this expression type.")
+
+    def solve(self, variable: 'Variable', target: Union['Expression', int, float, None] = None):
+        """Solves the equation self = target for the given variable. Returns a list of solutions."""
+        if not isinstance(variable, Variable):
+            raise TypeError("The 'variable' argument must be an instance of Variable.")
+
+        target_expr: Expression
+        if target is None:
+            target_expr = Constant(0)
+            expr_to_solve = self
+        elif isinstance(target, (int, float)):
+            target_expr = Constant(target)
+            expr_to_solve = Subtract(self, target_expr)
+        elif isinstance(target, Expression):
+            target_expr = target
+            expr_to_solve = Subtract(self, target_expr)
+        else:
+            raise TypeError("Target must be an Expression, number, or None.")
+
+        # We want to solve expr_to_solve = 0
+        # Before calling _solve_for_zero, it's often beneficial to simplify the expression.
+        simplified_expr_to_solve = expr_to_solve.simplify()
+
+        return self._solve_for_zero(simplified_expr_to_solve, variable)
+
+    def _solve_for_zero(self, expr_to_solve: 'Expression', variable: 'Variable'):
+        """Protected helper to solve expr_to_solve = 0 for the variable."""
+        # expr_to_solve is already simplified by the public solve() method.
+
+        a, b = _get_linear_coeffs(expr_to_solve, variable)
+
+        if a is None:
+            # Equation is non-linear or structure not recognized as linear
+            raise NotImplementedError(
+                f"Equation '{str(expr_to_solve)} = 0' is non-linear in '{str(variable)}' "
+                "or not solvable by this linear method."
+            )
+
+        # 'a' and 'b' are Expression objects (Constant, Variable, etc.)
+        # We need to simplify them to make decisions, especially for 'a' being zero.
+        a_simplified = a.simplify()
+        b_simplified = b.simplify()
+
+        if isinstance(a_simplified, Constant) and a_simplified.value == 0:
+            # Equation is 0*variable + b = 0, which means b = 0
+            if isinstance(b_simplified, Constant) and b_simplified.value == 0:
+                # 0 = 0, infinite solutions (e.g. for x in x - x = 0)
+                return ["all_real_numbers"]
+            else:
+                # k = 0 where k is non-zero (b_simplified is not Constant(0)). No solution.
+                return []
+        else:
+            # Equation is a*variable + b = 0 with a != 0. Solution is variable = -b/a.
+            # This also covers cases where 'a' is a symbolic expression that isn't Constant(0).
+            # The solution will then be symbolic.
+            solution = (Negate(b_simplified) / a_simplified).simplify()
+            return [solution]
 
 
 class Constant(Expression):

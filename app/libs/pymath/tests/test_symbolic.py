@@ -1298,6 +1298,123 @@ class TestSymbolicExpressions(unittest.TestCase):
         with self.assertRaisesRegex(NotImplementedError, "Symbolic integration not implemented for this unary operation."):
             Sign(x).integrate(x)
 
+    def test_solve_simple_linear_eq_zero(self):
+        x = Variable('x')
+        expr = Multiply(Constant(2), x) + Constant(4) # 2x + 4 = 0
+        solutions = expr.solve(x)
+        self.assertEqual(len(solutions), 1)
+        self.assertIsInstance(solutions[0], Constant)
+        self.assertAlmostEqual(solutions[0].value, -2.0)
+
+    def test_solve_simple_linear_eq_target(self):
+        x = Variable('x')
+        expr = Multiply(Constant(3), x) - Constant(9) # 3x - 9
+
+        # Test with Constant target: 3x - 9 = 3 -> 3x = 12 -> x = 4
+        solutions_expr_target = expr.solve(x, target=Constant(3))
+        self.assertEqual(len(solutions_expr_target), 1)
+        self.assertIsInstance(solutions_expr_target[0], Constant)
+        self.assertAlmostEqual(solutions_expr_target[0].value, 4.0)
+
+        # Test with numerical target: 3x - 9 = 3 -> x = 4
+        solutions_num_target = expr.solve(x, target=3)
+        self.assertEqual(len(solutions_num_target), 1)
+        self.assertIsInstance(solutions_num_target[0], Constant)
+        self.assertAlmostEqual(solutions_num_target[0].value, 4.0)
+
+    def test_solve_variable_equals_constant(self):
+        x = Variable('x')
+        # x - 5 = 0 -> x = 5
+        expr = x - Constant(5)
+        solutions = expr.solve(x)
+        self.assertEqual(len(solutions), 1)
+        self.assertIsInstance(solutions[0], Constant)
+        self.assertAlmostEqual(solutions[0].value, 5.0)
+
+    def test_solve_no_solution(self):
+        x = Variable('x')
+        # 5 = 0 -> No solution
+        expr = Constant(5)
+        solutions = expr.solve(x)
+        self.assertEqual(solutions, [])
+
+        # (2x - (2x - 5)) = 0  -> 5 = 0 -> No solution
+        expr2 = (Constant(2)*x) - (Constant(2)*x - Constant(5))
+        solutions2 = expr2.solve(x)
+        self.assertEqual(solutions2, [])
+
+    def test_solve_infinite_solutions(self):
+        x = Variable('x')
+        # 0 = 0 -> Infinite solutions
+        expr = Constant(0)
+        solutions = expr.solve(x)
+        self.assertEqual(solutions, ["all_real_numbers"])
+
+        # (2x - 2x) = 0 -> 0 = 0 -> Infinite solutions
+        expr2 = (Constant(2)*x) - (Constant(2)*x)
+        solutions2 = expr2.solve(x)
+        self.assertEqual(solutions2, ["all_real_numbers"])
+
+    def test_solve_symbolic_coeffs(self):
+        x = Variable('x')
+        a = Variable('a')
+        b = Variable('b')
+        y = Variable('y')
+
+        # a*x + b = 0  -> x = -b/a
+        expr_ax_b = (a*x) + b
+        solutions = expr_ax_b.solve(x)
+        self.assertEqual(len(solutions), 1)
+        # Expected: -b/a. String can be "((-1.0 * b) / a)" or "(-(b) / a)"
+        # We evaluate with sample values.
+        self.assertAlmostEqual(solutions[0].eval(a=Constant(2), b=Constant(4)), -2.0)
+        self.assertAlmostEqual(solutions[0].eval(a=2, b=4), -2.0) # Test with direct numbers
+        # Check structure of symbolic solution
+        expected_struct_ax_b = (Negate(b) / a).simplify()
+        self.assertEqual(str(solutions[0].simplify()), str(expected_struct_ax_b))
+
+
+        # a*x - b*y = 0 -> ax = by -> x = by/a
+        expr_ax_by = (a*x) - (b*y)
+        solutions2 = expr_ax_by.solve(x, target=Constant(0))
+        self.assertEqual(len(solutions2), 1)
+        self.assertAlmostEqual(solutions2[0].eval(a=Constant(2),b=Constant(3),y=Constant(4)), 6.0) # (3*4)/2 = 6
+        expected_struct_ax_by = (b*y / a).simplify()
+        self.assertEqual(str(solutions2[0].simplify()), str(expected_struct_ax_by))
+
+
+    def test_solve_non_linear_raises_error(self):
+        x = Variable('x')
+        # x^2 - 1 = 0
+        expr_quad = (x**Constant(2)) - Constant(1)
+        with self.assertRaisesRegex(NotImplementedError, "non-linear"):
+            expr_quad.solve(x)
+
+        # log(x) - 1 = 0
+        expr_log = Log(x) - Constant(1)
+        with self.assertRaisesRegex(NotImplementedError, "non-linear"):
+            expr_log.solve(x)
+
+        # x*x - 1 = 0 (x*x is non-linear for _get_linear_coeffs if not simplified to x**2 first)
+        # The .simplify() in solve() method should handle x*x -> x**2 if such rule exists.
+        # If not, _get_linear_coeffs on (x*x) w.r.t x will return (None,None).
+        expr_var_coeff = (x*x) - Constant(1)
+        with self.assertRaisesRegex(NotImplementedError, "non-linear"):
+             expr_var_coeff.solve(x)
+
+
+    def test_solve_coeff_a_becomes_zero(self):
+        x = Variable('x')
+        k = Variable('k') # A dummy variable
+
+        # (k-k)*x + (5-5) = 0 -> 0*x + 0 = 0 -> infinite solutions
+        expr_inf = (k-k)*x + (Constant(5)-Constant(5))
+        self.assertEqual(expr_inf.solve(x), ["all_real_numbers"])
+
+        # (k-k)*x + 5 = 0 -> 0*x + 5 = 0 -> no solution
+        expr_no_sol = (k-k)*x + Constant(5)
+        self.assertEqual(expr_no_sol.solve(x), [])
+
 
 if __name__ == '__main__':
     unittest.main()
