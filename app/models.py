@@ -153,7 +153,8 @@ class User(db.Model, UserMixin):
     )
 
     # likes given by this user
-    likes = db.relationship('Like', backref='user', lazy='dynamic', cascade='all, delete-orphan')
+    # likes = db.relationship('Like', backref='user', lazy='dynamic', cascade='all, delete-orphan') # Replaced by reactions
+    reactions = db.relationship('Reaction', backref='user', lazy='dynamic', cascade='all, delete-orphan')
     comments = db.relationship('Comment', backref='author', lazy='dynamic', cascade='all, delete-orphan')
 
     def __repr__(self):
@@ -270,7 +271,8 @@ class Post(db.Model):
     media_items = db.relationship('MediaItem', backref='post_parent', lazy='dynamic', cascade='all, delete-orphan')
 
     # likes received by this post
-    likes = db.relationship('Like', backref='post', lazy='dynamic', cascade='all, delete-orphan')
+    # likes = db.relationship('Like', backref='post', lazy='dynamic', cascade='all, delete-orphan') # Replaced by reactions
+    reactions = db.relationship('Reaction', backref='post', lazy='dynamic', cascade='all, delete-orphan')
     # To get comments in ascending order by timestamp by default when accessing post.comments
     comments = db.relationship('Comment', backref='commented_post', lazy='dynamic', cascade='all, delete-orphan', order_by='Comment.timestamp.asc()')
 
@@ -300,27 +302,93 @@ class Post(db.Model):
     def __repr__(self):
         return f'<Post {self.body[:50]}...>'
 
-    def like_count(self):
-        return self.likes.count() # self.likes is the relationship
+    # def like_count(self): # Replaced by reaction_count('like')
+    #     return self.likes.count() # self.likes is the relationship
+    #
+    # def is_liked_by(self, user): # Replaced by get_reaction_by_user(user) and checking type
+    #     if not user or not user.is_authenticated: # Handle anonymous or uncommitted users
+    #         return False
+    #     # Check if a Like record exists for this post and the given user
+    #     return self.likes.filter_by(user_id=user.id).count() > 0
 
-    def is_liked_by(self, user):
-        if not user or not user.is_authenticated: # Handle anonymous or uncommitted users
-            return False
-        # Check if a Like record exists for this post and the given user
-        return self.likes.filter_by(user_id=user.id).count() > 0
+    def get_reaction_by_user(self, user):
+        """Returns the reaction object if the user has reacted to this post, else None."""
+        if not user or not user.is_authenticated:
+            return None
+        return self.reactions.filter_by(user_id=user.id).first()
 
-class Like(db.Model):
-    __tablename__ = 'likes'
+    def reaction_count(self, reaction_type=None):
+        """
+        Returns the count of a specific reaction type on this post.
+        If reaction_type is None, returns total count of all reactions.
+        """
+        if reaction_type:
+            return self.reactions.filter_by(reaction_type=reaction_type).count()
+        return self.reactions.count()
+
+    def related_posts(self, max_posts=5):
+        """
+        Finds posts related to the current post based on shared hashtags.
+        """
+        if not self.hashtags.all():
+            return []
+
+        current_post_tags_ids = {tag.id for tag in self.hashtags}
+
+        # Find posts that share at least one tag, excluding the current post
+        # and order by the number of shared tags.
+        # This requires a subquery to count common tags.
+
+        # Alias for the post_hashtags table to use in the subquery
+        from sqlalchemy.orm import aliased
+        from sqlalchemy import func
+
+        ph_alias = aliased(post_hashtags)
+
+        # Subquery to count common tags for each post
+        subquery = db.session.query(
+            Post.id.label('post_id'),
+            func.count(ph_alias.c.hashtag_id).label('common_tags_count')
+        ).join(ph_alias, Post.id == ph_alias.c.post_id)\
+         .filter(ph_alias.c.hashtag_id.in_(current_post_tags_ids))\
+         .filter(Post.id != self.id)\
+         .group_by(Post.id)\
+         .subquery()
+
+        # Main query to get the posts, ordered by the count of common tags
+        related_posts_query = db.session.query(Post)\
+            .join(subquery, Post.id == subquery.c.post_id)\
+            .order_by(subquery.c.common_tags_count.desc())\
+            .limit(max_posts)
+
+        return related_posts_query.all()
+
+# class Like(db.Model): # Removed, functionality merged into Reaction
+#     __tablename__ = 'likes'
+#     id = db.Column(db.Integer, primary_key=True)
+#     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+#     post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False)
+#     timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+#
+#     # Composite unique constraint to prevent duplicate likes from the same user on the same post
+#     __table_args__ = (db.UniqueConstraint('user_id', 'post_id', name='_user_post_uc'),)
+#
+#     def __repr__(self):
+#         return f'<Like user_id={self.user_id} post_id={self.post_id}>'
+
+class Reaction(db.Model):
+    __tablename__ = 'reaction'
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False, index=True)
+    reaction_type = db.Column(db.String(20), nullable=False, index=True) # e.g., 'like', 'love', 'haha'
     timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
 
-    # Composite unique constraint to prevent duplicate likes from the same user on the same post
-    __table_args__ = (db.UniqueConstraint('user_id', 'post_id', name='_user_post_uc'),)
+    # Composite unique constraint: a user can only have one reaction per post.
+    __table_args__ = (db.UniqueConstraint('user_id', 'post_id', name='_user_post_reaction_uc'),)
 
     def __repr__(self):
-        return f'<Like user_id={self.user_id} post_id={self.post_id}>'
+        return f'<Reaction user_id={self.user_id} post_id={self.post_id} type={self.reaction_type}>'
 
 class Comment(db.Model):
     __tablename__ = 'comments'
@@ -602,7 +670,7 @@ class HistoricalAnalytics(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
     timestamp = db.Column(db.DateTime, nullable=False, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
-    likes_received = db.Column(db.Integer, default=0)
+    likes_received = db.Column(db.Integer, default=0)  # Stores count of 'like' reactions
     comments_received = db.Column(db.Integer, default=0)
     followers_count = db.Column(db.Integer, default=0)
 
@@ -612,7 +680,7 @@ class HistoricalAnalytics(db.Model):
 class UserAnalytics(db.Model):
     __tablename__ = 'user_analytics'
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), primary_key=True)
-    total_likes_received = db.Column(db.Integer, default=0)
+    total_likes_received = db.Column(db.Integer, default=0)  # Stores total count of 'like' reactions
     total_comments_received = db.Column(db.Integer, default=0)
     last_updated = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow(), onupdate=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
 

@@ -8,14 +8,14 @@ from flask_migrate import Migrate # Import Migrate
 from flask_caching import Cache # Import Cache
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from flask_babel import Babel, lazy_gettext as _l, refresh
+# from flask_babel import Babel, lazy_gettext as _l, refresh # Removed direct import of localeselector
 from flask import g, session, request
 # from bootstrap_flask import Bootstrap # Import Bootstrap
 from config import Config
 # from app.scheduler import init_scheduler # Import the scheduler initializer MOVED
 
 db = SQLAlchemy()
-babel = Babel() # Initialize Babel globally
+# babel = Babel() # Initialize Babel globally
 cache = Cache() # Initialize Cache
 csrf = CSRFProtect()
 # bootstrap = Bootstrap() # Initialize Bootstrap
@@ -43,7 +43,7 @@ def create_app(config_class=Config):
         app.config['LANGUAGES'] = {'en': 'English', 'es': 'Español'}
 
     db.init_app(app)
-    babel.init_app(app) # Initialize Babel with the app
+    # babel.init_app(app) # Initialize the global babel instance with the app
     csrf.init_app(app)
     login_manager.init_app(app) # Initialize LoginManager with the app
     socketio.init_app(app)
@@ -67,36 +67,36 @@ def create_app(config_class=Config):
     # from app.auth import auth as auth_blueprint # We will create this soon
     # app.register_blueprint(auth_blueprint, url_prefix='/auth')
 
-    # Babel locale selector
-    @babel.localeselector
-    def get_locale():
-        # For User model to be available for g.user.locale
-        from app.models import User # Import here to avoid circular import if User model uses _l
-
-        # 1. Try to get language from user profile (if user is logged in and has locale set)
-        # For now, this part is commented out as User.locale is an optional enhancement.
-        # if hasattr(g, 'user') and g.user is not None and g.user.is_authenticated and hasattr(g.user, 'locale') and g.user.locale:
-        #     if g.user.locale in app.config['LANGUAGES']:
-        #         return g.user.locale
-
-        # 2. Try to get language from session
-        if 'language' in session and session['language'] in app.config['LANGUAGES']:
-            return session['language']
-
-        # 3. Use browser's accept_languages
-        if request and request.accept_languages: # Ensure request context is available
-            best_match = request.accept_languages.best_match(list(app.config['LANGUAGES'].keys()))
-            if best_match:
-                return best_match
-
-        # 4. Default to 'en' or first language in config
-        default_lang = 'en'
-        if app.config['LANGUAGES']:
-            if 'en' in app.config['LANGUAGES']:
-                default_lang = 'en'
-            else:
-                default_lang = list(app.config['LANGUAGES'].keys())[0]
-        return default_lang
+    # # Babel locale selector
+    # @babel.localeselector # Use the decorator from the global, initialized babel instance
+    # def get_locale():
+    #     # For User model to be available for g.user.locale
+    #     from app.models import User # Import here to avoid circular import if User model uses _l
+    #
+    #     # 1. Try to get language from user profile (if user is logged in and has locale set)
+    #     # For now, this part is commented out as User.locale is an optional enhancement.
+    #     # if hasattr(g, 'user') and g.user is not None and g.user.is_authenticated and hasattr(g.user, 'locale') and g.user.locale:
+    #     #     if g.user.locale in app.config['LANGUAGES']:
+    #     #         return g.user.locale
+    #
+    #     # 2. Try to get language from session
+    #     if 'language' in session and session['language'] in app.config['LANGUAGES']:
+    #         return session['language']
+    #
+    #     # 3. Use browser's accept_languages
+    #     if request and request.accept_languages: # Ensure request context is available
+    #         best_match = request.accept_languages.best_match(list(app.config['LANGUAGES'].keys()))
+    #         if best_match:
+    #             return best_match
+    #
+    #     # 4. Default to 'en' or first language in config
+    #     default_lang = 'en'
+    #     if app.config['LANGUAGES']:
+    #         if 'en' in app.config['LANGUAGES']:
+    #             default_lang = 'en'
+    #         else:
+    #             default_lang = list(app.config['LANGUAGES'].keys())[0]
+    #     return default_lang
 
     from app.utils import inject_unread_notification_count, inject_search_form, linkify_mentions # Import inject_search_form and linkify_mentions
     @app.context_processor

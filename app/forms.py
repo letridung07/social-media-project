@@ -3,7 +3,7 @@ from wtforms import StringField, PasswordField, SubmitField, BooleanField, TextA
 from wtforms.fields import FileField, MultipleFileField, DateTimeField # Added DateTimeField
 from flask_babel import lazy_gettext as _l
 from flask_wtf.file import FileAllowed # For validation
-from wtforms.validators import DataRequired, Length, Email, EqualTo, ValidationError, Optional, InputRequired, NumberRange
+from wtforms.validators import DataRequired, Length, Email, EqualTo, ValidationError, Optional, InputRequired, NumberRange, URL
 from app.models import User, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE
 from datetime import datetime # Added datetime
 
