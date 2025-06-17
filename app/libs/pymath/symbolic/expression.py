@@ -39,7 +39,12 @@ class Expression:
         # Simplification: expr - Constant(0) -> expr
         if isinstance(other, Constant) and other.value == 0:
             return self
-        # Note: x - x -> 0 is omitted as per instructions
+
+        # Simplification: expr - expr -> Constant(0)
+        # This relies on __eq__ being implemented for operands.
+        if self == other:
+            return Constant(0)
+
         return Subtract(self, other)
 
     def __mul__(self, other):
@@ -83,7 +88,18 @@ class Expression:
             # If 'other' is Constant(0), Division by zero will be handled by Divide._op
             if not (isinstance(other, Constant) and other.value == 0):
                  return Constant(0)
-        # Note: x / x -> 1 is omitted
+
+        # Simplification: expr / expr -> Constant(1), carefully handling 0/0
+        if self == other:
+            # Check if 'self' (and therefore 'other') is Constant(0)
+            if isinstance(self, Constant) and self.value == 0:
+                # Let Divide(Constant(0), Constant(0)) handle this case.
+                # This will typically lead to a ZeroDivisionError upon evaluation.
+                pass
+            else:
+                # For any other expr / expr where expr is not Constant(0), result is 1.
+                return Constant(1)
+
         return Divide(self, other)
 
     def __pow__(self, other):
@@ -250,6 +266,13 @@ class Expression:
     def __repr__(self):
         return self.__str__()
 
+    def simplify(self):
+        """
+        Recursively simplifies the expression.
+        Default implementation returns self.
+        """
+        return self
+
 
 class Constant(Expression):
     def __init__(self, value):
@@ -263,6 +286,15 @@ class Constant(Expression):
 
     def __str__(self):
         return str(self.value)
+
+    def __eq__(self, other):
+        if not isinstance(other, Constant):
+            return NotImplemented
+        return self.value == other.value
+
+    def simplify(self):
+        """Simplifies a constant, which is just itself."""
+        return self
 
 
 class Variable(Expression):
@@ -282,6 +314,15 @@ class Variable(Expression):
     def __str__(self):
         return self.name
 
+    def __eq__(self, other):
+        if not isinstance(other, Variable):
+            return NotImplemented
+        return self.name == other.name
+
+    def simplify(self):
+        """Simplifies a variable, which is just itself."""
+        return self
+
 
 class BinaryOperation(Expression):
     def __init__(self, left, right):
@@ -296,6 +337,34 @@ class BinaryOperation(Expression):
     def _op(self, left_val, right_val):
         raise NotImplementedError
 
+    def __eq__(self, other):
+        if not type(self) is type(other): # Ensures it's the exact same class, e.g. Add == Add
+            return NotImplemented
+        # Relies on operand __eq__ being defined for recursive comparison.
+        return self.left == other.left and self.right == other.right
+
+    def simplify(self):
+        """
+        Simplifies a binary operation by simplifying operands and then potentially itself.
+        """
+        self.left = self.left.simplify()
+        self.right = self.right.simplify()
+
+        # Constant folding: if both operands are constants, evaluate the operation.
+        # Specific binary operation classes (Add, Multiply, etc.) are expected to
+        # have more advanced simplification rules in their __init__ or dedicated simplify.
+        # This is a general fallback for BinaryOperation.
+        if isinstance(self, (Add, Subtract, Multiply, Divide, Power)):
+            if isinstance(self.left, Constant) and isinstance(self.right, Constant):
+                try:
+                    # self._op is defined in concrete classes like Add, Multiply etc.
+                    return Constant(self._op(self.left.value, self.right.value))
+                except (ValueError, ZeroDivisionError):
+                    # If evaluation fails (e.g., log of negative, division by zero),
+                    # the expression cannot be simplified to a single constant here.
+                    pass # Return self as is
+        return self
+
 
 class Add(BinaryOperation):
     def diff(self, var):
@@ -306,6 +375,83 @@ class Add(BinaryOperation):
 
     def __str__(self):
         return f"({self.left} + {self.right})"
+
+    def simplify(self):
+        # First, simplify operands
+        left_simple = self.left.simplify()
+        right_simple = self.right.simplify()
+
+        # Initial constant folding (already in __add__ but good to have in simplify too)
+        if isinstance(left_simple, Constant) and isinstance(right_simple, Constant):
+            return Constant(left_simple.value + right_simple.value)
+        if isinstance(left_simple, Constant) and left_simple.value == 0:
+            return right_simple
+        if isinstance(right_simple, Constant) and right_simple.value == 0:
+            return left_simple
+
+        # For Add, we use the simplified operands to reconstruct if no further specific Add rules apply here
+        # The __add__ method itself handles some simplifications.
+        # If we always returned Add(left_simple, right_simple), we might bypass those.
+        # However, the goal here is to flatten and collect.
+
+        current_expr_rebuilt = Add(left_simple, right_simple)
+        if not isinstance(current_expr_rebuilt, Add): # If __add__ simplified it to not be an Add anymore
+            return current_expr_rebuilt.simplify() # Simplify further if possible (e.g. x + (-x) became 0)
+
+        # Flattening: Collect all terms from nested Add operations
+        terms = []
+        # Helper to collect terms from an expression
+        def collect_terms(expr, term_list):
+            if isinstance(expr, Add):
+                # Ensure we are collecting from already simplified operands if possible
+                # This means the collect_terms will operate on the structure *after* initial simplification
+                collect_terms(expr.left, term_list) # expr.left here is from current_expr_rebuilt
+                collect_terms(expr.right, term_list)
+            else:
+                term_list.append(expr)
+
+        # We collect from the potentially reconstructed Add(left_simple, right_simple)
+        # to ensure we're working with the structure after initial __add__ simplifications.
+        collect_terms(current_expr_rebuilt, terms)
+
+        # Separate constants and non-constants
+        constants = [term for term in terms if isinstance(term, Constant)]
+        non_constants = [term for term in terms if not isinstance(term, Constant)]
+
+        # Sum constants
+        sum_of_constants_val = sum(c.value for c in constants)
+        final_constant_term = Constant(sum_of_constants_val)
+
+        # If all terms were constants, they are already summed up.
+        if not non_constants:
+            return final_constant_term
+
+        # Build the new list of terms
+        new_terms = []
+        if final_constant_term.value != 0 or not non_constants: # Add constant if non-zero or only term
+            new_terms.append(final_constant_term)
+
+        new_terms.extend(non_constants)
+
+        # Filter out Constant(0) if other terms exist
+        if final_constant_term.value == 0 and len(non_constants) > 0:
+            new_terms.remove(final_constant_term)
+
+
+        if not new_terms: # Should be caught by "if not non_constants" earlier, or only Constant(0)
+             return Constant(0)
+        if len(new_terms) == 1:
+            return new_terms[0] # This could be Constant(0) if all other terms cancelled out
+
+        # Rebuild the Add expression from the new terms, using original __add__ for its simplifications
+        # This ensures left-associativity for ((a+b)+c) type structure
+        current_sum = new_terms[0]
+        for i in range(1, len(new_terms)):
+            # Using Expression.__add__ ensures that Add() is called,
+            # and its simplifications (like X+0 -> X) are applied.
+            current_sum = current_sum + new_terms[i]
+
+        return current_sum
 
 
 class Subtract(BinaryOperation):
@@ -328,6 +474,80 @@ class Multiply(BinaryOperation):
 
     def __str__(self):
         return f"({self.left} * {self.right})"
+
+    def simplify(self):
+        # First, simplify operands
+        left_simple = self.left.simplify()
+        right_simple = self.right.simplify()
+
+        # Initial constant folding & zero/one product (already in __mul__ but good for self-containment)
+        if isinstance(left_simple, Constant) and isinstance(right_simple, Constant):
+            return Constant(left_simple.value * right_simple.value)
+        # Check for multiplication by 0 or 1 (handled by __mul__, but explicit here for clarity in simplify logic)
+        if isinstance(left_simple, Constant):
+            if left_simple.value == 0: return Constant(0)
+            if left_simple.value == 1: return right_simple # Already simplified
+        if isinstance(right_simple, Constant):
+            if right_simple.value == 0: return Constant(0)
+            if right_simple.value == 1: return left_simple # Already simplified
+
+        # Reconstruct with simplified operands to leverage __mul__ simplifications
+        current_expr_rebuilt = Multiply(left_simple, right_simple)
+        if not isinstance(current_expr_rebuilt, Multiply): # If __mul__ simplified it (e.g. to Constant(0) or one of operands)
+            return current_expr_rebuilt.simplify() # Simplify further if possible
+
+        # Flattening: Collect all factors from nested Multiply operations
+        factors = []
+        def collect_factors(expr, factor_list):
+            if isinstance(expr, Multiply):
+                collect_factors(expr.left, factor_list)
+                collect_factors(expr.right, factor_list)
+            else:
+                factor_list.append(expr)
+
+        collect_factors(current_expr_rebuilt, factors)
+
+        # Separate constants and non-constants
+        constants = [factor for factor in factors if isinstance(factor, Constant)]
+        non_constants = [factor for factor in factors if not isinstance(factor, Constant)]
+
+        # Multiply constants
+        product_of_constants_val = 1
+        for const_factor in constants:
+            product_of_constants_val *= const_factor.value
+
+        final_constant_factor = Constant(product_of_constants_val)
+
+        if final_constant_factor.value == 0:
+            return Constant(0)
+
+        if not non_constants:
+            return final_constant_factor # This could be Constant(1) if all factors cancelled to 1
+
+        # Build the new list of factors
+        new_factors = []
+        # Add constant factor if it's not 1 or if it's the only factor remaining (i.e. no non_constants)
+        if final_constant_factor.value != 1 or not non_constants:
+            new_factors.append(final_constant_factor)
+
+        new_factors.extend(non_constants)
+
+        # If Constant(1) was appended but there are other non_constant factors, remove it.
+        if final_constant_factor.value == 1 and len(non_constants) > 0:
+             new_factors.remove(final_constant_factor)
+
+
+        if not new_factors: # Should typically mean product is 1 if it didn't return Constant(0) earlier
+             return Constant(1)
+        if len(new_factors) == 1:
+            return new_factors[0] # This could be Constant(1)
+
+        # Rebuild the Multiply expression from the new factors using __mul__
+        current_product = new_factors[0]
+        for i in range(1, len(new_factors)):
+            current_product = current_product * new_factors[i] # Leverages __mul__
+
+        return current_product
 
 
 class Divide(BinaryOperation):
@@ -398,6 +618,33 @@ class UnaryOperation(Expression):
 
     def _op(self, operand_val):
         raise NotImplementedError
+
+    def __eq__(self, other):
+        if not type(self) is type(other): # Ensures it's the exact same class, e.g. Log == Log
+            return NotImplemented
+        # Relies on operand __eq__ being defined for recursive comparison.
+        return self.operand == other.operand
+
+    def simplify(self):
+        """
+        Simplifies a unary operation by simplifying its operand and then potentially itself.
+        """
+        self.operand = self.operand.simplify()
+
+        # Constant folding: if operand is a constant, evaluate the operation.
+        # Specific unary operation classes (Log, Exp, etc.) might have more
+        # advanced simplification rules (e.g. Log(Exp(x)) -> x) in their __init__ or simplify.
+        # This is a general fallback for UnaryOperation.
+        if isinstance(self, (Log, Exp, Sign, Negate, Absolute)): # Check relevant UnaryOps
+            if isinstance(self.operand, Constant):
+                try:
+                    # self._op is defined in concrete classes like Log, Exp etc.
+                    return Constant(self._op(self.operand.value))
+                except (ValueError, ZeroDivisionError):
+                    # If evaluation fails (e.g., log of negative),
+                    # the expression cannot be simplified to a single constant here.
+                    pass # Return self as is
+        return self
 
 
 class Negate(UnaryOperation):

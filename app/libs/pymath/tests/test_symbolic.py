@@ -780,6 +780,226 @@ class TestSymbolicExpressions(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Order must be a non-negative integer."):
             expr.taylor_series(x, 0, -1)
 
+    def test_expression_equality(self):
+        x = Variable('x')
+        y = Variable('y')
+        c1 = Constant(1)
+        c2 = Constant(2)
+        c5 = Constant(5)
+
+        # Constants
+        self.assertTrue(Constant(5) == Constant(5))
+        self.assertEqual(Constant(5), Constant(5.0)) # Test __eq__ with float value
+        self.assertFalse(Constant(5) == Constant(6))
+        self.assertNotEqual(Constant(5), Constant(6))
+        self.assertFalse(Constant(5) == x)
+        self.assertNotEqual(Constant(5), x) # Check NotImplemented behavior
+
+        # Variables
+        self.assertTrue(Variable('x') == Variable('x'))
+        self.assertFalse(Variable('x') == Variable('y'))
+        self.assertFalse(Variable('x') == c5)
+        self.assertNotEqual(Variable('x'), c5)
+
+        # Unary Operations
+        self.assertTrue(Negate(x) == Negate(x))
+        self.assertFalse(Negate(x) == Negate(y))
+        self.assertFalse(Negate(x) == Exp(x))
+        self.assertNotEqual(Negate(x), Exp(x))
+        self.assertTrue(Exp(c1) == Exp(c1))
+        self.assertFalse(Exp(c1) == Exp(c2))
+
+        # Binary Operations
+        self.assertTrue(Add(x, c1) == Add(x, c1))
+        self.assertFalse(Add(x, c1) == Add(x, c2)) # Different right operand
+        self.assertFalse(Add(x, c1) == Add(y, c1)) # Different left operand
+        self.assertFalse(Add(x, c1) == Multiply(x, c1)) # Different operation type
+        self.assertNotEqual(Add(x,c1), Multiply(x,c1))
+
+        # Test equality with more complex nested expressions
+        expr_a = Add(x, Multiply(y, c2)) # x + (y*2)
+        expr_b = Add(x, Multiply(y, c2)) # x + (y*2)
+        expr_c = Add(x, Multiply(y, c1)) # x + (y*1)
+        self.assertTrue(expr_a == expr_b)
+        self.assertFalse(expr_a == expr_c)
+
+    def test_subtract_self_simplification(self):
+        x = Variable('x')
+        c5 = Constant(5)
+        expr1 = Add(x, c5)
+        neg_x = Negate(x)
+
+        # x - x -> 0
+        sub_x_x = x - x
+        self.assertIsInstance(sub_x_x, Constant)
+        self.assertEqual(sub_x_x.value, 0)
+        self.assertEqual(str(sub_x_x), "0")
+        self.assertEqual(sub_x_x.eval(x=10), 0)
+
+        # Constant(5) - Constant(5) -> 0
+        sub_c5_c5 = c5 - c5
+        self.assertIsInstance(sub_c5_c5, Constant)
+        self.assertEqual(sub_c5_c5.value, 0)
+        self.assertEqual(str(sub_c5_c5), "0")
+        self.assertEqual(sub_c5_c5.eval(), 0)
+
+        # (x+5) - (x+5) -> 0
+        sub_expr1_expr1 = expr1 - expr1
+        self.assertIsInstance(sub_expr1_expr1, Constant)
+        self.assertEqual(sub_expr1_expr1.value, 0)
+        self.assertEqual(str(sub_expr1_expr1), "0")
+        self.assertEqual(sub_expr1_expr1.eval(x=10), 0)
+
+        # (-x) - (-x) -> 0
+        sub_negx_negx = neg_x - neg_x
+        self.assertIsInstance(sub_negx_negx, Constant)
+        self.assertEqual(sub_negx_negx.value, 0)
+        self.assertEqual(str(sub_negx_negx), "0")
+        self.assertEqual(sub_negx_negx.eval(x=10), 0)
+
+    def test_divide_self_simplification(self):
+        x = Variable('x')
+        c5 = Constant(5)
+        expr1 = Add(x, c5) # x + 5
+
+        # x / x -> 1
+        div_x_x = x / x
+        self.assertIsInstance(div_x_x, Constant)
+        self.assertEqual(div_x_x.value, 1)
+        self.assertEqual(str(div_x_x), "1")
+        self.assertEqual(div_x_x.eval(x=10), 1)
+
+        # Constant(5) / Constant(5) -> 1
+        div_c5_c5 = c5 / c5
+        self.assertIsInstance(div_c5_c5, Constant)
+        self.assertEqual(div_c5_c5.value, 1)
+        self.assertEqual(str(div_c5_c5), "1.0") # Or "1" if ints preserved perfectly
+        self.assertEqual(div_c5_c5.eval(), 1)
+
+        # (x+5) / (x+5) -> 1
+        div_expr1_expr1 = expr1 / expr1
+        self.assertIsInstance(div_expr1_expr1, Constant)
+        self.assertEqual(div_expr1_expr1.value, 1)
+        self.assertEqual(str(div_expr1_expr1), "1")
+        self.assertEqual(div_expr1_expr1.eval(x=10), 1)
+
+        # 0 / 0 case
+        c0 = Constant(0)
+        div_zero_by_zero = c0 / c0
+        self.assertIsInstance(div_zero_by_zero, Divide) # Should not simplify to Constant(1)
+        self.assertEqual(str(div_zero_by_zero), "(0 / 0)")
+        with self.assertRaises(ZeroDivisionError):
+            div_zero_by_zero.eval()
+
+    def test_add_simplify_flatten_constants(self):
+        x, y = Variable('x'), Variable('y')
+        c1, c2, c3 = Constant(1), Constant(2), Constant(3)
+
+        # (x + 1) + (y + 2)  -> (x + y) + 3  (or some permutation)
+        expr1 = (x + c1) + (y + c2)
+        simplified_expr1 = expr1.simplify()
+        # Expected str might be "((x + y) + 3.0)" or "(3.0 + (x + y))" etc.
+        # Rely on eval and properties.
+        self.assertAlmostEqual(simplified_expr1.eval(x=1, y=1), 1+1+3) # 5.0
+        self.assertAlmostEqual(simplified_expr1.eval(x=0, y=0), 3.0)
+        # Check that it's an Add expression with a constant and non-constant part
+        # This is hard to assert generally due to associativity.
+        # Example str: ((1.0 + x) + (2.0 + y)) -> simplify -> ((x+y)+3)
+        # collect_terms on ((x+1)+(y+2)) -> [x,1,y,2]. const_sum=3. non_const=[x,y]. new_terms=[Const(3),x,y]
+        # rebuild: Add(Add(Const(3),x),y) -> ((3.0 + x) + y)
+        self.assertEqual(str(simplified_expr1), "((3.0 + x) + y)")
+
+
+        # (x + 1) + (2 - 1) -> (x + 1) + 1 -> x + 2
+        expr2 = (x + c1) + (c2 - c1) # (x+1) + (2-1) which is (x+1)+Const(1)
+        simplified_expr2 = expr2.simplify()
+        self.assertAlmostEqual(simplified_expr2.eval(x=5), 7.0)
+        self.assertEqual(str(simplified_expr2), "(x + 2.0)")
+
+
+        # 1 + (x + (2 + (y + 3))) -> 1 + (x + (2 + (y+3))) -> x+y+6
+        expr3 = c1 + (x + (c2 + (y + c3)))
+        simplified_expr3 = expr3.simplify()
+        # collect_terms on (1+(x+(2+(y+3)))) -> [1,x,2,y,3]. const_sum=6. non_const=[x,y]
+        # rebuild: Add(Add(Const(6),x),y) -> ((6.0 + x) + y)
+        self.assertEqual(str(simplified_expr3), "((6.0 + x) + y)")
+        self.assertAlmostEqual(simplified_expr3.eval(x=1,y=1), 8.0)
+
+        # (x - x) + y -> 0 + y -> y
+        expr4 = (x - x) + y # This becomes Constant(0) + y via __sub__ and __add__
+        simplified_expr4 = expr4.simplify() # Constant(0)+y -> simplify y
+        self.assertEqual(str(simplified_expr4), "y")
+
+        # (1 - 1) + x -> 0 + x -> x
+        expr5 = (c1 - c1) + x # Constant(0) + x
+        simplified_expr5 = expr5.simplify()
+        self.assertEqual(str(simplified_expr5), "x")
+
+        # 1 + 2 + 3 -> 6
+        expr6 = c1 + c2 + c3 # (1+2)+3 -> 3+3 -> 6
+        simplified_expr6 = expr6.simplify()
+        self.assertIsInstance(simplified_expr6, Constant)
+        self.assertAlmostEqual(simplified_expr6.value, 6.0)
+        self.assertEqual(str(simplified_expr6), "6.0")
+
+        # x + 0 + y -> x + y
+        expr7 = (x + Constant(0)) + y # x + y
+        simplified_expr7 = expr7.simplify()
+        self.assertEqual(str(simplified_expr7), "(x + y)")
+
+
+    def test_multiply_simplify_flatten_constants(self):
+        x, y = Variable('x'), Variable('y')
+        c0, c1, c2, c3 = Constant(0), Constant(1), Constant(2), Constant(3)
+
+        # (x * 2) * (y * 3) -> (x * y) * 6
+        expr1 = (x * c2) * (y * c3)
+        simplified_expr1 = expr1.simplify()
+        # collect_factors on ((x*2)*(y*3)) -> [x,2,y,3]. const_prod=6. non_const=[x,y]
+        # rebuild: Multiply(Multiply(Const(6),x),y) -> ((6.0 * x) * y)
+        self.assertEqual(str(simplified_expr1), "((6.0 * x) * y)")
+        self.assertAlmostEqual(simplified_expr1.eval(x=1, y=1), 6.0)
+        self.assertAlmostEqual(simplified_expr1.eval(x=2, y=2), 24.0)
+
+        # (x * 2) * (3 / 2) -> x * 3 (since 3/2=1.5, then 2*1.5=3)
+        expr2 = (x * c2) * (c3 / c2) # (x*2) * Const(1.5)
+        simplified_expr2 = expr2.simplify() # (x * 3.0)
+        self.assertEqual(str(simplified_expr2), "(x * 3.0)")
+        self.assertAlmostEqual(simplified_expr2.eval(x=5), 15.0)
+
+        # 2 * (x * (3 * (y * 0.5))) -> (x*y)*3
+        expr3 = c2 * (x * (c3 * (y * Constant(0.5))))
+        simplified_expr3 = expr3.simplify()
+        # collect_factors on (2*(x*(3*(y*0.5)))) -> [2,x,3,y,0.5]. const_prod=3. non_const=[x,y]
+        # rebuild: ((3.0*x)*y)
+        self.assertEqual(str(simplified_expr3), "((3.0 * x) * y)")
+        self.assertAlmostEqual(simplified_expr3.eval(x=2,y=2), 12.0)
+
+
+        # (x / x) * y -> 1 * y -> y
+        expr4 = (x / x) * y # Constant(1) * y via __truediv__ and __mul__
+        simplified_expr4 = expr4.simplify() # y.simplify() -> y
+        self.assertEqual(str(simplified_expr4), "y")
+
+        # (2 * 0) * x -> 0 * x -> 0
+        expr5 = (c2 * c0) * x # Constant(0) * x via __mul__
+        simplified_expr5 = expr5.simplify() # Constant(0).simplify() -> Constant(0)
+        self.assertIsInstance(simplified_expr5, Constant)
+        self.assertEqual(simplified_expr5.value, 0)
+        self.assertEqual(str(simplified_expr5), "0")
+
+        # 2 * 3 * 4 -> 24
+        expr6 = c2 * c3 * Constant(4) # (2*3)*4 -> 6*4 -> 24
+        simplified_expr6 = expr6.simplify()
+        self.assertIsInstance(simplified_expr6, Constant)
+        self.assertAlmostEqual(simplified_expr6.value, 24.0)
+        self.assertEqual(str(simplified_expr6), "24.0")
+
+        # x * 1 * y -> x * y
+        expr7 = (x * c1) * y # x * y
+        simplified_expr7 = expr7.simplify()
+        self.assertEqual(str(simplified_expr7), "(x * y)")
+
 
 if __name__ == '__main__':
     unittest.main()
