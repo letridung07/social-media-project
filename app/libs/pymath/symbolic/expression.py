@@ -899,6 +899,21 @@ class Log(UnaryOperation):
     def __str__(self):
         return f"log({self.operand})"
 
+    def integrate(self, var: 'Variable'):
+        """Integrates log. Only handles Int(log(var))dv = var*log(var) - var."""
+        if self.operand == var:
+            # Integral of log(var) w.r.t. var is var*log(var) - var
+            # var * self (where self is Log(var))
+            term1 = Multiply(var, self)
+            term2 = var
+            # (var * Log(var)) - var
+            # Expression.__sub__ will be used here.
+            return term1 - term2
+        else:
+            raise NotImplementedError(
+                "Integration of log(u) for u != var (e.g., log(f(x))) not implemented yet."
+            )
+
 
 class Exp(UnaryOperation):
     """Represents the exponential of an expression (e^x)."""
@@ -911,6 +926,16 @@ class Exp(UnaryOperation):
 
     def __str__(self):
         return f"exp({self.operand})"
+
+    def integrate(self, var: 'Variable'):
+        """Integrates exp. Only handles Int(exp(var))dv = exp(var)."""
+        if self.operand == var:
+            # Integral of exp(var) w.r.t. var is exp(var)
+            return self # Returns the same Exp(var) object
+        else:
+            raise NotImplementedError(
+                "Integration of exp(u) for u != var (e.g., exp(f(x))) not implemented yet."
+            )
 
 
 class Sign(UnaryOperation):

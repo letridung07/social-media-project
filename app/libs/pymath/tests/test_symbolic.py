@@ -1122,5 +1122,182 @@ class TestSymbolicExpressions(unittest.TestCase):
         self.assertEqual(str(simplified_expr7), "(x * y)")
 
 
+    def test_integrate_constant(self):
+        x = Variable('x')
+        c5 = Constant(5)
+        c0 = Constant(0)
+        c1 = Constant(1)
+
+        # Int(5, x) -> 5*x
+        integ_c5 = c5.integrate(x)
+        self.assertEqual(str(integ_c5), "(5 * x)") # __mul__ might use float for const: "(5.0 * x)"
+        self.assertAlmostEqual(integ_c5.eval(x=2), 10.0)
+
+        # Int(0, x) -> 0
+        integ_c0 = c0.integrate(x)
+        self.assertIsInstance(integ_c0, Constant) # 0*x simplifies to Constant(0)
+        self.assertEqual(str(integ_c0), "0")
+        self.assertAlmostEqual(integ_c0.eval(x=100), 0.0)
+
+        # Int(1, x) -> x
+        integ_c1 = c1.integrate(x)
+        self.assertIsInstance(integ_c1, Variable) # 1*x simplifies to x
+        self.assertEqual(str(integ_c1), "x")
+        self.assertAlmostEqual(integ_c1.eval(x=3), 3.0)
+
+    def test_integrate_variable(self):
+        x = Variable('x')
+        y = Variable('y')
+
+        # Int(x, x) -> x^2/2
+        integ_x_x = x.integrate(x)
+        # Expected: ((x ** 2.0) / 2.0) or similar if numbers become float
+        self.assertEqual(str(integ_x_x), "((x ** 2.0) / 2.0)")
+        self.assertAlmostEqual(integ_x_x.eval(x=2), 2.0) # 2^2/2 = 2
+        self.assertAlmostEqual(integ_x_x.eval(x=4), 8.0) # 4^2/2 = 8
+
+        # Int(y, x) -> y*x
+        integ_y_x = y.integrate(x)
+        # Expected: (y*x). Multiply.simplify sorts to (x*y)
+        self.assertEqual(str(integ_y_x.simplify()), "(x * y)") # Check simplified canonical form
+        self.assertAlmostEqual(integ_y_x.eval(y=3, x=2), 6.0)
+
+    def test_integrate_add_subtract(self):
+        x = Variable('x')
+        c1 = Constant(1)
+
+        # Int(x+1, x) -> x^2/2 + x
+        expr_add = Add(x, c1)
+        integ_add = expr_add.integrate(x)
+        # ((x^2/2) + x)
+        self.assertEqual(str(integ_add), "(((x ** 2.0) / 2.0) + x)")
+        self.assertAlmostEqual(integ_add.eval(x=2), 4.0) # 2^2/2 + 2 = 2+2=4
+
+        # Int(x-1, x) -> x^2/2 - x
+        expr_sub = Subtract(x, c1)
+        integ_sub = expr_sub.integrate(x)
+        self.assertEqual(str(integ_sub), "(((x ** 2.0) / 2.0) - x)")
+        self.assertAlmostEqual(integ_sub.eval(x=2), 0.0) # 2^2/2 - 2 = 2-2=0
+
+    def test_integrate_multiply_constant_factor(self):
+        x = Variable('x')
+        y = Variable('y')
+        c3 = Constant(3)
+        c0 = Constant(0)
+
+        # Int(3*x, x) -> 3 * x^2/2
+        expr_mul1 = Multiply(c3, x)
+        integ_mul1 = expr_mul1.integrate(x)
+        # (3.0 * ((x ** 2.0) / 2.0))
+        self.assertEqual(str(integ_mul1), "(3.0 * ((x ** 2.0) / 2.0))")
+        self.assertAlmostEqual(integ_mul1.eval(x=2), 6.0) # 3 * (2^2/2) = 3*2 = 6
+
+        # Int(x*3, x) -> x^2/2 * 3 (then simplify might reorder)
+        expr_mul2 = Multiply(x, c3)
+        integ_mul2 = expr_mul2.integrate(x)
+        # (((x ** 2.0) / 2.0) * 3.0)
+        self.assertEqual(str(integ_mul2), "(((x ** 2.0) / 2.0) * 3.0)")
+        self.assertAlmostEqual(integ_mul2.simplify().eval(x=2), 6.0) # Test eval after simplify
+
+        # Int(0*x, x) -> Int(0,x) -> 0
+        expr_mul0 = Multiply(c0, x)
+        integ_mul0 = expr_mul0.integrate(x) # Should be Constant(0) * (x^2/2) -> Constant(0)
+        self.assertIsInstance(integ_mul0, Constant)
+        self.assertEqual(str(integ_mul0), "0")
+
+        # Int(x*y, x) -> NotImplementedError
+        expr_xy = Multiply(x,y)
+        with self.assertRaisesRegex(NotImplementedError, "General product integration"):
+            expr_xy.integrate(x)
+
+    def test_integrate_power(self):
+        x = Variable('x')
+        y = Variable('y')
+        c2 = Constant(2)
+        c_neg1 = Constant(-1)
+        c5 = Constant(5)
+
+        # Int(x^2, x) -> x^3/3
+        expr_pow1 = Power(x, c2)
+        integ_pow1 = expr_pow1.integrate(x)
+        self.assertEqual(str(integ_pow1), "((x ** 3.0) / 3.0)")
+        self.assertAlmostEqual(integ_pow1.eval(x=3), 9.0) # 3^3/3 = 9
+
+        # Int(x^-1, x) -> Log(Abs(x))
+        expr_pow_neg1 = Power(x, c_neg1)
+        integ_pow_neg1 = expr_pow_neg1.integrate(x)
+        self.assertEqual(str(integ_pow_neg1), "log(abs(x))")
+        self.assertAlmostEqual(integ_pow_neg1.eval(x=math.e), 1.0)
+        self.assertAlmostEqual(integ_pow_neg1.eval(x=-math.e), 1.0)
+
+
+        # Int(5^2, x) -> 25*x
+        expr_const_pow = Power(c5, c2) # This is Constant(25)
+        integ_const_pow = expr_const_pow.integrate(x) # 25 * x
+        # Multiply.simplify might make this (25.0 * x)
+        self.assertEqual(str(integ_const_pow.simplify()), "(25.0 * x)")
+        self.assertAlmostEqual(integ_const_pow.eval(x=2), 50.0)
+
+        # Int(y^2, x) -> y^2 * x
+        expr_y_pow2 = Power(y, c2) # y^2
+        integ_y_pow2_x = expr_y_pow2.integrate(x) # y^2 * x
+        # Multiply.simplify might make this ((y**2.0)*x) or (x*(y**2.0))
+        self.assertEqual(str(integ_y_pow2_x.simplify()), "((y ** 2.0) * x)") # Assuming y sorts after x
+        self.assertAlmostEqual(integ_y_pow2_x.eval(y=2, x=3), 12.0)
+
+        # Int((x+1)^2, x) -> NotImplementedError
+        expr_complex_base = Power(Add(x, Constant(1)), c2)
+        with self.assertRaisesRegex(NotImplementedError, "General Power integration"):
+            expr_complex_base.integrate(x)
+
+    def test_integrate_negate(self):
+        x = Variable('x')
+        # Int(-x, x) -> -(x^2/2)
+        expr_neg_x = Negate(x)
+        integ_neg_x = expr_neg_x.integrate(x)
+        # Expected: Negate(Divide(Power(x, Constant(2)), Constant(2)))
+        # String: (-((x ** 2.0) / 2.0))
+        self.assertEqual(str(integ_neg_x), "(-((x ** 2.0) / 2.0))")
+        self.assertAlmostEqual(integ_neg_x.eval(x=2), -2.0)
+
+    def test_integrate_log(self):
+        x = Variable('x')
+        # Int(log(x), x) -> x*log(x) - x
+        expr_log_x = Log(x)
+        integ_log_x = expr_log_x.integrate(x)
+        # Expected: Subtract(Multiply(x, Log(x)), x)
+        # String: ((x * log(x)) - x)
+        self.assertEqual(str(integ_log_x), "((x * log(x)) - x)")
+        self.assertAlmostEqual(integ_log_x.eval(x=math.e), 0.0) # e*1 - e = 0
+
+        # Int(log(2*x), x) -> NotImplementedError
+        expr_log_2x = Log(Multiply(Constant(2), x))
+        with self.assertRaisesRegex(NotImplementedError, "Integration of log\(u\) for u != var"):
+            expr_log_2x.integrate(x)
+
+    def test_integrate_exp(self):
+        x = Variable('x')
+        # Int(exp(x), x) -> exp(x)
+        expr_exp_x = Exp(x)
+        integ_exp_x = expr_exp_x.integrate(x)
+        self.assertIsInstance(integ_exp_x, Exp)
+        self.assertEqual(str(integ_exp_x), "exp(x)")
+        self.assertAlmostEqual(integ_exp_x.eval(x=1), math.e)
+
+        # Int(exp(2*x), x) -> NotImplementedError
+        expr_exp_2x = Exp(Multiply(Constant(2),x))
+        with self.assertRaisesRegex(NotImplementedError, "Integration of exp\(u\) for u != var"):
+            expr_exp_2x.integrate(x)
+
+    def test_integrate_unimplemented_unary(self):
+        x = Variable('x')
+        # Absolute
+        with self.assertRaisesRegex(NotImplementedError, "Symbolic integration not implemented for this unary operation."):
+            Absolute(x).integrate(x)
+        # Sign
+        with self.assertRaisesRegex(NotImplementedError, "Symbolic integration not implemented for this unary operation."):
+            Sign(x).integrate(x)
+
+
 if __name__ == '__main__':
     unittest.main()
