@@ -8,7 +8,7 @@ try:
     from pymath.symbolic.expression import (
         Expression, Constant, Variable,
         Add, Subtract, Multiply, Divide, Power,
-        Negate, Absolute, Log, Exp, Sign
+        Negate, Absolute, Log, Exp, Sign, _factorial
     )
 except ImportError:
     # Fallback for running the script directly for testing, assuming it's in the parent of pymath
@@ -18,7 +18,7 @@ except ImportError:
     from pymath.symbolic.expression import (
         Expression, Constant, Variable,
         Add, Subtract, Multiply, Divide, Power,
-        Negate, Absolute, Log, Exp, Sign
+        Negate, Absolute, Log, Exp, Sign, _factorial
     )
 
 class TestSymbolicExpressions(unittest.TestCase):
@@ -598,6 +598,187 @@ class TestSymbolicExpressions(unittest.TestCase):
         self.assertEqual(expr_complex.eval(x=7), 2)  # |2| = 2
         self.assertEqual(expr_complex.eval(x=2), 3)  # |-3| = 3
         self.assertEqual(expr_complex.eval(x=5), 0)  # |0| = 0
+
+    def test_internal_factorial_function(self):
+        self.assertEqual(_factorial(0), 1)
+        self.assertEqual(_factorial(1), 1)
+        self.assertEqual(_factorial(5), 120)
+
+        with self.assertRaisesRegex(ValueError, "factorial.. not defined for negative values"):
+            _factorial(-1)
+        with self.assertRaisesRegex(ValueError, "factorial.. not defined for negative values"): # math.factorial specific message
+            _factorial(-5)
+
+        with self.assertRaisesRegex(TypeError, "Factorial is only defined for integers."):
+            _factorial(2.5)
+        with self.assertRaisesRegex(TypeError, "Factorial is only defined for integers."):
+            _factorial(Constant(2)) # Example of wrong type that is not float.
+
+    def test_taylor_series_exp_x_around_0(self):
+        x = Variable('x')
+        expr = Exp(x)
+
+        # Order 0: exp(0) = 1
+        p0 = expr.taylor_series(x, 0, 0)
+        self.assertEqual(str(p0), "1.0") # f(0)/0! * (x-0)^0
+        self.assertAlmostEqual(p0.eval(x=1), 1.0)
+        self.assertAlmostEqual(p0.eval(x=0), 1.0)
+
+        # Order 1: 1 + x
+        # f(0)=1, f'(0)=1. Poly = 1 + 1*x/1! = 1+x
+        p1 = expr.taylor_series(x, 0, 1)
+        # Expected: (Constant(0) + Constant(1)) + (Constant(1) * x) -> Constant(1) + x
+        # ( (k=0 term is Constant(1)) + (k=1 term is (1.0 * x)) )
+        self.assertEqual(str(p1), "(1.0 + x)") # Simplifies from (1.0 + (1.0 * x))
+        self.assertAlmostEqual(p1.eval(x=1), 2.0) # 1+1=2
+        self.assertAlmostEqual(p1.eval(x=0), 1.0) # 1+0=1
+
+        # Order 2: 1 + x + x^2/2
+        # f''(0)=1. Poly = 1 + x + 1*x^2/2! = 1 + x + 0.5*x^2
+        p2 = expr.taylor_series(x, 0, 2)
+        # Expected: ((1.0 + x) + (0.5 * (x ** 2)))
+        self.assertEqual(str(p2), "((1.0 + x) + (0.5 * (x ** 2)))")
+        self.assertAlmostEqual(p2.eval(x=1), 2.5) # 1+1+0.5 = 2.5
+        self.assertAlmostEqual(p2.eval(x=0), 1.0) # 1+0+0 = 1.0
+        self.assertAlmostEqual(p2.eval(x=2), 1+2+0.5*4 = 5.0) # 1+2+2 = 5.0
+
+        # Order 3: 1 + x + x^2/2 + x^3/6
+        # f'''(0)=1. Poly = 1 + x + 0.5*x^2 + x^3/6
+        p3 = expr.taylor_series(x, 0, 3)
+        # Expected: (((1.0 + x) + (0.5 * (x ** 2))) + (0.1666... * (x ** 3)))
+        # str will show the float approx of 1/6
+        self.assertTrue("0.1666" in str(p3)) # Check if 1/6 is part of the string
+        self.assertAlmostEqual(p3.eval(x=1), 1 + 1 + 0.5 + 1/6) # 2.5 + 1/6 = 2.666...
+        self.assertAlmostEqual(p3.eval(x=0), 1.0)
+
+    def test_taylor_series_log_one_plus_x_around_0(self):
+        x = Variable('x')
+        # Using (Constant(1) + x) for Log(1+x) to ensure it's handled
+        one_plus_x = Constant(1) + x
+        expr = Log(one_plus_x) # log(1+x)
+
+        # f(x) = log(1+x), a=0
+        # f(0) = log(1) = 0
+        # f'(x) = 1/(1+x), f'(0) = 1
+        # f''(x) = -1/(1+x)^2, f''(0) = -1
+        # f'''(x) = 2/(1+x)^3, f'''(0) = 2
+
+        # Order 0: log(1) = 0
+        p0 = expr.taylor_series(x, 0, 0)
+        self.assertEqual(str(p0), "0.0")
+        self.assertAlmostEqual(p0.eval(x=0.5), 0.0)
+
+        # Order 1: 0 + x = x
+        p1 = expr.taylor_series(x, 0, 1)
+        # Expected: (Constant(0.0) + (Constant(1.0)*x)) which simplifies to x
+        self.assertEqual(str(p1), "x") # (0.0 + x)
+        self.assertAlmostEqual(p1.eval(x=0.5), 0.5)
+
+        # Order 2: x - x^2/2
+        p2 = expr.taylor_series(x, 0, 2)
+        # Expected: (x + (-0.5 * (x ** 2)))
+        self.assertEqual(str(p2), "(x + (-0.5 * (x ** 2)))")
+        self.assertAlmostEqual(p2.eval(x=0.5), 0.5 - (0.5**2)/2) # 0.5 - 0.125 = 0.375
+
+        # Order 3: x - x^2/2 + x^3/3
+        # Term is (2/6 * x^3) = (1/3 * x^3)
+        p3 = expr.taylor_series(x, 0, 3)
+        # Expected: ((x + (-0.5 * (x ** 2))) + (0.333... * (x ** 3)))
+        self.assertTrue("0.3333" in str(p3)) # Check for 1/3
+        self.assertAlmostEqual(p3.eval(x=0.5), 0.5 - (0.5**2)/2 + (0.5**3)/3) # 0.375 + 0.125/3
+
+    def test_taylor_series_poly_x_cubed_around_0(self):
+        x = Variable('x')
+        expr = x**3
+
+        # f(x) = x^3, a=0
+        # f(0)=0, f'(0)=0, f''(0)=0, f'''(0)=6
+        # Order 2: 0 + 0x + 0x^2/2 = 0
+        p2 = expr.taylor_series(x, 0, 2)
+        self.assertEqual(str(p2), "0.0")
+        self.assertAlmostEqual(p2.eval(x=2), 0.0)
+
+        # Order 3: 0 + 0x + 0x^2 + 6x^3/6 = x^3
+        p3 = expr.taylor_series(x, 0, 3)
+        # k=0,1,2 terms are Constant(0).
+        # k=3: coeff = 6/6 = 1. term = 1 * x^3.
+        # Poly = ( ( (0.0+0.0) + 0.0 ) + (1.0*(x**3)) ) -> (1.0 * (x ** 3))
+        self.assertEqual(str(p3), "(1.0 * (x ** 3))")
+        self.assertAlmostEqual(p3.eval(x=2), 8.0)
+        self.assertAlmostEqual(p3.eval(x=1), 1.0)
+
+        # Order 4: Still x^3, as f^(4)(0) = 0
+        p4 = expr.taylor_series(x, 0, 4)
+        # k=4 term is 0.
+        self.assertEqual(str(p4), "(1.0 * (x ** 3))") # Same as p3 due to zero higher terms
+        self.assertAlmostEqual(p4.eval(x=2), 8.0)
+
+    def test_taylor_series_poly_x_cubed_around_1(self):
+        x = Variable('x')
+        expr = x**3
+        # f(x) = x^3, a=1
+        # f(1)=1
+        # f'(x)=3x^2, f'(1)=3
+        # f''(x)=6x, f''(1)=6
+        # f'''(x)=6, f'''(1)=6
+
+        # Order 0: f(1) = 1
+        p0 = expr.taylor_series(x, 1, 0)
+        self.assertEqual(str(p0), "1.0")
+        self.assertAlmostEqual(p0.eval(x=1), 1.0)
+        self.assertAlmostEqual(p0.eval(x=2), 1.0) # (x-1) is not present
+
+        # Order 1: f(1) + f'(1)(x-1) = 1 + 3(x-1)
+        p1 = expr.taylor_series(x, 1, 1)
+        # (1.0 + (3.0 * (x - 1)))
+        self.assertEqual(str(p1), "(1.0 + (3.0 * (x - 1)))")
+        self.assertAlmostEqual(p1.eval(x=1), 1.0)      # 1 + 3*0 = 1
+        self.assertAlmostEqual(p1.eval(x=2), 1 + 3*1)  # 1 + 3 = 4
+        self.assertAlmostEqual(p1.eval(x=0), 1 + 3*(-1))# 1 - 3 = -2
+
+        # Order 2: 1 + 3(x-1) + f''(1)/2! (x-1)^2 = 1 + 3(x-1) + (6/2)(x-1)^2 = 1 + 3(x-1) + 3(x-1)^2
+        p2 = expr.taylor_series(x, 1, 2)
+        # ((1.0 + (3.0 * (x - 1))) + (3.0 * ((x - 1) ** 2)))
+        self.assertEqual(str(p2), "((1.0 + (3.0 * (x - 1))) + (3.0 * ((x - 1) ** 2)))")
+        self.assertAlmostEqual(p2.eval(x=1), 1.0) # 1
+        self.assertAlmostEqual(p2.eval(x=2), 1 + 3*1 + 3*1) # 1+3+3 = 7
+        self.assertAlmostEqual(p2.eval(x=0), 1 + 3*(-1) + 3*(-1)**2) # 1-3+3 = 1
+
+        # Order 3: 1 + 3(x-1) + 3(x-1)^2 + f'''(1)/3! (x-1)^3 = 1 + 3(x-1) + 3(x-1)^2 + (6/6)(x-1)^3
+        p3 = expr.taylor_series(x, 1, 3)
+        # (((1.0 + (3.0 * (x - 1))) + (3.0 * ((x - 1) ** 2))) + (1.0 * ((x - 1) ** 3)))
+        self.assertEqual(str(p3), "(((1.0 + (3.0 * (x - 1))) + (3.0 * ((x - 1) ** 2))) + (1.0 * ((x - 1) ** 3)))")
+        self.assertAlmostEqual(p3.eval(x=1), 1.0) # 1
+        self.assertAlmostEqual(p3.eval(x=2), 1 + 3*1 + 3*1 + 1*1) # 1+3+3+1 = 8
+        self.assertAlmostEqual(p3.eval(x=0), 1 + 3*(-1) + 3*(-1)**2 + 1*(-1)**3) # 1-3+3-1 = 0
+
+    def test_taylor_series_constant_around_0(self):
+        x = Variable('x')
+        expr = Constant(5)
+        p2 = expr.taylor_series(x, 0, 2) # f(0)=5, f'(0)=0, f''(0)=0
+        # k=0: term_coeff=5/1=5, var_part=1. current_term=5. poly=5.
+        # k=1: f'(0)=0. term_coeff=0. current_term=0. poly=5+0=5.
+        # k=2: f''(0)=0. term_coeff=0. current_term=0. poly=5+0=5.
+        # This should simplify to Constant(5.0)
+        self.assertEqual(str(p2), "5.0")
+        self.assertAlmostEqual(p2.eval(x=10), 5.0)
+        self.assertAlmostEqual(p2.eval(x=0), 5.0)
+
+    def test_taylor_series_input_validation(self):
+        x = Variable('x')
+        expr = Exp(x)
+
+        with self.assertRaisesRegex(TypeError, "Expansion variable must be an instance of Variable."):
+            expr.taylor_series("not_a_variable", 0, 2)
+
+        with self.assertRaisesRegex(TypeError, "Expansion point must be a number"):
+            expr.taylor_series(x, "not_a_number", 2)
+
+        with self.assertRaisesRegex(TypeError, "Order must be an integer."):
+            expr.taylor_series(x, 0, 2.5)
+
+        with self.assertRaisesRegex(ValueError, "Order must be a non-negative integer."):
+            expr.taylor_series(x, 0, -1)
 
 
 if __name__ == '__main__':

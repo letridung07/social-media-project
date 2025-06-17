@@ -1,5 +1,16 @@
 import math
 
+def _factorial(n):
+    """
+    Calculates the factorial of a non-negative integer n.
+    Raises ValueError if n is negative or not an integer.
+    """
+    if not isinstance(n, int):
+        raise TypeError("Factorial is only defined for integers.")
+    # math.factorial already raises ValueError for negative integers.
+    # It also handles 0! = 1 correctly.
+    return math.factorial(n)
+
 class Expression:
     def __add__(self, other):
         # Promote 'other' to Constant if it's a number
@@ -155,6 +166,77 @@ class Expression:
 
     def __abs__(self):
         return Absolute(self)
+
+    def taylor_series(self, variable, expansion_point, order):
+        """
+        Computes the Taylor series expansion of this expression.
+
+        Args:
+            variable (Variable): The variable of the expansion.
+            expansion_point (float or int): The point 'a' around which to expand.
+            order (int): The order of the Taylor polynomial (non-negative integer).
+
+        Returns:
+            Expression: The Taylor polynomial as an Expression object.
+
+        Raises:
+            TypeError: If input types are incorrect.
+            ValueError: If order is negative.
+        """
+        if not isinstance(variable, Variable):
+            raise TypeError("Expansion variable must be an instance of Variable.")
+        if not isinstance(expansion_point, (int, float)):
+            raise TypeError("Expansion point must be a number (int or float).")
+        if not isinstance(order, int):
+            raise TypeError("Order must be an integer.")
+        if order < 0:
+            raise ValueError("Order must be a non-negative integer.")
+
+        current_deriv_expr = self
+        taylor_poly = Constant(0)
+
+        expansion_point_const = Constant(expansion_point)
+
+        for k in range(order + 1):
+            # Calculate f_k_a_val (k-th derivative evaluated at expansion_point)
+            if k == 0:
+                f_k_a_val = current_deriv_expr.eval(**{variable.name: expansion_point})
+            else:
+                current_deriv_expr = current_deriv_expr.diff(variable)
+                f_k_a_val = current_deriv_expr.eval(**{variable.name: expansion_point})
+
+            # Calculate factorial_k
+            try:
+                factorial_k = _factorial(k)
+            except ValueError as e: # Should not happen for non-negative k
+                raise ValueError(f"Error calculating factorial for k={k}: {e}")
+
+            if factorial_k == 0: # Should ideally not happen for k>=0
+                # This case might occur if _factorial had an issue, though unlikely for k>=0
+                # Or if f_k_a_val is 0, then this term is 0 anyway.
+                # If f_k_a_val is non-zero and factorial_k is zero, it's an issue.
+                # For k>=0, factorial_k is always >=1.
+                # For safety, if we want to handle it:
+                if f_k_a_val != 0:
+                     raise ZeroDivisionError(f"Factorial of {k} is zero, leading to division by zero.")
+                term_coeff_val = 0 # if f_k_a_val is also 0
+            else:
+                term_coeff_val = f_k_a_val / factorial_k
+
+            term_coeff = Constant(term_coeff_val)
+
+            # Calculate var_part = (variable - expansion_point)**k
+            if k == 0:
+                var_part = Constant(1)  # (x-a)^0 = 1
+            else:
+                # (variable - Constant(expansion_point))
+                term_base = variable - expansion_point_const
+                var_part = term_base ** Constant(k)
+
+            current_term = term_coeff * var_part
+            taylor_poly = taylor_poly + current_term
+
+        return taylor_poly
 
     def diff(self, var):
         raise NotImplementedError
