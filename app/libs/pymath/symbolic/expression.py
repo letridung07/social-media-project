@@ -332,12 +332,8 @@ class Negate(UnaryOperation):
 class Absolute(UnaryOperation):
     def diff(self, var):
         # Derivative of |u| is u' * sgn(u)
-        # This is a simplified version, assuming sgn(u) can be represented.
-        # A proper implementation might need a Sign function or handle cases.
-        # For now, let's assume operand is not zero at the point of differentiation.
-        # return self.operand.diff(var) * Sign(self.operand)
-        raise NotImplementedError("Symbolic differentiation for absolute value is not yet implemented.")
-
+        # Derivative of |u| is u' * sgn(u)
+        return self.operand.diff(var) * Sign(self.operand)
 
     def _op(self, operand_val):
         return abs(operand_val)
@@ -372,3 +368,23 @@ class Exp(UnaryOperation):
 
     def __str__(self):
         return f"exp({self.operand})"
+
+
+class Sign(UnaryOperation):
+    """Represents the sign function (sgn)."""
+    def __init__(self, operand):
+        super().__init__(operand)
+
+    def _op(self, operand_val):
+        if operand_val == 0:
+            return 0
+        return math.copysign(1, operand_val)
+
+    def diff(self, var):
+        # Derivative of sgn(u) is 0 (for u != 0).
+        # At u=0, the derivative is undefined (or can be seen as 2*delta(0) if using distributions).
+        # For symbolic purposes, Constant(0) is a reasonable simplification.
+        return Constant(0)
+
+    def __str__(self):
+        return f"sgn({self.operand})"

@@ -8,7 +8,7 @@ try:
     from pymath.symbolic.expression import (
         Expression, Constant, Variable,
         Add, Subtract, Multiply, Divide, Power,
-        Negate, Absolute, Log, Exp
+        Negate, Absolute, Log, Exp, Sign
     )
 except ImportError:
     # Fallback for running the script directly for testing, assuming it's in the parent of pymath
@@ -18,7 +18,7 @@ except ImportError:
     from pymath.symbolic.expression import (
         Expression, Constant, Variable,
         Add, Subtract, Multiply, Divide, Power,
-        Negate, Absolute, Log, Exp
+        Negate, Absolute, Log, Exp, Sign
     )
 
 class TestSymbolicExpressions(unittest.TestCase):
@@ -463,11 +463,142 @@ class TestSymbolicExpressions(unittest.TestCase):
         # Eval at x=1: (2*(1+1)) + (2*1) = 4 + 2 = 6
         self.assertEqual(diff_nested.eval(x=1), 6.0)
 
-    def test_absolute_value_diff_not_implemented(self):
+    # test_absolute_value_diff_not_implemented was removed as Absolute.diff is now implemented
+
+    def test_sign_evaluation(self):
+        x = Variable('x')
+        self.assertEqual(Sign(Constant(5)).eval(), 1)
+        self.assertEqual(Sign(Constant(-3)).eval(), -1)
+        self.assertEqual(Sign(Constant(0)).eval(), 0)
+
+        self.assertEqual(Sign(x).eval(x=5), 1)
+        self.assertEqual(Sign(x).eval(x=-3), -1)
+        self.assertEqual(Sign(x).eval(x=0), 0)
+
+        expr_complex = Sign(Add(x, Constant(2))) # sgn(x+2)
+        self.assertEqual(expr_complex.eval(x=-5), -1) # sgn(-3) -> -1
+        self.assertEqual(expr_complex.eval(x=-2), 0)  # sgn(0) -> 0
+        self.assertEqual(expr_complex.eval(x=3), 1)   # sgn(5) -> 1
+
+    def test_sign_differentiation(self):
+        x = Variable('x')
+        c5 = Constant(5)
+
+        # diff(sgn(x), x) -> 0
+        diff_sign_x = Sign(x).diff(x)
+        self.assertIsInstance(diff_sign_x, Constant)
+        self.assertEqual(diff_sign_x.eval(), 0)
+        self.assertEqual(str(diff_sign_x), "0")
+
+        # diff(sgn(5), x) -> 0
+        diff_sign_c5 = Sign(c5).diff(x)
+        self.assertIsInstance(diff_sign_c5, Constant)
+        self.assertEqual(diff_sign_c5.eval(), 0)
+        self.assertEqual(str(diff_sign_c5), "0")
+
+        # diff(sgn(x^2), x) should be 0 (as derivative of sgn(u) is 0)
+        # Note: This is a simplification. Derivative of sgn(u) is 2*delta(u)*u',
+        # but we've defined sgn(u).diff() as Constant(0).
+        expr_complex = Sign(x ** Constant(2))
+        diff_complex = expr_complex.diff(x)
+        self.assertIsInstance(diff_complex, Constant)
+        self.assertEqual(diff_complex.eval(), 0)
+        self.assertEqual(str(diff_complex), "0")
+
+
+    def test_sign_str(self):
+        x = Variable('x')
+        c5 = Constant(5)
+        expr_add = Add(x, Constant(1))
+
+        self.assertEqual(str(Sign(x)), "sgn(x)")
+        self.assertEqual(str(Sign(c5)), "sgn(5)")
+        self.assertEqual(str(Sign(expr_add)), "sgn((x + 1))")
+
+    def test_absolute_diff_variable_x(self):
         x = Variable('x')
         abs_x = Absolute(x)
-        with self.assertRaises(NotImplementedError):
-            abs_x.diff(x)
+        deriv_abs_x = abs_x.diff(x) # Should be 1 * sgn(x), which simplifies to sgn(x)
+
+        # String representation: d(|x|)/dx = sgn(x)
+        self.assertEqual(str(deriv_abs_x), "sgn(x)")
+
+        # Evaluation:
+        self.assertEqual(deriv_abs_x.eval(x=2), 1)   # sgn(2) = 1
+        self.assertEqual(deriv_abs_x.eval(x=-2), -1) # sgn(-2) = -1
+        self.assertEqual(deriv_abs_x.eval(x=0), 0)   # sgn(0) = 0
+
+    def test_absolute_diff_constant(self):
+        x = Variable('x')
+        # d(|5|)/dx = 0
+        abs_c_pos = Absolute(Constant(5))
+        deriv_abs_c_pos = abs_c_pos.diff(x) # (0 * sgn(5)) -> 0
+        self.assertIsInstance(deriv_abs_c_pos, Constant)
+        self.assertEqual(deriv_abs_c_pos.value, 0)
+        self.assertEqual(str(deriv_abs_c_pos), "0")
+        self.assertEqual(deriv_abs_c_pos.eval(), 0)
+
+        # d(|-5|)/dx = 0
+        abs_c_neg = Absolute(Constant(-5))
+        deriv_abs_c_neg = abs_c_neg.diff(x) # (0 * sgn(-5)) -> 0
+        self.assertIsInstance(deriv_abs_c_neg, Constant)
+        self.assertEqual(deriv_abs_c_neg.value, 0)
+        self.assertEqual(str(deriv_abs_c_neg), "0")
+        self.assertEqual(deriv_abs_c_neg.eval(), 0)
+
+    def test_absolute_diff_power_x_sq(self):
+        x = Variable('x')
+        # d(|x^2|)/dx = 2x * sgn(x^2)
+        x_sq = x ** Constant(2)
+        abs_x_sq = Absolute(x_sq)
+        deriv_abs_x_sq = abs_x_sq.diff(x) # (2x * sgn(x^2))
+
+        # String representation
+        # (x_sq.diff(x)) is (2*x)
+        # Sign(x_sq) is sgn((x ** 2))
+        # So, deriv is ((2 * x) * sgn((x ** 2)))
+        self.assertEqual(str(deriv_abs_x_sq), "((2 * x) * sgn((x ** 2)))")
+
+        # Evaluation
+        self.assertEqual(deriv_abs_x_sq.eval(x=2), 4)  # (2*2) * sgn(4) = 4 * 1 = 4
+        self.assertEqual(deriv_abs_x_sq.eval(x=-2), -4) # (2*-2) * sgn(4) = -4 * 1 = -4
+        self.assertEqual(deriv_abs_x_sq.eval(x=0), 0)   # (2*0) * sgn(0) = 0 * 0 = 0
+
+    def test_absolute_diff_x_minus_c(self):
+        x = Variable('x')
+        c2 = Constant(2)
+        # d(|x-2|)/dx = 1 * sgn(x-2) = sgn(x-2)
+        expr_x_minus_2 = x - c2
+        abs_expr = Absolute(expr_x_minus_2)
+        deriv_abs_expr = abs_expr.diff(x) # (1 * sgn((x-2))) which simplifies to sgn((x-2))
+
+        # String representation
+        self.assertEqual(str(deriv_abs_expr), "sgn((x - 2))")
+
+        # Evaluation
+        self.assertEqual(deriv_abs_expr.eval(x=3), 1)  # sgn(1) = 1
+        self.assertEqual(deriv_abs_expr.eval(x=1), -1) # sgn(-1) = -1
+        self.assertEqual(deriv_abs_expr.eval(x=2), 0)  # sgn(0) = 0
+
+    def test_absolute_eval(self): # Added a basic test for Absolute.eval
+        x = Variable('x')
+        c_pos = Constant(5)
+        c_neg = Constant(-3)
+        c_zero = Constant(0)
+
+        self.assertEqual(Absolute(c_pos).eval(), 5)
+        self.assertEqual(Absolute(c_neg).eval(), 3)
+        self.assertEqual(Absolute(c_zero).eval(), 0)
+
+        self.assertEqual(Absolute(x).eval(x=4), 4)
+        self.assertEqual(Absolute(x).eval(x=-4), 4)
+        self.assertEqual(Absolute(x).eval(x=0), 0)
+
+        expr_complex = Absolute(Subtract(x, Constant(5))) # |x-5|
+        self.assertEqual(expr_complex.eval(x=7), 2)  # |2| = 2
+        self.assertEqual(expr_complex.eval(x=2), 3)  # |-3| = 3
+        self.assertEqual(expr_complex.eval(x=5), 0)  # |0| = 0
+
 
 if __name__ == '__main__':
     unittest.main()
