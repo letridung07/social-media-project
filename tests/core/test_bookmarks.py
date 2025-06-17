@@ -1,6 +1,6 @@
 import pytest
 from app import db, create_app
-from app.models import User, Post, Bookmark
+from app.core.models import User, Post, Bookmark
 from flask import url_for, get_flashed_messages
 from datetime import datetime, timedelta
 

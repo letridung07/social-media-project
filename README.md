@@ -382,25 +382,47 @@ Follow these instructions to get a copy of the project up and running on your lo
 
 1.  Ensure your virtual environment is activated and development dependencies are installed.
 2.  From the project root directory:
-    *   To run the main application tests:
+    *   To run all main application tests:
         ```bash
         python3 -m unittest discover tests
         ```
-        This command will discover and run all tests located in the main `tests/` directory.
+        This command will discover and run all tests located in the `tests/` directory and its subdirectories.
+    *   To run tests for a specific part of the application (e.g., core tests):
+        ```bash
+        python3 -m unittest discover tests/core
+        ```
+    *   Similarly, for API tests:
+        ```bash
+        python3 -m unittest discover tests/api
+        ```
     *   To run the `pymath` library tests:
         ```bash
         python3 -m unittest discover -s app/libs/pymath/tests -p 'test_*.py'
         ```
-        This command will discover and run tests specifically for the `pymath` module.
 
 ## Project Structure
 ```
 /
 ├── app/                  # Main application package
+│   ├── core/             # Core application logic
+│   │   ├── forms.py      # WTForms definitions
+│   │   ├── models.py     # SQLAlchemy database models
+│   │   ├── routes.py     # Main application routes (views)
+│   │   ├── events.py     # Socket.IO event handlers
+│   │   └── scheduler.py  # APScheduler setup
+│   ├── admin/            # Admin interface specific logic
+│   │   └── routes.py     # Admin routes
+│   ├── api/              # API specific logic
+│   │   └── routes.py     # API routes
+│   ├── auth/             # Authentication specific logic (e.g., forms, routes)
+│   │   └── ...           # (Currently empty, add specific files once they exist)
+│   ├── utils/            # Utility functions
+│   │   ├── helpers.py    # General helper functions
+│   │   └── email.py      # Email sending utilities
 │   ├── static/           # Static files (CSS, JS, images)
 │   │   ├── css/
-│   │   ├── js/           # JavaScript files (e.g., chat_page.js, notifications.js, stories.js, polls.js, mention_autocomplete.js)
-│   │   ├── images/       # User profile pictures (corrected path, was listed under js/ before)
+│   │   ├── js/
+│   │   ├── images/       # User profile pictures
 │   │   ├── post_images/  # Images attached to posts
 │   │   ├── videos/       # Videos attached to posts
 │   │   ├── media_items/  # Files for album/gallery posts
@@ -408,49 +430,33 @@ Follow these instructions to get a copy of the project up and running on your lo
 │   │   ├── group_images/ # Group profile images
 │   │   └── story_media/  # Media for stories
 │   ├── templates/        # HTML templates
-│   │   ├── chat/         # Chat specific templates
-│   │   ├── create_story.html # Template for creating stories
-│   │   ├── stories.html    # Template for displaying stories
-│   │   ├── create_poll.html  # Template for creating polls
-│   │   ├── create_article.html
-│   │   ├── edit_article.html
-│   │   ├── view_article.html
-│   │   ├── articles_list.html
-│   │   ├── upload_audio.html
-│   │   ├── edit_audio_post.html
-│   │   ├── view_audio_post.html
-│   │   ├── audio_list.html
-│   ├── __init__.py       # Application factory, initializes Flask app and extensions
-│   ├── forms.py          # WTForms definitions
-│   ├── models.py         # SQLAlchemy database models
-│   ├── routes.py         # Application routes (views)
-│   ├── events.py         # Socket.IO event handlers
-│   └── utils.py          # Utility functions (e.g., saving pictures, processing hashtags & mentions, linkifying mentions)
+│   │   ├── chat/
+│   │   └── ...           # Other template files and subdirectories
+│   ├── translations/     # Language translations
+│   └── __init__.py       # Application factory, initializes Flask app and extensions
 ├── tests/                # Unit tests
-│   ├── __init__.py
-│   ├── test_auth.py      # Authentication tests
-│   ├── test_profile.py   # Profile management tests
-│   ├── test_posts.py     # Tests for posts (including albums/galleries), comments, likes, hashtags, and mentions
-│   ├── test_follow.py    # Tests for following/unfollowing users and feed generation
-│   ├── test_engagement.py # Tests for liking/unliking posts and adding/viewing comments (can be merged or specialized)
-│   ├── test_chat.py      # Chat functionality tests
-    ├── test_groups.py    # Tests for group functionality
-    ├── test_search.py    # Tests for search functionality
-    ├── test_stories.py   # Tests for Stories feature
-    ├── test_polls.py     # Tests for Polls feature
-    ├── test_events.py    # Tests for Events/Calendar feature
-    ├── test_analytics.py # Tests for Analytics Dashboard
-    ├── test_articles.py  # Tests for Article functionality
-    ├── test_audio_posts.py # Tests for AudioPost functionality
-    ├── test_sharing.py   # Placeholder for external sharing tests
-    ├── test_livestream.py # Placeholder for live stream tests
-    ├── test_themes.py    # Placeholder for theme functionality tests
-├── venv/                 # Python virtual environment (if created with this name)
-├── .gitignore            # Specifies intentionally untracked files that Git should ignore
-├── config.py             # Configuration settings (e.g., SECRET_KEY, database URI)
-├── README.md             # This file
+│   ├── core/             # Tests for core application logic
+│   │   ├── test_posts.py
+│   │   ├── test_forms.py
+│   │   └── ...           # Other core tests
+│   ├── admin/            # Tests for admin functionalities
+│   │   └── .gitkeep      # (Empty for now)
+│   ├── api/              # Tests for API endpoints
+│   │   ├── test_api_auth.py
+│   │   └── ...
+│   ├── auth/             # Tests for authentication logic
+│   │   ├── test_auth.py
+│   │   └── test_2fa.py
+│   ├── utils/            # Tests for utility functions
+│   │   ├── test_helpers.py
+│   │   └── test_image_utils.py
+│   └── __init__.py       # Test package initializer
+├── app.db                # SQLite database file
+├── config.py             # Configuration settings
+├── migrations/           # Database migration scripts
 ├── requirements.txt      # Python package dependencies
-└── run.py                # Script to run the Flask development server
+├── run.py                # Script to run the Flask development server
+└── README.md             # This file
 ```
 *(Note: Project structure updated to reflect mention-related files/updates, corrected static asset paths, and consolidated test descriptions.)*
 

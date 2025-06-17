@@ -1,6 +1,6 @@
 import unittest
 from app import create_app, db
-from app.models import User, Post # Add other models as needed for resource tests
+from app.core.models import User, Post # Add other models as needed for resource tests
 from config import TestingConfig
 
 class AuthorizationTestCase(unittest.TestCase):

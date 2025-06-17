@@ -39,8 +39,8 @@ def admin_dashboard():
 #     # Logic to manage users
 #     return "Manage Users Placeholder"
 
-from app.models import VirtualGood
-from app.forms import VirtualGoodForm
+from app.core.models import VirtualGood
+from app.core.forms import VirtualGoodForm
 from app import db
 from sqlalchemy.exc import SQLAlchemyError
 from flask import current_app # For logging

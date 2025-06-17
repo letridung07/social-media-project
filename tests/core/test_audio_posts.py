@@ -3,7 +3,7 @@ import os
 import io
 from flask import current_app, get_flashed_messages
 from app import create_app, db
-from app.models import User, AudioPost
+from app.core.models import User, AudioPost
 from config import TestingConfig
 from werkzeug.datastructures import FileStorage
 from datetime import datetime, timedelta
@@ -35,7 +35,7 @@ class AudioPostTestCase(unittest.TestCase):
         os.makedirs(self.audio_upload_path, exist_ok=True)
 
         # Mock get_audio_duration
-        self.mock_get_duration = patch('app.routes.get_audio_duration', MagicMock(return_value=180))
+        self.mock_get_duration = patch('app.utils.helpers.get_audio_duration', MagicMock(return_value=180))
         self.mocked_get_duration = self.mock_get_duration.start()
 
     def tearDown(self):

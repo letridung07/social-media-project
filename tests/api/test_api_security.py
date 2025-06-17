@@ -4,7 +4,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from app import create_app, db
-from app.models import User, Application, AccessToken, Post, FriendList, PRIVACY_PUBLIC, PRIVACY_CUSTOM_LIST
+from app.core.models import User, Application, AccessToken, Post, FriendList, PRIVACY_PUBLIC, PRIVACY_CUSTOM_LIST
 from app.oauth2 import generate_access_token, ACCESS_TOKEN_EXPIRES_IN_SECONDS
 from config import TestingConfig
 

@@ -1,7 +1,7 @@
 import unittest
 import json
 from app import create_app, db
-from app.models import User, Application, AccessToken
+from app.core.models import User, Application, AccessToken
 from config import TestingConfig
 from datetime import datetime, timedelta, timezone
 

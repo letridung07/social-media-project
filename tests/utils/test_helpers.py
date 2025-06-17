@@ -5,8 +5,8 @@ from icalendar import Calendar, Event as IcsEvent
 
 # Assuming app.utils and app.models.Event are structured such that they can be imported.
 # For isolated unit testing, we might mock AppEventModel if it's complex to instantiate.
-# from app.models import Event as AppEventModel # This might require Flask app context
-from app.utils import generate_ics_file
+# from app.core.models import Event as AppEventModel # This might require Flask app context
+from app.utils.helpers import generate_ics_file
 
 # A simple mock class for Event model for utility testing
 class MockAppEventModel:

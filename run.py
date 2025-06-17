@@ -1,5 +1,5 @@
 from app import create_app, db, socketio
-# from app.models import User, Post # Assuming you have these models
+# from app.core.models import User, Post # Assuming you have these models
 
 app = create_app()
 

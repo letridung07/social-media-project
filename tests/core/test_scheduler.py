@@ -3,12 +3,12 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch, MagicMock
 
 from app import create_app, db
-from app.models import User, Post, Story, Notification, Mention, Group, GroupMembership # Add all relevant models
-from app.scheduler import publish_scheduled_content # The function to test
+from app.core.models import User, Post, Story, Notification, Mention, Group, GroupMembership # Add all relevant models
+from app.core.scheduler import publish_scheduled_content # The function to test
 from config import TestingConfig # Ensure TestingConfig is used
 
 # process_mentions is called internally by scheduler logic if it's part of publish_scheduled_content now
-# from app.utils import process_mentions
+# from app.utils.helpers import process_mentions
 
 class TestScheduler(unittest.TestCase):
     def setUp(self):

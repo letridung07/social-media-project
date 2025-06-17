@@ -2,7 +2,7 @@ import unittest
 import os
 from flask import current_app, get_flashed_messages
 from app import create_app, db
-from app.models import User, Article # Import Article
+from app.core.models import User, Article # Import Article
 from config import TestingConfig
 from datetime import datetime, timedelta
 
@@ -38,7 +38,7 @@ class ArticleTestCase(unittest.TestCase):
 
     def _create_db_article(self, title, body, user, timestamp=None, slug_override=None):
         """Helper to create an article directly in the DB for test setup."""
-        from app.utils import slugify # Local import to avoid issues if utils imports models
+        from app.utils.helpers import slugify # Local import to avoid issues if utils imports models
 
         if timestamp is None:
             timestamp = datetime.utcnow()

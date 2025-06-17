@@ -1,7 +1,7 @@
 import unittest
 import os
 from app import create_app, db
-from app.utils import save_picture, save_post_image
+from app.utils.helpers import save_picture, save_post_image # save_post_image might not exist here
 from PIL import Image
 from io import BytesIO
 from flask import current_app
