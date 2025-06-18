@@ -4203,6 +4203,11 @@ def manage_titles():
 
         if selected_uvg_id_str == 'clear_active_title':
             if current_user.active_title_id:
+                # Find the currently equipped title and update its is_equipped flag
+                currently_equipped_uvg = UserVirtualGood.query.filter_by(user_id=current_user.id, is_equipped=True).first()
+                if currently_equipped_uvg:
+                    currently_equipped_uvg.is_equipped = False
+                
                 current_user.active_title_id = None
                 try:
                     db.session.commit()
