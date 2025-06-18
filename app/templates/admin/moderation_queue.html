@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% from "_macros.html" import render_flash_messages %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    {{ render_flash_messages() }}
+    <h1 class="mb-4">{{ title }}</h1>
+
+    {% if all_pending_items %}
+        <div class="list-group">
+            {% for item_data in all_pending_items %}
+                {% set content = item_data.content %}
+                {% set log = item_data.log %}
+                {% set content_type = item_data.type %} {# 'Post' or 'Comment' #}
+
+                <div class="list-group-item list-group-item-action flex-column align-items-start mb-3 shadow-sm">
+                    <div class="d-flex w-100 justify-content-between">
+                        <h5 class="mb-1">
+                            {{ content_type }}:
+                            {% if content_type == 'Post' %}
+                                <a href="{{ url_for('main.profile', username=content.author.username, _anchor='post-' + content.id|string) }}" target="_blank">Post ID {{ content.id }}</a>
+                            {% else %}
+                                <a href="{{ url_for('main.profile', username=content.commented_post.author.username, _anchor='comment-' + content.id|string) }}" target="_blank">Comment ID {{ content.id }}</a>
+                                (on Post ID {{ content.post_id }})
+                            {% endif %}
+                        </h5>
+                        <small>By: <a href="{{ url_for('main.profile', username=content.author.username) }}" target="_blank">{{ content.author.username }}</a> | {{ content.timestamp.strftime('%Y-%m-%d %H:%M:%S UTC') }}</small>
+                    </div>
+                    <p class="mb-1"><strong>Content:</strong> {{ content.body|truncate(300, True) }}</p>
+
+                    <div class="mt-2">
+                        <span class="badge {% if content.is_hidden_by_moderation %}badge-danger{% elif content.is_pending_moderation %}badge-warning{% else %}badge-secondary{% endif %}">
+                            {% if content.is_hidden_by_moderation %}Hidden{% elif content.is_pending_moderation %}Pending Review{% else %}Status Unknown{% endif %}
+                        </span>
+                         <span class="badge badge-info">Flagged: {{ content.is_pending_moderation }}</span>
+                         <span class="badge badge-dark">Hidden: {{ content.is_hidden_by_moderation }}</span>
+                    </div>
+
+                    {% if log and log.moderation_service_response %}
+                        <div class="mt-2">
+                            <p class="mb-1"><strong>Automated Check Details ({{ log.action_taken }}):</strong></p>
+                            <ul>
+                                {% for category, score in log.moderation_service_response.items() %}
+                                    {% if score >= current_app.config.get('MODERATION_THRESHOLD_FLAG', 0.7) or category in current_app.config.get('MODERATION_CATEGORIES_AUTO_BLOCK', []) %}
+                                        <li>{{ category }}: <span class="font-weight-bold {% if score >= current_app.config.get('MODERATION_THRESHOLD_SEVERE_BLOCK', 0.9) or score >= current_app.config.get('MODERATION_THRESHOLD_GENERAL_BLOCK', 0.95) %}text-danger{% elif score >= current_app.config.get('MODERATION_THRESHOLD_FLAG', 0.7) %}text-warning{% endif %}">{{ "%.2f"|format(score) }}</span></li>
+                                    {% endif %}
+                                {% endfor %}
+                            </ul>
+                            {% if log.reason %}<p class="mb-0"><small>Reason: {{ log.reason }}</small></p>{% endif %}
+                        </div>
+                    {% elif log %}
+                         <div class="mt-2">
+                            <p class="mb-1"><strong>Log Action:</strong> {{ log.action_taken }}</p>
+                            {% if log.reason %}<p class="mb-0"><small>Reason: {{ log.reason }}</small></p>{% endif %}
+                        </div>
+                    {% else %}
+                        <p class="mt-2 mb-1"><small>No detailed moderation log found for initial flagging/hiding.</small></p>
+                    {% endif %}
+
+                    <div class="mt-3 d-flex justify-content-end">
+                        {# Approve Action #}
+                        <form method="POST" action="{{ url_for('admin.approve_content', content_type=content_type.lower(), content_id=content.id) }}" class="mr-2">
+                            {{ csrf_token_form() }} {# Assuming you have a macro or include for CSRF token #}
+                            <button type="submit" class="btn btn-success btn-sm">Approve</button>
+                        </form>
+
+                        {# Reject (Keep Hidden) Action #}
+                        <form method="POST" action="{{ url_for('admin.reject_hide_content', content_type=content_type.lower(), content_id=content.id) }}" class="mr-2">
+                            {{ csrf_token_form() }}
+                            <button type="submit" class="btn btn-warning btn-sm">Reject (Keep Hidden)</button>
+                        </form>
+
+                        {# Delete Action #}
+                        <form method="POST" action="{{ url_for('admin.delete_moderated_content', content_type=content_type.lower(), content_id=content.id) }}" onsubmit="return confirm('Are you sure you want to delete this content permanently?');">
+                            {{ csrf_token_form() }}
+                            <button type="submit" class="btn btn-danger btn-sm">Delete Content</button>
+                        </form>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p>No items currently in the moderation queue.</p>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+{# Add any specific JS for this page if needed #}
+{% endblock %}

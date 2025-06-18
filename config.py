@@ -39,6 +39,16 @@ class Config:
     SESSION_COOKIE_SECURE = True
     SESSION_COOKIE_SAMESITE = 'Lax'
 
+    # Moderation Thresholds & Settings
+    MODERATION_THRESHOLD_FLAG = float(os.environ.get('MODERATION_THRESHOLD_FLAG', 0.7))
+    MODERATION_THRESHOLD_SEVERE_BLOCK = float(os.environ.get('MODERATION_THRESHOLD_SEVERE_BLOCK', 0.9))
+    MODERATION_THRESHOLD_GENERAL_BLOCK = float(os.environ.get('MODERATION_THRESHOLD_GENERAL_BLOCK', 0.95))
+    # For MODERATION_CATEGORIES_AUTO_BLOCK, provide a comma-separated string in env var
+    _auto_block_categories_str = os.environ.get('MODERATION_CATEGORIES_AUTO_BLOCK', 'SEVERE_TOXICITY,HATE_SPEECH')
+    MODERATION_CATEGORIES_AUTO_BLOCK = [category.strip() for category in _auto_block_categories_str.split(',')]
+    MODERATION_ENABLED = os.environ.get('MODERATION_ENABLED', 'True').lower() == 'true'
+
+
 class TestingConfig(Config):
     TESTING = True
     SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:' # Use in-memory SQLite for tests

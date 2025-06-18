@@ -257,14 +257,19 @@
         {# Display existing comments #}
         {% if post.comments %}
             {% for comment in post.comments %} {# Assumes post.comments is ordered by timestamp asc #}
-                <div class="comment mb-2 pb-2 border-bottom">
-                    <div>
-                        <img src="{{ url_for('static', filename='images/' + comment.author.profile_picture_url) }}" loading="lazy" alt="{{ comment.author.username }}'s profile picture" class="rounded-circle mr-2 comment-avatar" style="float: left;">
-                        <strong><a href="{{ url_for('main.profile', username=comment.author.username) }}" class="text-dark text-decoration-none">{{ comment.author.username }}</a></strong>
-                        <small class="text-muted ml-2">{{ comment.timestamp.strftime('%Y-%m-%d %H:%M') }}</small>
+                {% if not comment.is_hidden_by_moderation or (current_user.is_authenticated and current_user.id == comment.user_id) %}
+                    <div class="comment mb-2 pb-2 border-bottom {% if comment.is_hidden_by_moderation %}comment-hidden-own{% endif %}">
+                        <div>
+                            <img src="{{ url_for('static', filename='images/' + comment.author.profile_picture_url) }}" loading="lazy" alt="{{ comment.author.username }}'s profile picture" class="rounded-circle mr-2 comment-avatar" style="float: left;">
+                            <strong><a href="{{ url_for('main.profile', username=comment.author.username) }}" class="text-dark text-decoration-none">{{ comment.author.username }}</a></strong>
+                            <small class="text-muted ml-2">{{ comment.timestamp.strftime('%Y-%m-%d %H:%M') }}</small>
+                            {% if comment.is_hidden_by_moderation and current_user.is_authenticated and current_user.id == comment.user_id %}
+                                <span class="badge badge-warning ml-2">Hidden (Visible only to you)</span>
+                            {% endif %}
+                        </div>
+                        <div style="margin-left: 40px; white-space: pre-wrap;">{{ comment.body | linkify_mentions }}</div>
                     </div>
-                    <div style="margin-left: 40px; white-space: pre-wrap;">{{ comment.body | linkify_mentions }}</div>
-                </div>
+                {% endif %}
             {% endfor %}
         {% else %}
             <p class="text-muted"><small>No comments yet.</small></p>
