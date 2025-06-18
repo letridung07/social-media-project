@@ -358,6 +358,9 @@ class Post(db.Model):
 
     bookmarked_by = db.relationship('Bookmark', backref='post', lazy='dynamic', cascade='all, delete-orphan')
 
+    is_pending_moderation = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    is_hidden_by_moderation = db.Column(db.Boolean, default=False, nullable=False, index=True)
+
     def __repr__(self):
         return f'<Post {self.body[:50]}...>'
 
@@ -456,6 +459,9 @@ class Comment(db.Model):
     timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False)
+
+    is_pending_moderation = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    is_hidden_by_moderation = db.Column(db.Boolean, default=False, nullable=False, index=True)
 
     def __repr__(self):
         return f'<Comment {self.body[:50]}...>'
@@ -1063,3 +1069,23 @@ class ActivityLog(db.Model):
 
     def __repr__(self):
         return f'<ActivityLog UserID:{self.user_id} Type:{self.activity_type} Points:{self.points_earned} Related:{self.related_item_type}/{self.related_id}>'
+
+
+class ModerationLog(db.Model):
+    __tablename__ = 'moderation_log'
+    id = db.Column(db.Integer, primary_key=True)
+    timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True) # User who performed the action (moderator)
+    action_taken = db.Column(db.String(100), nullable=False) # e.g., 'flagged_by_system', 'hidden_by_moderator', 'approved_by_moderator'
+    reason = db.Column(db.Text, nullable=True) # Reason for the action
+    related_post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=True)
+    related_comment_id = db.Column(db.Integer, db.ForeignKey('comments.id'), nullable=True)
+    moderation_service_response = db.Column(db.JSON, nullable=True) # Raw response from moderation service
+
+    # Relationships
+    user = db.relationship('User', foreign_keys=[user_id])
+    post = db.relationship('Post', foreign_keys=[related_post_id], backref=db.backref('moderation_logs', lazy='dynamic'))
+    comment = db.relationship('Comment', foreign_keys=[related_comment_id], backref=db.backref('moderation_logs', lazy='dynamic'))
+
+    def __repr__(self):
+        return f'<ModerationLog {self.id} Action: {self.action_taken}>'
