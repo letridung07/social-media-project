@@ -2,7 +2,7 @@ from flask_socketio import join_room, leave_room, emit
 from flask_login import current_user
 from flask import request, current_app # Import current_app
 from app import socketio, db # Assuming socketio and db are initialized in app/__init__.py
-from app.core.models import Conversation, ChatMessage, User, Notification, MessageReadStatus, LiveStream # Import LiveStream
+from app.core.models import Conversation, ChatMessage, User, Notification, MessageReadStatus, LiveStream, StreamChatMessage # Import LiveStream and StreamChatMessage
 from datetime import datetime, timezone
 
 poll_room_viewers = {}
@@ -592,3 +592,106 @@ def handle_leave_poll_room(data):
         # emit('left_poll_room_ack', {'room': room_name, 'status': 'success', 'viewer_count': viewer_count}, room=request.sid) # Optional ack
     else:
         current_app.logger.warning(f"Attempted to leave {room_name} by SID {request.sid}, but room was not in viewer tracking.")
+
+# -------------------- Live Stream Chat Events --------------------
+
+@socketio.on('join_stream_chat')
+def handle_join_stream_chat(data):
+    if not current_user.is_authenticated:
+        emit('stream_chat_error', {'message': 'Authentication required.'}, room=request.sid)
+        return
+
+    stream_id = data.get('stream_id')
+    if not stream_id:
+        emit('stream_chat_error', {'message': 'stream_id missing.'}, room=request.sid)
+        return
+
+    live_stream = LiveStream.query.get(stream_id)
+    if not live_stream:
+        emit('stream_chat_error', {'message': f'Stream {stream_id} not found.'}, room=request.sid)
+        return
+
+    # Basic authorization: for now, any authenticated user can join a chat for an existing stream.
+    # More complex logic (e.g., private streams, subscriptions) could be added here.
+
+    room = f'stream_chat_{stream_id}'
+    join_room(room)
+    current_app.logger.info(f"User {current_user.username} (SID: {request.sid}) joined stream chat room: {room}")
+    emit('joined_stream_chat_ack', {'room': room, 'stream_id': stream_id}, room=request.sid)
+
+    # Optionally, load and emit some recent messages
+    # messages = StreamChatMessage.query.filter_by(stream_id=stream_id).order_by(StreamChatMessage.timestamp.desc()).limit(20).all()
+    # messages.reverse() # To send them in chronological order
+    # past_messages_data = [{
+    #     'message_id': msg.id,
+    #     'stream_id': msg.stream_id,
+    #     'sender_id': msg.user_id,
+    #     'sender_username': msg.user.username, # Assumes relationship 'user' on StreamChatMessage model
+    #     'message': msg.message,
+    #     'timestamp': msg.timestamp.isoformat() + "Z"
+    # } for msg in messages]
+    # emit('past_stream_chat_messages', {'stream_id': stream_id, 'messages': past_messages_data}, room=request.sid)
+
+
+@socketio.on('leave_stream_chat')
+def handle_leave_stream_chat(data):
+    # No specific authentication check needed for leaving, as it's tied to SID.
+    stream_id = data.get('stream_id')
+    if not stream_id:
+        # Log error, but client is likely disconnecting or navigating away.
+        current_app.logger.info(f"leave_stream_chat event from SID {request.sid} missing stream_id.")
+        return
+
+    room = f'stream_chat_{stream_id}'
+    leave_room(room)
+    username = current_user.username if current_user.is_authenticated else "Anonymous"
+    current_app.logger.info(f"User {username} (SID: {request.sid}) left stream chat room: {room}")
+    # emit('left_stream_chat_ack', {'room': room, 'stream_id': stream_id}, room=request.sid) # Optional
+
+
+@socketio.on('send_stream_chat_message')
+def handle_send_stream_chat_message(data):
+    if not current_user.is_authenticated:
+        emit('stream_chat_error', {'message': 'Authentication required to send message.'}, room=request.sid)
+        return
+
+    stream_id = data.get('stream_id')
+    message_body = data.get('message') # Client might send as 'message' or 'body'
+
+    if not stream_id or not message_body or not message_body.strip():
+        emit('stream_chat_error', {'message': 'stream_id and message body are required.'}, room=request.sid)
+        return
+
+    # Validate stream existence
+    live_stream = LiveStream.query.get(stream_id)
+    if not live_stream:
+        emit('stream_chat_error', {'message': f'Stream {stream_id} not found.'}, room=request.sid)
+        return
+
+    # Further authorization: e.g., is stream active? Is user allowed to chat (not muted/banned)?
+    # For now, if stream exists and user is authenticated, allow chat.
+    # if live_stream.status not in ['live', 'upcoming']: # Example: only allow chat on live/upcoming streams
+    #     emit('stream_chat_error', {'message': 'Chat is not active for this stream status.'}, room=request.sid)
+    #     return
+
+    new_message = StreamChatMessage(
+        stream_id=live_stream.id,
+        user_id=current_user.id,
+        message=message_body,
+        timestamp=datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow()
+    )
+    db.session.add(new_message)
+    db.session.commit()
+
+    message_payload = {
+        'message_id': new_message.id,
+        'stream_id': new_message.stream_id,
+        'sender_id': new_message.user_id,
+        'sender_username': current_user.username, # Assumes current_user is the sender
+        'message': new_message.message,
+        'timestamp': new_message.timestamp.isoformat() + "Z",
+    }
+
+    room = f'stream_chat_{stream_id}'
+    socketio.emit('new_stream_chat_message', message_payload, room=room)
+    current_app.logger.info(f"Message from {current_user.username} sent to stream chat room {room}: {message_body[:30]}")

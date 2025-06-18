@@ -34,6 +34,10 @@
                 <li class="nav-item">
                     <a class="nav-link" href="{{ url_for('main.badges_catalog') }}">{{ _('Badge Catalog') }}</a>
                 </li>
+                <li class="nav-item">
+                    {# This new link points to a page listing all discoverable live streams #}
+                    <a class="nav-link" href="{{ url_for('main.list_live_streams_page') }}">Live Streams</a> {# Placeholder route name main.list_live_streams_page #}
+                </li>
                 {% if current_user.is_authenticated %}
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('main.profile', username=current_user.username) }}">My Profile</a>
@@ -45,7 +49,8 @@
                         <a class="nav-link" href="{{ url_for('main.events_list') }}">Events</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('main.manage_stream') }}">My Stream</a>
+                        {# This existing link is updated to better reflect its purpose and the new template #}
+                        <a class="nav-link" href="{{ url_for('main.manage_stream') }}">Manage My Streams</a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('main.list_bookmarks') }}">My Bookmarks</a>

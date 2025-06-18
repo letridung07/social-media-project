@@ -782,7 +782,11 @@ class LiveStream(db.Model):
     title = db.Column(db.String(150), nullable=True)
     description = db.Column(db.Text, nullable=True)
     stream_key = db.Column(db.String(64), unique=True, nullable=True) # Generated upon starting
-    is_live = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    # is_live is replaced by status
+    # is_live = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    status = db.Column(db.String(20), default='upcoming', nullable=False, index=True) # 'upcoming', 'live', 'ended'
+    start_time = db.Column(db.DateTime, nullable=True, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+    end_time = db.Column(db.DateTime, nullable=True, index=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
 
     # New fields for recording and chat
@@ -796,6 +800,21 @@ class LiveStream(db.Model):
 
     def __repr__(self):
         return f'<LiveStream {self.id} by User {self.user_id} - Title: {self.title[:30] if self.title else "N/A"}>'
+
+
+class StreamChatMessage(db.Model):
+    __tablename__ = 'stream_chat_messages'
+    id = db.Column(db.Integer, primary_key=True)
+    stream_id = db.Column(db.Integer, db.ForeignKey('live_streams.id'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    message = db.Column(db.Text, nullable=False)
+    timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+
+    stream = db.relationship('LiveStream', backref=db.backref('chat_messages', lazy='dynamic', cascade='all, delete-orphan'))
+    user = db.relationship('User', backref=db.backref('stream_chat_messages', lazy='dynamic'))
+
+    def __repr__(self):
+        return f'<StreamChatMessage {self.id} by User {self.user_id} in Stream {self.stream_id}>'
 
 
 class Article(db.Model):
