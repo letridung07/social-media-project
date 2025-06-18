@@ -737,12 +737,14 @@ def delete_post_api(post_id): # Renamed to avoid conflict if a web route `delete
 
     return jsonify({"message": "Post deleted successfully"}), 200 # Or 204 No Content, but 200 with message is also common.
 
-from app.core.models import Reaction, Comment # For interactions, Like replaced with Reaction
+from app.core.models import Reaction, Comment, LiveStream # For interactions, Like replaced with Reaction
 from werkzeug.exceptions import HTTPException
-from flask import json, current_app, request, g # Added request, g for logging
+from flask import json, current_app, request, g, current_app # Added request, g for logging, current_app for logger
 import time # For logging request duration
 import logging # For setting log level if needed
-from datetime import datetime # Added for Reaction timestamp update
+from datetime import datetime, timezone # Added for Reaction timestamp update
+import secrets # For generating stream_key
+from app.services.media_service import MediaServerService # Import the new service
 
 # Standardized JSON Error Handling for API Blueprint
 @api_bp.errorhandler(HTTPException)
@@ -1057,3 +1059,374 @@ def create_comment_on_post(post_id):
 #     from flask import g
 #     # Assuming current_user is populated by @token_required
 #     return jsonify({"username": g.current_user.username, "app": g.current_application.name})
+
+
+# Helper to serialize LiveStream data
+def serialize_livestream_data(stream):
+    return {
+        "id": stream.id,
+        "user_id": stream.user_id,
+        "title": stream.title,
+        "description": stream.description,
+        "status": stream.status,
+        "start_time": stream.start_time.isoformat() + 'Z' if stream.start_time else None,
+        "end_time": stream.end_time.isoformat() + 'Z' if stream.end_time else None,
+        "stream_key": stream.stream_key if stream.user_id == g.current_user.id else None, # Only show stream_key to owner
+        "created_at": stream.created_at.isoformat() + 'Z',
+        # "recording_filename": stream.recording_filename, # Optional, depending on requirements
+        # "enable_recording": stream.enable_recording, # Optional
+    }
+
+# Live Stream Routes
+@api_bp.route('/streams', methods=['POST'])
+@token_required
+def create_live_stream():
+    """
+    Create a new live stream.
+    ---
+    tags:
+      - LiveStreams
+    security:
+      - BearerAuth: []
+    consumes:
+      - application/json
+    parameters:
+      - name: body
+        in: body
+        required: true
+        description: Details for the new live stream.
+        schema:
+          type: object
+          required:
+            - title
+          properties:
+            title:
+              type: string
+              description: The title of the live stream.
+            description:
+              type: string
+              description: A description for the live stream.
+    produces:
+      - application/json
+    responses:
+      201:
+        description: Live stream created successfully.
+        schema:
+          $ref: '#/definitions/LiveStream'
+      400:
+        description: Invalid request (e.g., missing title).
+      401:
+        description: Unauthorized.
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify(error="InvalidRequest", message="No input data provided or not valid JSON."), 400
+
+    title = data.get('title')
+    description = data.get('description')
+
+    if not title or not title.strip():
+        return jsonify(error="ValidationError", message="Title is required."), 400
+
+    requesting_user = g.current_user
+
+    new_stream = LiveStream(
+        user_id=requesting_user.id,
+        title=title,
+        description=description,
+        status='upcoming', # Default status
+        # stream_key is not generated until stream starts
+        # start_time could be set here if provided, or when stream starts
+    )
+    db.session.add(new_stream)
+    db.session.commit()
+
+    return jsonify(serialize_livestream_data(new_stream)), 201
+
+@api_bp.route('/streams/<int:stream_id>', methods=['GET'])
+@token_required # Or make public and adjust serializer
+def get_live_stream(stream_id):
+    """
+    Get details of a live stream.
+    ---
+    tags:
+      - LiveStreams
+    security:
+      - BearerAuth: [] # Assuming private access for now
+    parameters:
+      - name: stream_id
+        in: path
+        type: integer
+        required: true
+        description: The ID of the live stream.
+    produces:
+      - application/json
+    responses:
+      200:
+        description: Live stream details.
+        schema:
+          $ref: '#/definitions/LiveStream'
+      404:
+        description: Live stream not found.
+      401:
+        description: Unauthorized.
+    """
+    stream = LiveStream.query.get_or_404(stream_id)
+    # Add privacy checks here if streams aren't public
+    # For now, any authenticated user can fetch, but serializer hides stream_key for non-owners.
+    return jsonify(serialize_livestream_data(stream)), 200
+
+@api_bp.route('/streams/<int:stream_id>', methods=['PUT'])
+@token_required
+def update_live_stream(stream_id):
+    """
+    Update a live stream (e.g., title, description).
+    ---
+    tags:
+      - LiveStreams
+    security:
+      - BearerAuth: []
+    parameters:
+      - name: stream_id
+        in: path
+        type: integer
+        required: true
+        description: The ID of the live stream to update.
+      - name: body
+        in: body
+        required: true
+        description: Fields to update.
+        schema:
+          type: object
+          properties:
+            title:
+              type: string
+            description:
+              type: string
+    produces:
+      - application/json
+    responses:
+      200:
+        description: Live stream updated successfully.
+        schema:
+          $ref: '#/definitions/LiveStream'
+      400:
+        description: Invalid request.
+      403:
+        description: Forbidden (not the owner).
+      404:
+        description: Live stream not found.
+      401:
+        description: Unauthorized.
+    """
+    stream = LiveStream.query.get_or_404(stream_id)
+    requesting_user = g.current_user
+
+    if stream.user_id != requesting_user.id:
+        return jsonify(error="Forbidden", message="You are not authorized to update this stream."), 403
+
+    data = request.get_json()
+    if not data:
+        return jsonify(error="InvalidRequest", message="No input data provided or not valid JSON."), 400
+
+    if 'title' in data:
+        title = data['title']
+        if not title or not title.strip():
+            return jsonify(error="ValidationError", message="Title cannot be empty if provided."), 400
+        stream.title = title
+    if 'description' in data:
+        stream.description = data['description']
+
+    db.session.commit()
+    return jsonify(serialize_livestream_data(stream)), 200
+
+@api_bp.route('/streams/<int:stream_id>', methods=['DELETE'])
+@token_required
+def delete_live_stream(stream_id):
+    """
+    Delete a live stream.
+    ---
+    tags:
+      - LiveStreams
+    security:
+      - BearerAuth: []
+    parameters:
+      - name: stream_id
+        in: path
+        type: integer
+        required: true
+        description: The ID of the live stream to delete.
+    produces:
+      - application/json
+    responses:
+      200:
+        description: Live stream deleted successfully.
+      403:
+        description: Forbidden (not the owner).
+      404:
+        description: Live stream not found.
+      401:
+        description: Unauthorized.
+    """
+    stream = LiveStream.query.get_or_404(stream_id)
+    requesting_user = g.current_user
+
+    if stream.user_id != requesting_user.id:
+        return jsonify(error="Forbidden", message="You are not authorized to delete this stream."), 403
+
+    db.session.delete(stream)
+    db.session.commit()
+    return jsonify(message="Live stream deleted successfully"), 200
+
+@api_bp.route('/streams/<int:stream_id>/start', methods=['POST'])
+@token_required
+def start_live_stream(stream_id):
+    """
+    Start a live stream.
+    ---
+    tags:
+      - LiveStreams
+    security:
+      - BearerAuth: []
+    parameters:
+      - name: stream_id
+        in: path
+        type: integer
+        required: true
+        description: The ID of the live stream to start.
+    produces:
+      - application/json
+    responses:
+      200:
+        description: Live stream started.
+        schema:
+          $ref: '#/definitions/LiveStream'
+      403:
+        description: Forbidden (not the owner or stream cannot be started).
+      404:
+        description: Live stream not found.
+      409:
+        description: Conflict (stream is not in a state to be started).
+      401:
+        description: Unauthorized.
+    """
+    stream = LiveStream.query.get_or_404(stream_id)
+    requesting_user = g.current_user
+
+    if stream.user_id != requesting_user.id:
+        return jsonify(error="Forbidden", message="You are not authorized to start this stream."), 403
+
+    if stream.status != 'upcoming':
+        return jsonify(error="Conflict", message=f"Stream cannot be started. Current status: {stream.status}."), 409
+
+    stream.status = 'live'
+    stream.start_time = datetime.now(timezone.utc)
+    if not stream.stream_key: # Generate key only if not already (e.g. if restarting a previously failed 'live' attempt that had a key)
+        stream.stream_key = secrets.token_hex(32) # Generate a 64-character hex string for the stream_key
+
+    media_service = MediaServerService()
+    success, stream_url, error_msg = media_service.start_stream_on_server(stream.stream_key)
+
+    if success:
+        stream.media_server_url = stream_url
+        current_app.logger.info(f"Stream {stream.id} successfully registered with media server. URL: {stream_url}")
+    else:
+        # Log the error. In a real app, might revert status or handle more robustly.
+        current_app.logger.error(f"Failed to register stream {stream.id} with media server: {error_msg}")
+        # For this simulation, we'll proceed with the stream being 'live' in DB,
+        # but it wouldn't be properly connected to a real media server.
+
+    db.session.commit()
+
+    return jsonify(serialize_livestream_data(stream)), 200
+
+@api_bp.route('/streams/<int:stream_id>/end', methods=['POST'])
+@token_required
+def end_live_stream(stream_id):
+    """
+    End a live stream.
+    ---
+    tags:
+      - LiveStreams
+    security:
+      - BearerAuth: []
+    parameters:
+      - name: stream_id
+        in: path
+        type: integer
+        required: true
+        description: The ID of the live stream to end.
+    produces:
+      - application/json
+    responses:
+      200:
+        description: Live stream ended.
+        schema:
+          $ref: '#/definitions/LiveStream'
+      403:
+        description: Forbidden (not the owner or stream cannot be ended).
+      404:
+        description: Live stream not found.
+      409:
+        description: Conflict (stream is not currently live).
+      401:
+        description: Unauthorized.
+    """
+    stream = LiveStream.query.get_or_404(stream_id)
+    requesting_user = g.current_user
+
+    if stream.user_id != requesting_user.id:
+        return jsonify(error="Forbidden", message="You are not authorized to end this stream."), 403
+
+    if stream.status != 'live':
+        return jsonify(error="Conflict", message=f"Stream cannot be ended. Current status: {stream.status}."), 409
+
+    media_service = MediaServerService()
+    success, error_msg = media_service.end_stream_on_server(stream.stream_key)
+
+    if not success:
+        # Log the error. Stream will still be marked as ended in DB.
+        current_app.logger.error(f"Failed to signal media server to end stream {stream.id}: {error_msg}")
+
+    stream.status = 'ended'
+    stream.end_time = datetime.now(timezone.utc)
+    # stream.stream_key = None # Optionally clear stream key, if policy dictates.
+    # stream.media_server_url = None # Optionally clear the media server URL
+
+    db.session.commit()
+
+    return jsonify(serialize_livestream_data(stream)), 200
+
+# Define a placeholder for the LiveStream schema for Swagger documentation
+# This would ideally be part of a Swagger/OpenAPI setup file or generated
+# For now, a simple dict that can be referenced.
+# Add this at a suitable place, e.g., before the first route that uses it or in a dedicated schemas section
+# For this specific tool usage, this might not be directly "rendered" by swagger UI but helps define the expected structure.
+# However, the tool might not support defining swagger schemas like this.
+# The "#/definitions/LiveStream" in responses will just be a string if not processed by a swagger tool.
+# For the purpose of the agent's task, the python code for the routes is the primary goal.
+# Let's assume a swagger tool would pick up on this if integrated.
+# If this causes issues with the tool, I will remove this definition block.
+_livestream_schema_definition_for_doc = {
+    "LiveStream": {
+        "type": "object",
+        "properties": {
+            "id": {"type": "integer"},
+            "user_id": {"type": "integer"},
+            "title": {"type": "string"},
+            "description": {"type": "string", "nullable": True},
+            "status": {"type": "string", "enum": ["upcoming", "live", "ended"]},
+            "start_time": {"type": "string", "format": "date-time", "nullable": True},
+            "end_time": {"type": "string", "format": "date-time", "nullable": True},
+            "stream_key": {"type": "string", "nullable": True, "description": "Only visible to stream owner"},
+            "created_at": {"type": "string", "format": "date-time"}
+        }
+    }
+}
+# Note: To make this definition discoverable by Flask-SwaggerUI or similar,
+# it would typically be part of the app's Swagger configuration.
+# For now, it's a conceptual placeholder within this script.
+# The direct use of $ref: '#/definitions/LiveStream' in docstrings is standard.
+
+# TODO: Add Swagger definitions to app setup for '#/definitions/LiveStream' to be resolved.
+# For now, the routes are functional and the schema reference is a placeholder for documentation.

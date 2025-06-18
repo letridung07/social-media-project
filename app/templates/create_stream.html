@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% import "bootstrap/wtf.html" as wtf %} {# Assuming Flask-Bootstrap/Flask-WTF is used for forms based on project structure #}
+
+{% block title %}Create New Stream - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h2>Create a New Live Stream</h2>
+    <p>Fill out the details below to schedule your new live stream.</p>
+
+    {# If using Flask-WTF, the form would be passed from the route #}
+    {# Example: <form method="POST" action="{{ url_for('main.create_stream_route') }}"> #}
+    {# For now, using a basic HTML form as the route and form object are not yet defined for this subtask #}
+
+    <form method="POST" action=""> {# Placeholder action, to be replaced with actual form submission URL #}
+        {# {{ form.hidden_tag() }} #} {# CSRF token if using Flask-WTF #}
+
+        <div class="form-group">
+            <label for="title">Stream Title</label>
+            <input type="text" class="form-control" id="title" name="title" required placeholder="Enter a catchy title for your stream">
+            {# Example with WTForms: {{ wtf.form_field(form.title, class="form-control", placeholder="Enter a catchy title for your stream") }} #}
+        </div>
+
+        <div class="form-group">
+            <label for="description">Stream Description</label>
+            <textarea class="form-control" id="description" name="description" rows="3" placeholder="Tell your audience what your stream is about."></textarea>
+            {# Example with WTForms: {{ wtf.form_field(form.description, class="form-control", rows="3", placeholder="Tell your audience what your stream is about.") }} #}
+        </div>
+
+        {# Optional: Add fields for scheduling start_time if needed, though API creates it as 'upcoming' by default #}
+        {# <div class="form-group">
+            <label for="start_time">Scheduled Start Time (Optional)</label>
+            <input type="datetime-local" class="form-control" id="start_time" name="start_time">
+        </div> #}
+
+        <button type="submit" class="btn btn-primary">Create Stream</button>
+        <a href="{{ url_for('main.index') }}" class="btn btn-secondary">Cancel</a> {# Assuming 'main.index' is a valid route #}
+    </form>
+</div>
+
+{# If not using Flask-Bootstrap/Flask-WTF for rendering the whole form,
+   you might need to manually add error display logic if form validation fails
+   and the page is re-rendered with errors.
+#}
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+{# Add any specific JS for this page if needed #}
+{% endblock %}
