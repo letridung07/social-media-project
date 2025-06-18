@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch # For mocking service
 from app import create_app, db
 from app.core.models import User, VirtualGood, UserVirtualGood
 from config import TestingConfig
@@ -63,45 +64,67 @@ class TitleRoutesTestCase(unittest.TestCase):
         return self.client.get('/logout', follow_redirects=True)
 
     # --- Test /purchase_virtual_good ---
-    def test_purchase_new_title_success(self):
+    @patch('app.core.routes.process_virtual_good_purchase')
+    def test_route_purchase_title_success(self, mock_process_purchase):
         self._login_user1()
+        mock_process_purchase.return_value = {
+            "success": True,
+            "message": "Title 'Community Helper' acquired successfully!",
+            "status_key": "purchase_successful",
+            "user_virtual_good": None # Mock UVG or skip asserting its details here
+        }
 
-        # title_vg2 is not yet owned by user1
         response = self.client.post(f'/purchase_virtual_good/{self.title_vg2.id}', follow_redirects=True)
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Title 'Community Helper' purchased successfully!", response.data)
-
-        # Verify UserVirtualGood was created
-        uvg = UserVirtualGood.query.filter_by(user_id=self.user1_id, virtual_good_id=self.title_vg2.id).first()
-        self.assertIsNotNone(uvg)
-        self.assertEqual(uvg.quantity, 1)
-        self.assertFalse(uvg.is_equipped)
+        self.assertIn(b"Title 'Community Helper' acquired successfully!", response.data)
+        mock_process_purchase.assert_called_once_with(user=User.query.get(self.user1_id), virtual_good=self.title_vg2)
         self._logout()
 
-    def test_purchase_title_already_owned(self):
+    @patch('app.core.routes.process_virtual_good_purchase')
+    def test_route_purchase_title_already_owned(self, mock_process_purchase):
         self._login_user1()
-        # self.uvg1_user1 (Hero Of The Day) is already owned
-        response = self.client.post(f'/purchase_virtual_good/{self.title_vg1.id}', follow_redirects=True)
-        self.assertEqual(response.status_code, 200)
-        self.assertIn(b"You already own the title: 'Hero Of The Day'", response.data)
-
-        # Verify no new UserVirtualGood was created (count should still be 1 for this item)
-        count = UserVirtualGood.query.filter_by(user_id=self.user1_id, virtual_good_id=self.title_vg1.id).count()
-        self.assertEqual(count, 1)
-        self._logout()
-
-    def test_purchase_inactive_title(self):
-        self._login_user1()
-        self.title_vg1.is_active = False
-        db.session.commit()
+        mock_process_purchase.return_value = {
+            "success": False,
+            "message": "You already own the title: 'Hero Of The Day'.",
+            "status_key": "already_owned"
+        }
 
         response = self.client.post(f'/purchase_virtual_good/{self.title_vg1.id}', follow_redirects=True)
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"'Hero Of The Day' is currently not available for purchase.", response.data)
+        self.assertIn(b"You already own the title: 'Hero Of The Day'.", response.data)
+        mock_process_purchase.assert_called_once_with(user=User.query.get(self.user1_id), virtual_good=self.title_vg1)
         self._logout()
-        # Reset active state for other tests
-        self.title_vg1.is_active = True
-        db.session.commit()
+
+    @patch('app.core.routes.process_virtual_good_purchase')
+    def test_route_purchase_inactive_title(self, mock_process_purchase):
+        self._login_user1()
+        # Service will handle the inactive check
+        mock_process_purchase.return_value = {
+            "success": False,
+            "message": f"'{self.title_inactive.name}' is currently not available for purchase.",
+            "status_key": "item_not_active"
+        }
+
+        response = self.client.post(f'/purchase_virtual_good/{self.title_inactive.id}', follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"'Inactive Title' is currently not available for purchase.", response.data)
+        mock_process_purchase.assert_called_once_with(user=User.query.get(self.user1_id), virtual_good=self.title_inactive)
+        self._logout()
+
+    @patch('app.core.routes.process_virtual_good_purchase')
+    def test_route_purchase_fails_db_error(self, mock_process_purchase):
+        self._login_user1()
+        mock_process_purchase.return_value = {
+            "success": False,
+            "message": "A database error occurred while processing your purchase. Please try again.",
+            "status_key": "purchase_failed_db_error"
+        }
+
+        response = self.client.post(f'/purchase_virtual_good/{self.title_vg2.id}', follow_redirects=True) # Attempt to buy unowned title_vg2
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"A database error occurred", response.data)
+        mock_process_purchase.assert_called_once_with(user=User.query.get(self.user1_id), virtual_good=self.title_vg2)
+        self._logout()
 
     # --- Test /manage-titles (GET) ---
     def test_manage_titles_get_no_titles_owned(self):

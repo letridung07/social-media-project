@@ -16,6 +16,7 @@ from app import db, socketio, cache # Import cache
 from app.core.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm, FriendListForm, AddUserToFriendListForm, PRIVACY_CHOICES, ArticleForm, AudioPostForm, SubscriptionPlanForm, TOTPSetupForm, Verify2FAForm, Disable2FAForm, ConfirmPasswordAndTOTPForm # Added Disable2FAForm, ConfirmPasswordAndTOTPForm
 from app.core.models import User, Post, MediaItem, Reaction, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus, Mention, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE, FriendList, Article, AudioPost, SubscriptionPlan, UserSubscription, Bookmark, UserPoints, ActivityLog # Added UserPoints, ActivityLog for points system
 from app.utils.helpers import save_picture, save_group_image, save_story_media, process_mentions, get_historical_engagement, get_top_performing_hashtags, get_top_performing_groups, save_media_file, slugify, save_audio_file, get_audio_duration, process_hashtags, award_points, get_current_utc # Added get_current_utc
+from app.services.purchase_service import process_virtual_good_purchase # Import the new service function
 from app.utils.email import send_password_reset_email # Import email utility
 import pyotp
 import qrcode
@@ -3287,57 +3288,35 @@ def storefront():
 def purchase_virtual_good(good_id):
     good = VirtualGood.query.get_or_404(good_id)
 
-    if not good.is_active:
-        flash(f"'{good.name}' is currently not available for purchase.", 'warning')
-        return redirect(url_for('main.storefront'))
+    # Call the service function to handle the purchase logic
+    purchase_result = process_virtual_good_purchase(user=current_user, virtual_good=good)
 
-    # Simulate payment/points deduction here.
-    # For this task, we assume payment is successful if the code reaches here.
-    # Actual payment/points logic would be:
-    # if not current_user.can_afford(good.price):
-    #     flash("You do not have enough points/balance.", "danger")
-    #     return redirect(url_for('main.storefront'))
-    # current_user.deduct_points_or_charge(good.price)
+    if purchase_result["success"]:
+        # Optionally, use a more specific message if available from result, or a general one
+        flash(purchase_result.get("message", "Purchase successful!"), "success")
 
-    if good.type == 'title':
-        existing_user_title = UserVirtualGood.query.filter_by(
-            user_id=current_user.id,
-            virtual_good_id=good.id
-        ).first()
-
-        if existing_user_title:
-            flash(f"You already own the title: '{good.name}'.", 'info')
-        else:
-            try:
-                new_user_title = UserVirtualGood(
-                    user_id=current_user.id,
-                    virtual_good_id=good.id,
-                    quantity=1,
-                    purchase_date=get_current_utc(),
-                    is_equipped=False # User can equip it later
-                )
-                db.session.add(new_user_title)
-                db.session.commit()
-                flash(f"Title '{good.name}' purchased successfully!", 'success')
-                # Gamification: Award points for purchasing a virtual good (e.g., title)
-                # award_points(current_user, 'purchase_virtual_good', points_value, related_item=good)
-                # db.session.commit() # If award_points doesn't commit itself
-            except SQLAlchemyError as e:
-                db.session.rollback()
-                current_app.logger.error(f"Error purchasing title '{good.name}' for user {current_user.id}: {e}")
-                flash('There was an error processing your title purchase. Please try again.', 'danger')
-            except Exception as e: # Catch any other unexpected errors
-                db.session.rollback()
-                current_app.logger.error(f"Unexpected error purchasing title '{good.name}' for user {current_user.id}: {e}")
-                flash('An unexpected error occurred during your purchase. Please try again.', 'danger')
+        # Example: If you wanted to award points specifically here after a successful purchase
+        # if purchase_result.get("user_virtual_good"): # Check if a new UVG was created
+        #     try:
+        #         # Define points_for_purchase, e.g., based on good.price or a fixed value
+        #         points_to_award = int(good.price / 10) if good.price > 0 else 1 # Example
+        #         if good.currency == "POINTS": # Only award if currency was points
+        #             award_points(current_user, 'purchase_virtual_good', points_to_award, related_item=good)
+        #             db.session.commit() # Commit points award
+        #             current_app.logger.info(f"Awarded {points_to_award} points to user {current_user.id} for purchasing {good.name}")
+        #     except Exception as e:
+        #         current_app.logger.error(f"Error awarding points post-purchase for {good.name} to user {current_user.id}: {e}", exc_info=True)
+                # Not critical to purchase flow, so don't rollback main purchase
     else:
-        # Handle other types of virtual goods if necessary, or a generic success message
-        # For now, let's assume other goods might have different handling or this is just a placeholder
-        # for further development.
-        # For this task, we are primarily concerned with 'title' type.
-        flash(f"'{good.name}' (type: {good.type}) purchased successfully (basic handling).", 'success')
-        # If other types also create UserVirtualGood entries, that logic would be similar to titles,
-        # possibly without the "is_equipped" concept or with different default quantities.
+        # Determine flash category based on status_key
+        flash_category = "info" # Default to info for non-critical failures like "already_owned"
+        if purchase_result["status_key"] in ["item_not_active", "purchase_failed_db_error", "purchase_failed_unexpected_error", "insufficient_funds"]:
+            flash_category = "danger"
+        elif purchase_result["status_key"] == "already_owned":
+             flash_category = "info"
+        # For "already_owned_generic", "info" is also suitable.
+
+        flash(purchase_result.get("message", "Could not complete purchase."), flash_category)
 
     return redirect(url_for('main.storefront'))
 
