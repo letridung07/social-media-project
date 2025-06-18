@@ -113,7 +113,15 @@ def index():
         posts = posts_pagination.items
 
     comment_form = CommentForm()
-    return render_template('index.html', title=_l('Home'), posts=posts, comment_form=comment_form, pagination=posts_pagination)
+    recommended_users = []
+    recommended_groups = []
+
+    if current_user.is_authenticated:
+        recommendations = get_recommendations(current_user.id)
+        recommended_users = recommendations.get('users', [])[:3]
+        recommended_groups = recommendations.get('groups', [])[:3]
+
+    return render_template('index.html', title=_l('Home'), posts=posts, comment_form=comment_form, pagination=posts_pagination, recommended_users=recommended_users, recommended_groups=recommended_groups)
 
 
 from app.core.models import post_hashtags # For hashtag popularity sort
