@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime, timedelta
 from app import create_app, db
-from app.models import User, Event, Notification
+from app.core.models import User, Event, Notification # Corrected import path
 # EventForm might be needed if we test form validation directly,
 # but for route testing, we often just post data.
 # from app.forms import EventForm

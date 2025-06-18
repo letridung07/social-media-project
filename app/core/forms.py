@@ -77,7 +77,17 @@ class PostForm(FlaskForm):
 
     def validate_schedule_time(self, field):
         if field.data:
-            if field.data < datetime.now():
+            now_naive_utc = datetime.utcnow()
+            field_data_to_compare = field.data
+            # If field.data is aware, make it naive UTC for comparison with naive now_naive_utc
+            if hasattr(field.data, 'tzinfo') and field.data.tzinfo is not None:
+                # This assumes field.data if aware, is in UTC or convertible to UTC easily.
+                # For safety, one might convert to UTC then remove tzinfo.
+                # However, DateTimeField usually yields naive datetimes.
+                # This check is more for robustness if it somehow becomes aware.
+                field_data_to_compare = field.data.replace(tzinfo=None)
+
+            if field_data_to_compare < now_naive_utc:
                 raise ValidationError(_l('Scheduled time must be in the future.'))
 
 class CommentForm(FlaskForm):
@@ -121,7 +131,12 @@ class StoryForm(FlaskForm):
 
     def validate_schedule_time(self, field):
         if field.data:
-            if field.data < datetime.now():
+            now_naive_utc = datetime.utcnow()
+            field_data_to_compare = field.data
+            if hasattr(field.data, 'tzinfo') and field.data.tzinfo is not None:
+                field_data_to_compare = field.data.replace(tzinfo=None)
+
+            if field_data_to_compare < now_naive_utc:
                 raise ValidationError(_l('Scheduled time must be in the future.'))
 
 class PollOptionEntryForm(FlaskForm):

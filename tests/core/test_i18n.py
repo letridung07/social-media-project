@@ -1,9 +1,9 @@
 import unittest
 from app import create_app, db
-from app.models import User # Assuming User model might have a locale field later
+from app.core.models import User # Assuming User model might have a locale field later
 from flask import session, get_flashed_messages, current_app
 from flask_babel import gettext, lazy_gettext as _l
-from app.forms import LoginForm # To test form label translation
+from app.core.forms import LoginForm # To test form label translation
 
 class I18nTestCase(unittest.TestCase):
     def setUp(self):

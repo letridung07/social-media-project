@@ -1,6 +1,6 @@
 import unittest
 from app import create_app, db
-from app.models import User, Post, Like, Comment, UserAnalytics
+from app.core.models import User, Post, Reaction, Comment, UserAnalytics # Corrected import, changed Like to Reaction
 from flask_login import login_user, logout_user
 from datetime import datetime, timedelta
 

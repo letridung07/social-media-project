@@ -1,7 +1,7 @@
 import unittest
 import time
 from app import create_app, db, cache
-from app.models import User, Post
+from app.core.models import User, Post # Corrected import path
 from flask_login import login_user, logout_user
 
 class CachingTestCase(unittest.TestCase):

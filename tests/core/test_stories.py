@@ -5,7 +5,7 @@ import io
 from datetime import datetime, timedelta, timezone
 
 from app import create_app, db
-from app.models import User, Story
+from app.core.models import User, Story # Corrected import path
 from config import TestingConfig
 from flask import url_for # For route tests
 from werkzeug.datastructures import FileStorage # For mock file upload in route tests

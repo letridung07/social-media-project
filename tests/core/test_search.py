@@ -1,6 +1,6 @@
 import unittest
 from app import create_app, db
-from app.models import User, Post, Group, GroupMembership
+from app.core.models import User, Post, Group, GroupMembership # Corrected import path
 from flask import url_for
 
 class SearchTestCase(unittest.TestCase):
