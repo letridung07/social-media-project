@@ -55,12 +55,20 @@
             <h3 class="mt-4">Suggested Users</h3>
             <ul class="list-group mb-3">
                 {% for user in recommendations.users %}
-                <li class="list-group-item">
-                    <a href="{{ url_for('main.profile', username=user.username) }}">
-                        <img src="{{ url_for('static', filename='images/' + (user.profile_picture_url if user.profile_picture_url else 'default_profile_pic.png')) }}" loading="lazy" alt="{{ user.username }}'s profile picture" class="rounded-circle mr-2" width="30" height="30" style="margin-right: 5px;">
-                        {{ user.username }}
-                    </a>
-                    {% if user.bio %}<small class="text-muted d-block mt-1">{{ user.bio[:100] }}{% if user.bio|length > 100 %}...{% endif %}</small>{% endif %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <a href="{{ url_for('main.profile', username=user.username) }}">
+                            <img src="{{ url_for('static', filename='images/' + (user.profile_picture_url if user.profile_picture_url else 'default_profile_pic.png')) }}" loading="lazy" alt="{{ user.username }}'s profile picture" class="rounded-circle mr-2" width="30" height="30" style="margin-right: 5px;">
+                            {{ user.username }}
+                        </a>
+                        {% if user.bio %}<small class="text-muted d-block mt-1">{{ user.bio[:100] }}{% if user.bio|length > 100 %}...{% endif %}</small>{% endif %}
+                    </div>
+                    {% if current_user.is_authenticated and current_user.id != user.id and not current_user.is_following(user) %}
+                    <form action="{{ url_for('main.follow', username=user.username) }}" method="POST" class="ml-2">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-sm btn-outline-primary">{{ _('Follow') }}</button>
+                    </form>
+                    {% endif %}
                 </li>
                 {% endfor %}
             </ul>
@@ -70,12 +78,31 @@
             <h3 class="mt-4">Groups You Might Like</h3>
             <ul class="list-group mb-3">
                 {% for group in recommendations.groups %}
-                <li class="list-group-item">
-                    <a href="{{ url_for('main.view_group', group_id=group.id) }}">
-                        <img src="{{ url_for('static', filename='group_images/' + (group.image_file if group.image_file else 'default_group_pic.png')) }}" loading="lazy" alt="{{ group.name }}'s image" class="rounded-circle mr-2" width="30" height="30" style="margin-right: 5px;">
-                        {{ group.name }}
-                    </a>
-                    {% if group.description %}<small class="text-muted d-block mt-1">{{ group.description[:100] }}{% if group.description|length > 100 %}...{% endif %}</small>{% endif %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <a href="{{ url_for('main.view_group', group_id=group.id) }}">
+                            <img src="{{ url_for('static', filename='group_images/' + (group.image_file if group.image_file else 'default_group_pic.png')) }}" loading="lazy" alt="{{ group.name }}'s image" class="rounded-circle mr-2" width="30" height="30" style="margin-right: 5px;">
+                            {{ group.name }}
+                        </a>
+                        {% if group.description %}<small class="text-muted d-block mt-1">{{ group.description[:100] }}{% if group.description|length > 100 %}...{% endif %}</small>{% endif %}
+                    </div>
+                    {% if current_user.is_authenticated %}
+                        {% set is_member = False %}
+                        {# Check if current_user.group_memberships is not None and is iterable #}
+                        {% if current_user.group_memberships %}
+                            {% for membership in current_user.group_memberships %}
+                                {% if membership.group_id == group.id %}
+                                    {% set is_member = True %}
+                                {% endif %}
+                            {% endfor %}
+                        {% endif %}
+                        {% if not is_member %}
+                        <form action="{{ url_for('main.join_group', group_id=group.id) }}" method="POST" class="ml-2">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-sm btn-outline-success">{{ _('Join Group') }}</button>
+                        </form>
+                        {% endif %}
+                    {% endif %}
                 </li>
                 {% endfor %}
             </ul>

@@ -41,6 +41,67 @@
                 {% endif %}
             </ul>
         </nav>
+
+    {% if current_user.is_authenticated and (recommended_users or recommended_groups) %}
+    <div class="recommendations-feed-section my-5 p-3 border rounded">
+        <h4>{{ _('Discover More') }}</h4>
+
+        {% if recommended_users %}
+            <h5 class="mt-3">{{ _('People You May Know') }}</h5>
+            <ul class="list-group list-group-flush">
+                {% for user in recommended_users %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <a href="{{ url_for('main.profile', username=user.username) }}">
+                            <img src="{{ url_for('static', filename='images/' + (user.profile_picture_url if user.profile_picture_url else 'default_profile_pic.png')) }}" loading="lazy" alt="{{ user.username }}'s profile picture" class="rounded-circle mr-2" width="32" height="32" style="margin-right: 8px;">
+                            {{ user.username }}
+                        </a>
+                    </div>
+                    {% if current_user.id != user.id and not current_user.is_following(user) %}
+                    <form action="{{ url_for('main.follow', username=user.username) }}" method="POST" class="ml-2">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-sm btn-outline-primary">{{ _('Follow') }}</button>
+                    </form>
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+
+        {% if recommended_groups %}
+            <h5 class="mt-4">{{ _('Groups You Might Like') }}</h5>
+            <ul class="list-group list-group-flush">
+                {% for group in recommended_groups %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <a href="{{ url_for('main.view_group', group_id=group.id) }}">
+                            <img src="{{ url_for('static', filename='group_images/' + (group.image_file if group.image_file else 'default_group_pic.png')) }}" loading="lazy" alt="{{ group.name }}'s image" class="rounded-circle mr-2" width="32" height="32" style="margin-right: 8px;">
+                            {{ group.name }}
+                        </a>
+                    </div>
+                    {# Membership check logic - same as in search_results.html modification #}
+                    {% if current_user.is_authenticated %} {# Outer check already done, but good for clarity within block #}
+                        {% set is_member = False %}
+                        {% if current_user.group_memberships %}
+                            {% for membership in current_user.group_memberships %}
+                                {% if membership.group_id == group.id %}
+                                    {% set is_member = True %}
+                                {% endif %}
+                            {% endfor %}
+                        {% endif %}
+                        {% if not is_member %}
+                        <form action="{{ url_for('main.join_group', group_id=group.id) }}" method="POST" class="ml-2">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-sm btn-outline-success">{{ _('Join Group') }}</button>
+                        </form>
+                        {% endif %}
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+    </div>
+    {% endif %}
     {% else %}
         <div class="alert alert-info mt-3" role="alert">
             {{ _('No posts yet. Be the first one or follow some users!') }}
