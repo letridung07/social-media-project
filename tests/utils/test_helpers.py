@@ -124,5 +124,23 @@ class TestIcsGenerationUtils(unittest.TestCase):
         self.assertEqual(ics_event_component.get('uid'), event_uid)
         self.assertEqual(ics_event_component.get('summary'), mock_event.name)
 
+from app.utils.helpers import get_current_utc # Import the function to be tested
+
+class TestGeneralHelpers(unittest.TestCase): # Create a new class for more general helpers
+    def test_get_current_utc(self):
+        """Test that get_current_utc returns a timezone-aware datetime object in UTC."""
+        current_time = get_current_utc()
+        self.assertIsInstance(current_time, datetime)
+        self.assertIsNotNone(current_time.tzinfo)
+        self.assertEqual(current_time.tzinfo, timezone.utc)
+
+        # Check if it's reasonably close to datetime.now(timezone.utc) to ensure it's "current"
+        # This can be a bit flaky due to execution time, so allow a small delta.
+        # For this test, primarily checking type and timezone is sufficient.
+        # More complex timing tests might be needed if precision is critical.
+        now_utc = datetime.now(timezone.utc)
+        self.assertAlmostEqual(current_time, now_utc, delta=timedelta(seconds=1))
+
+
 if __name__ == '__main__':
     unittest.main()

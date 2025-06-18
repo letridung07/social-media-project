@@ -15,7 +15,7 @@ from werkzeug.utils import secure_filename
 from app import db, socketio, cache # Import cache
 from app.core.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm, FriendListForm, AddUserToFriendListForm, PRIVACY_CHOICES, ArticleForm, AudioPostForm, SubscriptionPlanForm, TOTPSetupForm, Verify2FAForm, Disable2FAForm, ConfirmPasswordAndTOTPForm # Added Disable2FAForm, ConfirmPasswordAndTOTPForm
 from app.core.models import User, Post, MediaItem, Reaction, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus, Mention, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE, FriendList, Article, AudioPost, SubscriptionPlan, UserSubscription, Bookmark, UserPoints, ActivityLog # Added UserPoints, ActivityLog for points system
-from app.utils.helpers import save_picture, save_group_image, save_story_media, process_mentions, get_historical_engagement, get_top_performing_hashtags, get_top_performing_groups, save_media_file, slugify, save_audio_file, get_audio_duration, process_hashtags, award_points # Added award_points
+from app.utils.helpers import save_picture, save_group_image, save_story_media, process_mentions, get_historical_engagement, get_top_performing_hashtags, get_top_performing_groups, save_media_file, slugify, save_audio_file, get_audio_duration, process_hashtags, award_points, get_current_utc # Added get_current_utc
 from app.utils.email import send_password_reset_email # Import email utility
 import pyotp
 import qrcode
@@ -414,8 +414,8 @@ def login():
                 login_user(user, remember=form.remember_me.data)
 
                 # Award points for daily login
-                today_utc = datetime.now(timezone.utc).date()
-                start_of_day_utc = datetime(today_utc.year, today_utc.month, today_utc.day, tzinfo=timezone.utc)
+                today_utc = get_current_utc().date()
+                start_of_day_utc = datetime(today_utc.year, today_utc.month, today_utc.day, tzinfo=timezone.utc) # datetime() constructor is still needed here
                 end_of_day_utc = start_of_day_utc + timedelta(days=1)
 
                 daily_login_exists = ActivityLog.query.filter(
@@ -1374,7 +1374,7 @@ def react_to_post(post_id, reaction_type):
         else:
             # User changed their reaction
             existing_reaction.reaction_type = reaction_type
-            existing_reaction.timestamp = datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow()
+            existing_reaction.timestamp = get_current_utc()
             db.session.commit()
             flash(f'Your reaction has been updated to "{reaction_type}".', 'success')
             # Notification logic for changed reaction can be added here if needed
@@ -1733,7 +1733,7 @@ def analytics_export():
 
     # Create response
     output = make_response(si.getvalue())
-    filename = f"analytics_export_{current_user.username}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}.csv"
+    filename = f"analytics_export_{current_user.username}_{get_current_utc().strftime('%Y%m%d%H%M%S')}.csv"
     output.headers["Content-Disposition"] = f"attachment; filename={filename}"
     output.headers["Content-type"] = "text/csv"
     return output
@@ -2139,7 +2139,7 @@ def groups_list():
 @main.route('/stories')
 @login_required
 def display_stories():
-    now = datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow()
+    now = get_current_utc()
 
     stories_query = Story.query.filter(Story.expires_at > now)
 
@@ -3313,7 +3313,7 @@ def purchase_virtual_good(good_id):
                     user_id=current_user.id,
                     virtual_good_id=good.id,
                     quantity=1,
-                    purchase_date=datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow(),
+                    purchase_date=get_current_utc(),
                     is_equipped=False # User can equip it later
                 )
                 db.session.add(new_user_title)
@@ -3733,7 +3733,7 @@ def cancel_user_subscription(subscription_id):
         # Fallback for local subscriptions without a Stripe ID (should be rare for active ones)
         current_app.logger.warning(f"UserSubscription {user_sub.id} for user {current_user.id} has no stripe_subscription_id. Cancelling locally.")
         user_sub.status = 'cancelled'
-        user_sub.end_date = datetime.now(timezone.utc)
+        user_sub.end_date = get_current_utc()
         try:
             db.session.commit()
             flash('Your subscription has been cancelled locally as no payment provider ID was found.', 'info')
@@ -4203,11 +4203,6 @@ def manage_titles():
 
         if selected_uvg_id_str == 'clear_active_title':
             if current_user.active_title_id:
-                # Find the currently equipped title and update its is_equipped flag
-                currently_equipped_uvg = UserVirtualGood.query.filter_by(user_id=current_user.id, is_equipped=True).first()
-                if currently_equipped_uvg:
-                    currently_equipped_uvg.is_equipped = False
-                
                 current_user.active_title_id = None
                 try:
                     db.session.commit()

@@ -10,9 +10,11 @@ This module includes tests for:
 """
 import pytest
 from app import create_app, db, socketio
+from flask import current_app # For logger mocking
 from app.core.models import User, Post, Reaction, UserPoints, Badge, ActivityLog, Notification, Story, Poll, Article, AudioPost, Comment, Group, Event, VirtualGood, UserVirtualGood # Add all models used in badge criteria
 from app.utils.helpers import award_points
 from app.utils.gamification_utils import seed_badges, check_and_award_badges, INITIAL_BADGES
+from sqlalchemy.exc import SQLAlchemyError # For simulating DB error
 from config import TestingConfig
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch # For mocking socketio.emit and datetime
@@ -411,7 +413,8 @@ def test_award_first_steps_title_with_badge(mock_badge_socketio_emit, init_datab
 
 
 @patch('app.utils.gamification_utils.socketio.emit')
-def test_award_first_steps_title_fails_if_vg_not_found(mock_badge_socketio_emit, init_database, new_user, other_user): # Added other_user to avoid interference
+@patch('app.utils.gamification_utils.current_app.logger')
+def test_award_first_steps_title_fails_if_vg_not_found(mock_logger, mock_badge_socketio_emit, init_database, new_user, other_user): # Added other_user to avoid interference
     """
     Test that if the 'First Steps Title' VirtualGood doesn't exist,
     the badge is still awarded but the title is not.
@@ -444,3 +447,83 @@ def test_award_first_steps_title_fails_if_vg_not_found(mock_badge_socketio_emit,
         VirtualGood.type == "title"
     ).first()
     assert user_title_entry is None, "UserVirtualGood title was created even though the VirtualGood for it should not exist"
+    mock_logger.warning.assert_called_with("VirtualGood 'First Steps Title' of type 'title' not found. Cannot award title.")
+
+
+@patch('app.utils.gamification_utils.socketio.emit')
+@patch('app.utils.gamification_utils.db.session.add')
+@patch('app.utils.gamification_utils.current_app.logger')
+def test_award_first_steps_title_logs_error_on_db_exception(mock_logger, mock_db_add, mock_badge_socketio_emit, init_database, new_user):
+    """
+    Test that if adding UserVirtualGood for a title fails, an error is logged,
+    but the badge is still awarded.
+    """
+    seed_badges()
+
+    # Create the 'First Steps Title' VirtualGood
+    first_steps_title_vg = VirtualGood(
+        name="First Steps Title", type="title", title_text="Newcomer", price=0, currency="POINTS", is_active=True
+    )
+    db.session.add(first_steps_title_vg)
+    db.session.commit()
+
+    # User creates their first post
+    post = Post(body="My first post for db error test!", author=new_user)
+    db.session.add(post)
+    db.session.commit()
+
+    # Configure db.session.add to raise SQLAlchemyError only when adding UserVirtualGood
+    def side_effect_add(instance):
+        if isinstance(instance, UserVirtualGood):
+            # Ensure we only raise for the specific title to avoid breaking other UVG creations if any
+            if instance.virtual_good_id == first_steps_title_vg.id:
+                raise SQLAlchemyError("Simulated DB error on UserVirtualGood add")
+        # For other instances (like ActivityLog, Notification for the badge), proceed normally
+        db.session.expunge(instance) # Remove from session to allow real add by original method if needed
+        return db.session.real_add(instance) # type: ignore
+
+    # Store real add method and then patch
+    db.session.real_add = db.session.add # type: ignore
+    mock_db_add.side_effect = side_effect_add
+
+    check_and_award_badges(new_user)
+    # The main commit in check_and_award_badges will likely be rolled back due to the error,
+    # but the badge should have been added to the user.badges collection in memory.
+    # If the commit inside check_and_award_badges is wrapped in a try-except that rollbacks,
+    # then the badge association might also be rolled back. Let's check the current logic.
+    # The current logic commits only if newly_awarded_badges_info is populated.
+    # The title error happens before the final commit of badge-related items if the title is processed first.
+
+    # Assert badge is awarded (even if title award failed)
+    first_steps_badge_db = Badge.query.filter_by(criteria_key='first_steps').first()
+    assert first_steps_badge_db is not None
+    # Check if the badge is in the user's collection in memory, as commit might have failed or been rolled back
+    # For a more robust check, one might need to query the association table if the main commit fails.
+    # However, the current structure of check_and_award_badges appends to user.badges
+    # and then commits at the end. If the title error causes a rollback before that,
+    # then the badge itself might not be committed.
+    # The `exc_info=True` implies the exception is caught and handled, allowing other operations to proceed.
+    # The current `check_and_award_badges` has its final commit in a try-except block.
+    # If the title awarding part (which is within the badge loop) raises an error
+    # that isn't caught and handled *within* the title awarding part, it could disrupt the commit.
+    # The added try-except around title awarding handles this.
+
+    # We expect the badge to be committed because the error in title awarding is caught.
+    db.session.commit() # Re-commit to be sure badge related changes are saved if not rolled back by title error
+    assert first_steps_badge_db in User.query.get(new_user.id).badges
+
+    # Assert logger.error was called
+    mock_logger.error.assert_called_once()
+    args, kwargs = mock_logger.error.call_args
+    assert "Error awarding title for 'First Steps' badge" in args[0]
+    assert kwargs.get('exc_info') is True
+
+    # Assert title was NOT awarded
+    user_title_entry = UserVirtualGood.query.filter_by(
+        user_id=new_user.id, virtual_good_id=first_steps_title_vg.id
+    ).first()
+    assert user_title_entry is None
+
+    # Restore original db.session.add
+    db.session.add = db.session.real_add # type: ignore
+    delattr(db.session, 'real_add')
