@@ -35,7 +35,7 @@ import stripe # For Stripe integration
 from app.utils.helpers import get_recommendations
 
 # Imports for pymath statistics
-from app.libs.pymath.statistics import mean, median, mode, std_dev
+from app.libs.pymath.statistics import mean, median, mode, std_dev, pearson_correlation, simple_linear_regression
 
 # Ensure these specific imports are present for set_theme_preference, though some might be redundant if already imported broadly.
 from flask import request, jsonify, current_app # request, jsonify, current_app
@@ -4481,58 +4481,84 @@ def manage_titles():
 
 @main.route('/pymath/stats_calculator', methods=['GET', 'POST'])
 def stats_calculator():
-    results = None
+    results = {} # Initialize as dict
     error_message = None
-    original_input = ""
+    numbers_input_x_raw = ""
+    numbers_input_y_raw = "" # For the second input field
+    data_x = None # To store parsed numbers for x
 
     if request.method == 'POST':
-        original_input = request.form.get('numbers_input', '')
-        if not original_input.strip():
-            error_message = "Input cannot be empty. Please enter some numbers."
+        numbers_input_x_raw = request.form.get('numbers_input_x', '') # Renamed form field
+        numbers_input_y_raw = request.form.get('numbers_input_y', '')
+
+        if not numbers_input_x_raw.strip():
+            error_message = "Input for List X cannot be empty. Please enter some numbers."
         else:
             try:
-                # Attempt to convert comma-separated string to list of floats
-                numbers_str_list = original_input.split(',')
-                numbers = []
-                for s in numbers_str_list:
+                # Parse data_x
+                numbers_str_list_x = numbers_input_x_raw.split(',')
+                data_x = []
+                for s in numbers_str_list_x:
                     s_stripped = s.strip()
-                    if not s_stripped: # Skip empty strings resulting from multiple commas e.g. "1,,2"
-                        continue
-                    try:
-                        # Try converting to float first, then int if it's a whole number
-                        # This handles cases like "1.0" and "1" appropriately
-                        num_float = float(s_stripped)
-                        if num_float.is_integer():
-                            numbers.append(int(num_float))
-                        else:
-                            numbers.append(num_float)
-                    except ValueError:
-                        raise TypeError(f"Invalid input: '{s_stripped}' is not a valid number.")
+                    if not s_stripped: continue
+                    num_float = float(s_stripped)
+                    data_x.append(int(num_float) if num_float.is_integer() else num_float)
 
-                if not numbers: # If all inputs were empty strings or just commas
-                    error_message = "No valid numbers provided. Please enter comma-separated numbers."
+                if not data_x:
+                    error_message = "No valid numbers provided for List X."
                 else:
-                    calculated_mean = mean(numbers)
-                    calculated_median = median(numbers)
-                    calculated_mode = mode(numbers)
-                    calculated_std_dev = std_dev(numbers)
-                    results = {
-                        'mean': calculated_mean,
-                        'median': calculated_median,
-                        'mode': calculated_mode,
-                        'std_dev': calculated_std_dev,
-                        'count': len(numbers)
-                    }
-            except ValueError as ve: # Catches errors from statistics functions or empty list after parsing
-                error_message = f"Calculation Error: {str(ve)}"
-            except TypeError as te: # Catches non-numeric data errors from stats functions or parsing
-                error_message = f"Input Error: {str(te)}"
-            except Exception as e: # Catch any other unexpected errors
+                    results['mean'] = mean(data_x)
+                    results['median'] = median(data_x)
+                    results['mode'] = mode(data_x)
+                    results['std_dev'] = std_dev(data_x)
+                    results['count_x'] = len(data_x)
+                    results['correlation'] = None # Initialize
+                    results['slope'] = None       # Initialize
+                    results['intercept'] = None   # Initialize
+
+                    # Process data_y if provided
+                    if numbers_input_y_raw.strip():
+                        numbers_str_list_y = numbers_input_y_raw.split(',')
+                        data_y = []
+                        for s in numbers_str_list_y:
+                            s_stripped = s.strip()
+                            if not s_stripped: continue
+                            num_float = float(s_stripped)
+                            data_y.append(int(num_float) if num_float.is_integer() else num_float)
+
+                        if not data_y:
+                            flash("List Y was provided but contained no valid numbers. Advanced statistics will not be calculated.", "warning")
+                        else:
+                            results['count_y'] = len(data_y)
+                            try:
+                                results['correlation'] = pearson_correlation(data_x, data_y)
+                                slope, intercept = simple_linear_regression(data_x, data_y)
+                                results['slope'] = slope
+                                results['intercept'] = intercept
+                            except (ValueError, TypeError) as adv_e:
+                                flash(f"Error in Correlation/Regression: {str(adv_e)}", "danger")
+                                # Ensure these are None if calculation failed
+                                results['correlation'] = None
+                                results['slope'] = None
+                                results['intercept'] = None
+                    else:
+                        flash("List Y not provided. Correlation and Regression will not be calculated.", "info")
+
+
+            except ValueError as ve:
+                error_message = f"Calculation Error (List X): {str(ve)}"
+                data_x = None # Ensure data_x is None if parsing failed
+            except TypeError as te:
+                error_message = f"Input Error (List X): {str(te)}"
+                data_x = None # Ensure data_x is None if parsing failed
+            except Exception as e:
                 error_message = f"An unexpected error occurred: {str(e)}"
-                current_app.logger.error(f"Stats Calculator Error: {e} for input '{original_input}'")
+                current_app.logger.error(f"Stats Calculator Error: {e} for input X '{numbers_input_x_raw}' and Y '{numbers_input_y_raw}'")
+                data_x = None
 
     return render_template('stats_calculator.html',
                            title='Statistics Calculator',
-                           results=results,
+                           results=results if data_x else None, # Only pass results if data_x was valid
                            error_message=error_message,
-                           original_input=original_input)
+                           numbers_input_x_raw=numbers_input_x_raw,
+                           numbers_input_y_raw=numbers_input_y_raw)
