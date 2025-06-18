@@ -6,6 +6,7 @@ A social media platform built with Flask, featuring user authentication, profile
 
 *   User registration (username, email, password)
 *   User login and logout functionality
+*   **Gamification System**: Includes User Levels and Leaderboards to enhance user engagement. ([See Details](#gamification))
 *   Secure password hashing (using passlib with sha256_crypt)
 *   User profile pages displaying username, email, bio, and profile picture
 *   User profile editing:
@@ -312,8 +313,6 @@ While the platform is already rich in features, here are some exciting ideas for
     *   This could be implemented using Flask-Limiter or a similar extension.
 *   **Enhanced Content Discovery:**
     *   Further improve algorithms for personalized recommendations and trending content.
-*   **Gamification:**
-    *   Introduce badges, points, or leaderboards to encourage user engagement.
 *   **Full Media Server Recording Playback:**
     *   Develop the functionality to access and play back recorded live streams.
 *   **Advanced Group Moderation Tools:**
@@ -538,6 +537,27 @@ This enhanced setup addresses the scalability limitations of the previous P2P We
     *   Options include "Default," "Dark Theme," and "Blue Lagoon Theme."
     *   Theme selection is available in the "Edit Profile" page.
     *   The chosen theme is applied globally via theme-specific CSS files.
+
+## Gamification
+
+The platform includes a gamification system to enhance user engagement and provide a sense of progression and friendly competition.
+
+#### User Levels
+Engage with the platform to earn points and climb through user levels!
+-   **Earning Levels**: Levels are achieved by accumulating experience points (XP) through various activities such as posting content, daily logins, and interacting with the community.
+-   **Level Display**: Your current level is displayed on your profile page, showcasing your progress and dedication.
+-   **Level-Up Notifications**: You'll receive a notification each time you advance to a new level.
+-   **New Badges**: Special badges like "Gamer" (Level 5) and "Veteran" (Level 10) can be unlocked as you reach new level milestones.
+
+#### Leaderboards
+Compete with other users and see who's leading the community!
+-   **Access**: The Leaderboard is accessible via a link in the main navigation bar.
+-   **Rankings**: Users are ranked based on points earned. The leaderboard displays each user's rank, profile picture, username (linked to their profile), current level, and score for the selected period.
+-   **Time Periods**: You can view leaderboards for different timeframes:
+    *   **All-Time**: Shows rankings based on total accumulated points.
+    *   **Monthly**: Shows rankings based on points earned during the current month.
+    *   **Weekly**: Shows rankings based on points earned during the current week.
+    *   **Daily**: Shows rankings based on points earned today.
 
 ## Data Model for Engagement Features (Mermaid Diagram)
 

@@ -1,3 +1,4 @@
+-- This script needs to be run manually if automatic migrations fail.
 -- Manual schema update for the Bookmark feature
 -- This would typically be handled by Flask-Migrate
 
@@ -17,3 +18,10 @@ CREATE TABLE bookmark (
 -- Optional: Create an index for faster lookups by timestamp if needed,
 -- though the primary key and unique constraint already provide indexing.
 -- CREATE INDEX ix_bookmark_timestamp ON bookmark (timestamp);
+
+-- Add level column to user_points table
+ALTER TABLE user_points
+ADD COLUMN level INTEGER DEFAULT 1 NOT NULL;
+
+-- Create index on the new level column
+CREATE INDEX IF NOT EXISTS ix_user_points_level ON user_points (level);

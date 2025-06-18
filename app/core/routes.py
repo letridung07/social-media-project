@@ -3958,6 +3958,9 @@ def cancel_user_subscription(subscription_id):
 
 
 # -------------------- Stripe Customer Portal Session Route --------------------
+
+from app.utils.gamification_utils import get_leaderboard # Add this import
+
 @main.route('/stripe/create-customer-portal-session', methods=['POST'])
 @login_required
 def create_customer_portal_session():
@@ -4388,16 +4391,18 @@ def set_theme_preference():
 
 # -------------------- Leaderboard Route --------------------
 @main.route('/leaderboard')
+@login_required # Or remove if public leaderboard is desired
 def leaderboard():
-    # Query top users by points. Using UserPoints.points directly.
-    # The result is a list of tuples: (User_object, points_value)
-    top_users_with_points = db.session.query(User, UserPoints.points) \
-        .join(UserPoints, User.id == UserPoints.user_id) \
-        .order_by(UserPoints.points.desc()) \
-        .limit(25) \
-        .all()
+    time_period = request.args.get('period', 'all') # Default to 'all'
+    if time_period not in ['all', 'monthly', 'weekly', 'daily']:
+        time_period = 'all' # Fallback to 'all' for invalid periods
 
-    return render_template('leaderboard.html', title=_l('Leaderboard'), top_users_with_points=top_users_with_points)
+    leaderboard_data = get_leaderboard(time_period=time_period, limit=20) # Get top 20
+
+    return render_template('leaderboard.html',
+                           title=f"{time_period.capitalize()} Leaderboard",
+                           leaderboard_data=leaderboard_data,
+                           current_period=time_period)
 
 
 # -------------------- Badge Catalog Route --------------------

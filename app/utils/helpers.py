@@ -27,7 +27,7 @@ from sqlalchemy import func, desc, not_, and_, or_, distinct
 from app import db # Assuming db instance is available in app package
 from app.core.models import User, Post, Reaction, Comment, Hashtag, Group, GroupMembership, followers, Mention, HistoricalAnalytics, post_hashtags, Article, Event as AppEvent, UserSubscription, SubscriptionPlan, UserPoints, ActivityLog # Added UserPoints, ActivityLog
 from datetime import datetime, timedelta, timezone # Ensure timezone is imported
-from app.utils.gamification_utils import check_and_award_badges # Import for badge checking
+from app.utils.gamification_utils import check_and_award_badges, update_user_level # Import for badge and level checking
 
 # Imports for iCalendar generation
 from icalendar import Calendar, Event as IcsEvent
@@ -619,7 +619,11 @@ def award_points(user, action_name, points, related_item=None):
     db.session.add(activity_log)
     # db.session.add(user_points) # user_points is already in session if fetched, or added if new
 
-    # After points are updated and activity logged, check for new badges
+    # Update user's level based on new points total
+    leveled_up = update_user_level(user_points) # user_points is the UserPoints object
+
+    # After points and level are updated, check for new badges
+    # If leveled_up is True, check_and_award_badges might award level-specific badges
     check_and_award_badges(user)
 
 def get_historical_engagement(user_id, time_period_str='7days', custom_start_date=None, custom_end_date=None):

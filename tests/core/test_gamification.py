@@ -13,10 +13,11 @@ from app import create_app, db, socketio
 from flask import current_app # For logger mocking
 from app.core.models import User, Post, Reaction, UserPoints, Badge, ActivityLog, Notification, Story, Poll, Article, AudioPost, Comment, Group, Event, VirtualGood, UserVirtualGood # Add all models used in badge criteria
 from app.utils.helpers import award_points
-from app.utils.gamification_utils import seed_badges, check_and_award_badges, INITIAL_BADGES
+from app.utils.gamification_utils import seed_badges, check_and_award_badges, INITIAL_BADGES, LEVEL_THRESHOLDS, get_leaderboard
 from sqlalchemy.exc import SQLAlchemyError # For simulating DB error
+from sqlalchemy import desc # For leaderboard sorting
 from config import TestingConfig
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date # Added date for mocking
 from unittest.mock import patch # For mocking socketio.emit and datetime
 
 # PyTest fixture for application context
@@ -527,3 +528,373 @@ def test_award_first_steps_title_logs_error_on_db_exception(mock_logger, mock_db
     # Restore original db.session.add
     db.session.add = db.session.real_add # type: ignore
     delattr(db.session, 'real_add')
+
+
+# --- Tests for New Level-Based Badges ---
+
+@patch('app.utils.gamification_utils.socketio.emit')
+def test_award_level_5_gamer_badge(mock_socketio_emit, init_database, new_user):
+    seed_badges() # Ensure all badges, including level-based ones, are in DB
+
+    # Award points to reach Level 5. Level 5 starts at 1000 points.
+    # award_points calls update_user_level and check_and_award_badges internally.
+    award_points(new_user, 'reach_level_5', 1000)
+    db.session.commit()
+
+    gamer_badge = Badge.query.filter_by(criteria_key='level_5_reached').first()
+    assert gamer_badge is not None
+    assert gamer_badge in new_user.badges
+
+    # Check for 'new_badge' notification for the Gamer badge
+    badge_notification = Notification.query.filter_by(
+        recipient_id=new_user.id,
+        type='new_badge'
+        # To be more specific, we might need to check related_id if it's set to badge_id in check_and_award_badges
+    ).order_by(Notification.timestamp.desc()).first() # Get the latest one
+
+    # Check if any of the calls to emit was for the Gamer badge
+    gamer_badge_emitted = False
+    for call_args in mock_socketio_emit.call_args_list:
+        args, kwargs = call_args
+        if args[0] == 'new_notification' and args[1].get('type') == 'new_badge' and args[1].get('badge_name') == 'Gamer':
+            gamer_badge_emitted = True
+            break
+    assert gamer_badge_emitted
+
+@patch('app.utils.gamification_utils.socketio.emit')
+def test_award_level_10_veteran_badge(mock_socketio_emit, init_database, new_user):
+    seed_badges()
+    # Award points to reach Level 10. Level 10 starts at 25000 points.
+    award_points(new_user, 'reach_level_10', 25000)
+    db.session.commit()
+
+    veteran_badge = Badge.query.filter_by(criteria_key='level_10_reached').first()
+    assert veteran_badge is not None
+    assert veteran_badge in new_user.badges
+
+    veteran_badge_emitted = False
+    for call_args in mock_socketio_emit.call_args_list:
+        args, kwargs = call_args
+        if args[0] == 'new_notification' and args[1].get('type') == 'new_badge' and args[1].get('badge_name') == 'Veteran':
+            veteran_badge_emitted = True
+            break
+    assert veteran_badge_emitted
+
+@patch('app.utils.gamification_utils.socketio.emit')
+def test_level_badges_not_awarded_prematurely(mock_socketio_emit, init_database, new_user):
+    seed_badges()
+    # Award points for Level 4 (e.g., 500 points), should not award Level 5 or Level 10 badges.
+    # Level 4 is 500-999 points.
+    award_points(new_user, 'reach_level_4', 500)
+    db.session.commit()
+
+    gamer_badge = Badge.query.filter_by(criteria_key='level_5_reached').first()
+    veteran_badge = Badge.query.filter_by(criteria_key='level_10_reached').first()
+
+    assert gamer_badge not in new_user.badges
+    assert veteran_badge not in new_user.badges
+
+    # Check that no badge notifications were emitted for these specific badges
+    for call_args in mock_socketio_emit.call_args_list:
+        args, kwargs = call_args
+        if args[0] == 'new_notification' and args[1].get('type') == 'new_badge':
+            assert args[1].get('badge_name') != 'Gamer'
+            assert args[1].get('badge_name') != 'Veteran'
+
+
+# --- Tests for Leveling System ---
+class TestLevelingSystem:
+
+    @patch('app.utils.gamification_utils.socketio.emit')
+    def test_user_levels_up_correctly(self, mock_socketio_emit, init_database, new_user):
+        # User starts with 0 points, level 1 (implicitly, UserPoints created by award_points)
+
+        # Award points just below Level 2 threshold (100 points)
+        award_points(new_user, 'action1', 90)
+        db.session.commit()
+
+        user_points = UserPoints.query.filter_by(user_id=new_user.id).first()
+        assert user_points is not None
+        assert user_points.points == 90
+        assert user_points.level == 1 # Should still be Level 1
+        mock_socketio_emit.assert_not_called() # No level up event yet
+
+        # Award more points to cross the threshold for Level 2
+        award_points(new_user, 'action2', 15) # Total 105 points
+        db.session.commit()
+
+        user_points_updated = UserPoints.query.filter_by(user_id=new_user.id).first()
+        assert user_points_updated.points == 105
+        assert user_points_updated.level == 2 # Should be Level 2
+
+        # Check for 'level_up' notification
+        level_up_notification = Notification.query.filter_by(
+            recipient_id=new_user.id,
+            type='level_up'
+        ).order_by(Notification.timestamp.desc()).first()
+        assert level_up_notification is not None
+
+        # Assert socketio.emit was called for level up
+        mock_socketio_emit.assert_called_with(
+            'new_notification',
+            {
+                'type': 'level_up',
+                'message': "Congratulations! You've reached Level 2!",
+                'level': 2,
+            },
+            room=str(new_user.id)
+        )
+
+    @patch('app.utils.gamification_utils.socketio.emit')
+    def test_level_up_skipping_thresholds(self, mock_socketio_emit, init_database, new_user):
+        # Award 600 points, should take user from Level 1 (default) to Level 4 (500-999 points)
+        award_points(new_user, 'massive_points_action', 600)
+        db.session.commit()
+
+        user_points = UserPoints.query.filter_by(user_id=new_user.id).first()
+        assert user_points is not None
+        assert user_points.points == 600
+        assert user_points.level == 4 # Based on LEVEL_THRESHOLDS
+
+        # Check notification and socket event for reaching Level 4
+        level_up_notification = Notification.query.filter_by(
+            recipient_id=new_user.id,
+            type='level_up'
+        ).order_by(Notification.timestamp.desc()).first()
+        assert level_up_notification is not None
+
+        mock_socketio_emit.assert_called_with(
+            'new_notification',
+            {
+                'type': 'level_up',
+                'message': "Congratulations! You've reached Level 4!",
+                'level': 4,
+            },
+            room=str(new_user.id)
+        )
+
+    @patch('app.utils.gamification_utils.socketio.emit')
+    def test_no_level_up_if_not_enough_points(self, mock_socketio_emit, init_database, new_user):
+        # Initial points, creates UserPoints object at Level 1
+        award_points(new_user, 'action1', 10)
+        db.session.commit()
+
+        user_points_initial = UserPoints.query.filter_by(user_id=new_user.id).first()
+        assert user_points_initial.level == 1
+        mock_socketio_emit.reset_mock() # Reset mock after initial setup if any events fired
+
+        # Add more points, but not enough to level up from Level 1 (threshold is 100 for L2)
+        award_points(new_user, 'action2', 50) # Total 60 points
+        db.session.commit()
+
+        user_points_updated = UserPoints.query.filter_by(user_id=new_user.id).first()
+        assert user_points_updated.points == 60
+        assert user_points_updated.level == 1 # Still Level 1
+
+        # Assert no 'level_up' notification or socket event was triggered for this second action
+        # Querying for notifications specifically for this action is tricky without more context.
+        # Instead, ensure no *new* level_up notification was created beyond any potential initial one.
+        # For this test, since we reset_mock, we can assert not_called.
+        mock_socketio_emit.assert_not_called()
+
+        level_up_notifications_after_action2 = Notification.query.filter_by(
+            recipient_id=new_user.id,
+            type='level_up',
+            # Ideally, filter by timestamp if possible, or check count if we know initial state.
+            # For this test, if initial action didn't level up, count should be 0.
+        ).count()
+        assert level_up_notifications_after_action2 == 0 # Assuming action1 didn't cause level up
+
+
+# --- Tests for Leaderboard Logic ---
+class TestLeaderboards:
+
+    def test_leaderboard_all_time(self, init_database, new_user, other_user):
+        # Create a third user for more variety
+        user3 = User(username='user3', email='user3@example.com')
+        user3.set_password('password')
+        db.session.add(user3)
+        db.session.commit()
+
+        # Assign points directly to UserPoints (or create UserPoints if they don't exist)
+        # UserPoints are typically created when award_points is first called for a user.
+        # To ensure UserPoints records exist:
+        award_points(new_user, 'initial', 0)
+        award_points(other_user, 'initial', 0)
+        award_points(user3, 'initial', 0)
+        db.session.commit()
+
+
+        up1 = UserPoints.query.filter_by(user_id=new_user.id).first()
+        up1.points = 150
+        up1.level = 2 # Corresponds to 150 points
+
+        up2 = UserPoints.query.filter_by(user_id=other_user.id).first()
+        up2.points = 250
+        up2.level = 3 # Corresponds to 250 points
+
+        up3 = UserPoints.query.filter_by(user_id=user3.id).first()
+        up3.points = 50
+        up3.level = 1 # Corresponds to 50 points
+        db.session.commit()
+
+        leaderboard = get_leaderboard(time_period='all', limit=3)
+
+        assert len(leaderboard) == 3
+        assert leaderboard[0]['username'] == other_user.username # 250 points
+        assert leaderboard[0]['score'] == 250
+        assert leaderboard[0]['level'] == 3
+        assert leaderboard[0]['rank'] == 1
+
+        assert leaderboard[1]['username'] == new_user.username # 150 points
+        assert leaderboard[1]['score'] == 150
+        assert leaderboard[1]['level'] == 2
+        assert leaderboard[1]['rank'] == 2
+
+        assert leaderboard[2]['username'] == user3.username # 50 points
+        assert leaderboard[2]['score'] == 50
+        assert leaderboard[2]['level'] == 1
+        assert leaderboard[2]['rank'] == 3
+
+    @patch('app.utils.gamification_utils.datetime')
+    def test_leaderboard_periodic_daily_weekly_monthly(self, mock_datetime, init_database, new_user, other_user):
+        # Mock current time for consistent testing of periods
+        # Ensure date is also imported: from datetime import datetime, timedelta, timezone, date
+        mock_now = datetime(2024, 3, 15, 12, 0, 0, tzinfo=timezone.utc) # Friday, March 15, 2024
+        mock_datetime.now.return_value = mock_now
+        # Ensure UserPoints records exist for level display
+        award_points(new_user, 'initial_np', 0)
+        award_points(other_user, 'initial_op', 0)
+        db.session.commit()
+
+        new_user_points = UserPoints.query.filter_by(user_id=new_user.id).first()
+        new_user_points.level = 1 # Set a default level
+        other_user_points = UserPoints.query.filter_by(user_id=other_user.id).first()
+        other_user_points.level = 1 # Set a default level
+        db.session.commit()
+
+
+        # --- Create ActivityLog entries ---
+        # new_user:
+        # Today: 10 points
+        db.session.add(ActivityLog(user_id=new_user.id, activity_type='daily_action', points_earned=10, timestamp=mock_now - timedelta(hours=1)))
+        # This week (but not today): 20 points (e.g., Monday of this week)
+        db.session.add(ActivityLog(user_id=new_user.id, activity_type='weekly_action', points_earned=20, timestamp=mock_now - timedelta(days=4))) # Monday
+        # This month (but not this week): 30 points (e.g., March 1st)
+        db.session.add(ActivityLog(user_id=new_user.id, activity_type='monthly_action', points_earned=30, timestamp=mock_now.replace(day=1)))
+        # Older: 100 points
+        db.session.add(ActivityLog(user_id=new_user.id, activity_type='old_action', points_earned=100, timestamp=mock_now - timedelta(days=40)))
+
+        # other_user:
+        # Today: 15 points
+        db.session.add(ActivityLog(user_id=other_user.id, activity_type='daily_action', points_earned=15, timestamp=mock_now - timedelta(hours=2)))
+        # This week (but not today): 5 points
+        db.session.add(ActivityLog(user_id=other_user.id, activity_type='weekly_action', points_earned=5, timestamp=mock_now - timedelta(days=3))) # Tuesday
+        # This month (but not this week): 50 points
+        db.session.add(ActivityLog(user_id=other_user.id, activity_type='monthly_action', points_earned=50, timestamp=mock_now.replace(day=2)))
+        # Older: 200 points
+        db.session.add(ActivityLog(user_id=other_user.id, activity_type='old_action', points_earned=200, timestamp=mock_now - timedelta(days=50)))
+        db.session.commit()
+
+        # Test Daily Leaderboard
+        daily_lb = get_leaderboard(time_period='daily', limit=2)
+        assert len(daily_lb) == 2
+        assert daily_lb[0]['user_id'] == other_user.id # other_user: 15 points today
+        assert daily_lb[0]['score'] == 15
+        assert daily_lb[1]['user_id'] == new_user.id   # new_user: 10 points today
+        assert daily_lb[1]['score'] == 10
+
+        # Test Weekly Leaderboard
+        weekly_lb = get_leaderboard(time_period='weekly', limit=2)
+        # new_user: 10 (today) + 20 (this week) = 30
+        # other_user: 15 (today) + 5 (this week) = 20
+        assert len(weekly_lb) == 2
+        assert weekly_lb[0]['user_id'] == new_user.id
+        assert weekly_lb[0]['score'] == 30
+        assert weekly_lb[1]['user_id'] == other_user.id
+        assert weekly_lb[1]['score'] == 20
+
+        # Test Monthly Leaderboard
+        monthly_lb = get_leaderboard(time_period='monthly', limit=2)
+        # new_user: 10 (today) + 20 (this week) + 30 (this month) = 60
+        # other_user: 15 (today) + 5 (this week) + 50 (this month) = 70
+        assert len(monthly_lb) == 2
+        assert monthly_lb[0]['user_id'] == other_user.id
+        assert monthly_lb[0]['score'] == 70
+        assert monthly_lb[1]['user_id'] == new_user.id
+        assert monthly_lb[1]['score'] == 60
+
+    def test_leaderboard_empty_for_period_with_no_activity(self, init_database, new_user):
+        # Ensure UserPoints exists for level display, even if no activity for period
+        award_points(new_user, 'initial_points', 10) # This creates UserPoints
+        db.session.commit()
+
+        # No ActivityLog entries for 'daily' period
+        with patch('app.utils.gamification_utils.datetime') as mock_datetime:
+            mock_now = datetime(2024, 3, 15, 12, 0, 0, tzinfo=timezone.utc)
+            mock_datetime.now.return_value = mock_now
+
+            daily_lb = get_leaderboard(time_period='daily', limit=5)
+            assert len(daily_lb) == 0
+
+    def test_leaderboard_limit_parameter(self, init_database, new_user, other_user):
+        user3 = User(username='user3', email='user3@example.com', password_hash='pw')
+        db.session.add(user3)
+        award_points(new_user, 'initial_np', 100)
+        award_points(other_user, 'initial_op', 150)
+        award_points(user3, 'initial_u3', 120)
+        db.session.commit() # Commits UserPoints records
+
+        leaderboard_limit_2 = get_leaderboard(time_period='all', limit=2)
+        assert len(leaderboard_limit_2) == 2
+        assert leaderboard_limit_2[0]['user_id'] == other_user.id # 150 points
+        assert leaderboard_limit_2[1]['user_id'] == user3.id      # 120 points
+
+        leaderboard_limit_1 = get_leaderboard(time_period='all', limit=1)
+        assert len(leaderboard_limit_1) == 1
+        assert leaderboard_limit_1[0]['user_id'] == other_user.id # 150 points
+
+
+# --- Basic UI Route Tests ---
+class TestUIRoutesGamification:
+
+    def test_leaderboard_route_loads(self, test_client, logged_in_user):
+        # Ensure user is "logged in" for routes that require it.
+        # The logged_in_user fixture should handle session setup if test_client uses it.
+        # If not, a manual login post might be needed here.
+        # For now, assuming @login_required is on leaderboard and logged_in_user is sufficient.
+        # If leaderboard is public, logged_in_user is not strictly needed but doesn't hurt.
+
+        # Simulate login for test_client if not handled by fixture globally
+        with test_client.session_transaction() as sess:
+            sess['user_id'] = logged_in_user.id
+            sess['_fresh'] = True
+
+        response = test_client.get('/leaderboard', follow_redirects=True)
+        assert response.status_code == 200
+        # More detailed checks could verify content, e.g., "Leaderboard" in response.data
+
+    def test_profile_page_loads_with_level_info(self, test_client, new_user, init_database):
+        # Give user some points and a level
+        award_points(new_user, 'profile_test_points', 120) # Should be Level 2
+        db.session.commit()
+
+        user_points = UserPoints.query.filter_by(user_id=new_user.id).first()
+        assert user_points is not None
+        assert user_points.level == 2
+
+        # Simulate login for test_client if accessing profile that might be restricted
+        # or if parts of profile are current_user dependent.
+        # For a public profile view, login might not be needed.
+        # Assuming profile route is /user/<username>
+        with test_client.session_transaction() as sess: # Ensure session for current_user context if profile template uses it
+            sess['user_id'] = new_user.id # Viewing own profile for simplicity, or another user if testing privacy
+            sess['_fresh'] = True
+
+        response = test_client.get(f'/user/{new_user.username}', follow_redirects=True)
+        assert response.status_code == 200
+        # Asserting specific HTML content is more complex and fragile.
+        # A basic check that "Level: 2" is in the response can be done.
+        # Ensure response.data is bytes, so decode or use `b"Level: 2"`
+        assert b"Level: 2" in response.data
+        assert b"Points: 120" in response.data # Check points also

@@ -1,11 +1,24 @@
+LEVEL_THRESHOLDS = {
+    1: (0, 99),
+    2: (100, 249),
+    3: (250, 499),
+    4: (500, 999),
+    5: (1000, 1999),
+    6: (2000, 3999),
+    7: (4000, 7999),
+    8: (8000, 14999),
+    9: (15000, 24999),
+    10: (25000, float('inf')) # Using float('inf') for the upper bound of the last level
+}
+
 """
 Utilities for the gamification system, including badge seeding and awarding logic.
 """
 from flask import current_app # Added for logger
-from app import db, socketio
+from app import db, socketio, cache # Import cache
 from app.core.models import User, UserPoints, Badge, ActivityLog, Post, Story, Poll, Article, AudioPost, Comment, Reaction, Group, Event, Notification, VirtualGood, UserVirtualGood
-from sqlalchemy import func # For distinct, date, count
-from datetime import datetime, date # For Dedicated Member badge
+from sqlalchemy import func, desc # For distinct, date, count, desc
+from datetime import datetime, date, timedelta, timezone # For Dedicated Member badge and leaderboard
 
 # Placeholder for INITIAL_BADGES and functions to be defined
 INITIAL_BADGES = [
@@ -26,6 +39,30 @@ INITIAL_BADGES = [
     {'name': 'Dedicated Member', 'description': 'Logged in on 7 distinct days.', 'icon_url': 'static/badges/dedicated_member.png', 'criteria_key': 'dedicated_member'},
     {'name': 'Point Collector', 'description': 'Earned 100 points.', 'icon_url': 'static/badges/point_collector.png', 'criteria_key': 'point_collector'},
     {'name': 'Point Hoarder', 'description': 'Earned 500 points.', 'icon_url': 'static/badges/point_hoarder.png', 'criteria_key': 'point_hoarder'},
+    {
+        'name': 'Gamer',
+        'description': 'Achieved Level 5!',
+        'icon_url': 'static/badges/gamer.png', # Placeholder icon
+        'criteria_key': 'level_5_reached'
+    },
+    {
+        'name': 'Veteran',
+        'description': 'Achieved Level 10! You are a true platform veteran.',
+        'icon_url': 'static/badges/veteran.png', # Placeholder icon
+        'criteria_key': 'level_10_reached'
+    },
+    # { # Placeholder for leaderboard badge - implementation note below
+    #     'name': 'Weekly Contender',
+    #     'description': 'Made it to the Top 10 on the weekly leaderboard!',
+    #     'icon_url': 'static/badges/weekly_contender.png', # Placeholder icon
+    #     'criteria_key': 'weekly_top_10'
+    # },
+    # { # Placeholder for leaderboard badge - implementation note below
+    #     'name': 'Monthly Champion',
+    #     'description': 'Secured a Top 3 spot on the monthly leaderboard!',
+    #     'icon_url': 'static/badges/monthly_champion.png', # Placeholder icon
+    #     'criteria_key': 'monthly_top_3'
+    # }
 ]
 
 def seed_badges():
@@ -203,6 +240,26 @@ def check_and_award_badges(user):
         elif badge_obj.criteria_key == 'point_hoarder':
             if user_points_obj and user_points_obj.points >= 500:
                 awarded = True
+        elif badge_obj.criteria_key == 'level_5_reached':
+            if user_points_obj and user_points_obj.level >= 5:
+                awarded = True
+        elif badge_obj.criteria_key == 'level_10_reached':
+            if user_points_obj and user_points_obj.level >= 10:
+                awarded = True
+        # elif badge_obj.criteria_key == 'weekly_top_10':
+        #     # NOTE: Checking leaderboard badges here can be inefficient.
+        #     # This would ideally be handled by a separate, less frequent task.
+        #     # For demonstration, a simplified check (if implemented):
+        #     # weekly_lb = get_leaderboard(time_period='weekly', limit=10)
+        #     # if any(entry['user_id'] == user.id for entry in weekly_lb):
+        #     #     awarded = True
+        #     pass # Not implementing the check here due to complexity/performance
+        # elif badge_obj.criteria_key == 'monthly_top_3':
+        #     # Similar note as above for monthly leaderboard badges.
+        #     # monthly_lb = get_leaderboard(time_period='monthly', limit=3)
+        #     # if any(entry['user_id'] == user.id for entry in monthly_lb):
+        #     #     awarded = True
+        #     pass # Not implementing the check here
 
         if awarded:
             user.badges.append(badge_obj) # Add badge to user's collection
@@ -245,3 +302,171 @@ def check_and_award_badges(user):
         except Exception as e:
             db.session.rollback()
             current_app.logger.error(f"Error committing new badges/titles/notifications for user {user.username}: {e}", exc_info=True)
+
+
+def update_user_level(user_points_object):
+    """
+    Checks a user's points against LEVEL_THRESHOLDS and updates their level if necessary.
+    Awards a notification and emits a socket event on level up.
+
+    Args:
+        user_points_object (UserPoints): The UserPoints object for the user.
+
+    Returns:
+        bool: True if the user leveled up, False otherwise.
+    """
+    if not user_points_object:
+        return False
+
+    current_level = user_points_object.level
+    new_level = current_level # Initialize new_level with current_level
+    user_total_points = user_points_object.points
+
+    # Iterate through defined levels to find the new correct level based on points
+    # This loop correctly finds the highest level bracket the user's points fall into.
+    for level, (min_points, max_points) in LEVEL_THRESHOLDS.items():
+        if min_points <= user_total_points <= max_points:
+            new_level = level # Update new_level if points fall into this level's range
+            # Continue checking as user might qualify for a higher level within the loop (e.g. if LEVEL_THRESHOLDS is not sorted)
+        elif user_total_points > max_points and level == max(LEVEL_THRESHOLDS.keys()):
+            # Handles cases where points exceed the max defined threshold for the highest level
+            new_level = level
+            break # Found the highest possible level or exceeded it
+
+    # Determine the actual highest level the user qualifies for based on their points.
+    # This is crucial if LEVEL_THRESHOLDS might not be perfectly ordered or if points can skip levels.
+    potential_new_level = 1 # Start with the lowest possible level
+    for level_num, (min_pts, _max_pts) in sorted(LEVEL_THRESHOLDS.items()): # Ensure items are sorted by level number
+        if user_total_points >= min_pts:
+            potential_new_level = level_num
+        else:
+            # As soon as user's points are less than min_pts for a level,
+            # the previously assigned potential_new_level is the correct one.
+            break
+
+    new_level = potential_new_level
+
+    if new_level > current_level:
+        user_points_object.level = new_level
+        # Assuming user_points_object.user_profile is the correct backref to the User model
+        user = user_points_object.user_profile
+        if not user: # Safeguard if the user_profile relationship isn't loaded or set
+            user = User.query.get(user_points_object.user_id)
+            if not user:
+                current_app.logger.error(f"Could not find User with id {user_points_object.user_id} for UserPoints id {user_points_object.id}")
+                return False # Cannot proceed without user object
+
+        current_app.logger.info(f"User {user.username} leveled up to Level {new_level}!")
+
+        # Create Notification
+        notification = Notification(
+            recipient_id=user.id,
+            actor_id=user.id, # Self-action for leveling up
+            type='level_up',
+            # related_id and related_item_type could be added if Notification model supports it
+            # e.g., related_id=user_points_object.id, related_item_type='user_level'
+        )
+        db.session.add(notification)
+
+        # Emit SocketIO event
+        socketio.emit('new_notification', {
+            'type': 'level_up',
+            'message': f"Congratulations! You've reached Level {new_level}!",
+            'level': new_level,
+            # 'level_name': f"Level {new_level}", # Optional: for more detailed display
+            # 'level_icon_url': f"static/levels/level_{new_level}.png" # Optional: for visual flair
+        }, room=str(user.id))
+
+        # The commit of the session including the level update and notification
+        # should ideally be handled by the calling function (e.g., award_points)
+        # to ensure atomicity of the entire point awarding and leveling process.
+        # However, if this function is called standalone, a commit might be needed here.
+        # For this subtask, assuming award_points will handle the commit.
+
+        return True # User leveled up
+    return False # User did not level up
+
+
+@cache.memoize(timeout=300) # Cache for 5 minutes
+def get_leaderboard(time_period='all', limit=10):
+    """
+    Fetches leaderboard data based on points.
+
+    Args:
+        time_period (str): 'all', 'daily', 'weekly', 'monthly'.
+        limit (int): Number of users to return.
+
+    Returns:
+        list: List of dictionaries, each representing a user on the leaderboard.
+              Each dict contains: 'rank', 'user_id', 'username',
+                                 'profile_picture_url', 'level', 'score'.
+    """
+    leaderboard_results = []
+
+    if time_period == 'all':
+        # Query UserPoints directly for all-time leaderboard
+        top_users_points = UserPoints.query.join(User, UserPoints.user_id == User.id) \
+                                           .add_columns(User.username, User.profile_picture_url, UserPoints.points, UserPoints.level, User.id.label('user_id')) \
+                                           .order_by(desc(UserPoints.points)) \
+                                           .limit(limit) \
+                                           .all()
+
+        for i, result in enumerate(top_users_points):
+            # result is a row-like object. Access columns by attribute name given in add_columns or model attribute
+            leaderboard_results.append({
+                'rank': i + 1,
+                'user_id': result.user_id,
+                'username': result.username,
+                'profile_picture_url': result.profile_picture_url,
+                'level': result.level,
+                'score': result.points # For 'all' time, score is total points
+            })
+
+    else:
+        # For daily, weekly, monthly - aggregate from ActivityLog
+        now = datetime.now(timezone.utc)
+        if time_period == 'daily':
+            start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        elif time_period == 'weekly':
+            start_date = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+        elif time_period == 'monthly':
+            start_date = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        else: # Should not happen if called correctly, but default to daily
+            current_app.logger.warning(f"get_leaderboard called with invalid time_period '{time_period}', defaulting to 'daily'.")
+            start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        end_date = now # Aggregate up to the current moment for these periods
+
+        # Query to sum points from ActivityLog within the period
+        summed_points_subquery = db.session.query(
+            ActivityLog.user_id,
+            func.sum(ActivityLog.points_earned).label('period_score')
+        ).filter(ActivityLog.timestamp >= start_date) \
+         .filter(ActivityLog.timestamp <= end_date) \
+         .group_by(ActivityLog.user_id) \
+         .subquery()
+
+        # Join with User and UserPoints to get details
+        top_users_period = db.session.query(
+            User.id.label('user_id'),
+            User.username,
+            User.profile_picture_url,
+            UserPoints.level, # Get current level from UserPoints
+            summed_points_subquery.c.period_score
+        ).join(summed_points_subquery, User.id == summed_points_subquery.c.user_id) \
+         .join(UserPoints, User.id == UserPoints.user_id) \
+         .order_by(desc(summed_points_subquery.c.period_score)) \
+         .limit(limit) \
+         .all()
+
+        for i, result in enumerate(top_users_period):
+            leaderboard_results.append({
+                'rank': i + 1,
+                'user_id': result.user_id,
+                'username': result.username,
+                'profile_picture_url': result.profile_picture_url,
+                'level': result.level,
+                'score': result.period_score if result.period_score is not None else 0
+            })
+
+    return leaderboard_results
