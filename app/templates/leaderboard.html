@@ -1,51 +1,41 @@
 {% extends "base.html" %}
-{% from "_macros.html" import render_pagination %} {# Assuming pagination might be added later, or for consistency #}
-
-{% block title %}{{ _('Leaderboard') }}{% endblock %}
 
 {% block content %}
 <div class="container mt-4">
-    <div class="row">
-        <div class="col-md-10 offset-md-1">
-            <h1 class="mb-4 text-center">{{ _('Leaderboard') }}</h1>
+    <h2>Leaderboard</h2>
+    <ul class="nav nav-pills mb-3">
+        <li class="nav-item">
+            <a class="nav-link {% if current_period == 'all' %}active{% endif %}" href="{{ url_for('main.leaderboard', period='all') }}">All-Time</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if current_period == 'monthly' %}active{% endif %}" href="{{ url_for('main.leaderboard', period='monthly') }}">Monthly</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if current_period == 'weekly' %}active{% endif %}" href="{{ url_for('main.leaderboard', period='weekly') }}">Weekly</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if current_period == 'daily' %}active{% endif %}" href="{{ url_for('main.leaderboard', period='daily') }}">Daily</a>
+        </li>
+    </ul>
 
-            {% if top_users_with_points %}
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle">
-                        <thead class="table-light">
-                            <tr>
-                                <th scope="col" class="text-center" style="width: 5%;">#</th>
-                                <th scope="col" style="width: 65%;">{{ _('User') }}</th>
-                                <th scope="col" class="text-end" style="width: 30%;">{{ _('Points') }}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for user_data in top_users_with_points %}
-                            {# user_data is a tuple (User_object, points_value) #}
-                            <tr>
-                                <td class="text-center fw-bold">{{ loop.index }}</td>
-                                <td>
-                                    <a href="{{ url_for('main.profile', username=user_data[0].username) }}" class="text-decoration-none text-dark d-flex align-items-center">
-                                        <img src="{{ url_for('static', filename='images/' + (user_data[0].profile_picture_url if user_data[0].profile_picture_url else 'default_profile_pic.png')) }}"
-                                             alt="{{ _('Profile picture of %(username)s', username=user_data[0].username) }}"
-                                             class="img-thumbnail rounded-circle me-2" style="width: 40px; height: 40px; object-fit: cover;"
-                                             onerror="this.onerror=null; this.src='{{ url_for('static', filename='images/default_profile_pic.png') }}';"
-                                             loading="lazy">
-                                        <span class="fw-medium">{{ user_data[0].username }}</span>
-                                    </a>
-                                </td>
-                                <td class="text-end fs-5">{{ user_data[1] }}</td> {# Access points directly from the tuple's second element #}
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            {% else %}
-                <div class="alert alert-info text-center" role="alert">
-                    <p class="lead mb-0">{{ _('The leaderboard is currently empty. Start engaging to earn points and climb the ranks!') }}</p>
-                </div>
-            {% endif %}
+    {% if leaderboard_data %}
+    <div class="list-group">
+        {% for entry in leaderboard_data %}
+        <div class="list-group-item list-group-item-action flex-column align-items-start mb-2">
+            <div class="d-flex w-100 justify-content-between">
+                <h5 class="mb-1">
+                    <span class="badge badge-primary mr-2">#{{ entry.rank }}</span>
+                    <img src="{{ url_for('static', filename='images/' + entry.profile_picture_url if entry.profile_picture_url else url_for('static', filename='images/default_profile_pic.png')) }}" alt="{{ entry.username }}'s profile picture" class="rounded-circle mr-2" style="width: 40px; height: 40px;">
+                    <a href="{{ url_for('main.profile', username=entry.username) }}">{{ entry.username }}</a>
+                </h5>
+                <small>Level: {{ entry.level }}</small>
+            </div>
+            <p class="mb-1">Score: {{ entry.score }}</p>
         </div>
+        {% endfor %}
     </div>
+    {% else %}
+    <p class="text-muted">No data available for this period yet.</p>
+    {% endif %}
 </div>
 {% endblock %}

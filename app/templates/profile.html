@@ -82,6 +82,9 @@
                     {# Display Total Points #}
                     <div class="user-points mt-3">
                         <h4>{{ _('Points:') }} {{ user.points.points if user.points else 0 }}</h4>
+                        {% if user.points and user.points.level %}
+                            <p class="text-muted mb-0">Level: {{ user.points.level }}</p> {# Added mb-0 to keep it tight if other stats follow #}
+                        {% endif %}
                     </div>
                     {# End Display Total Points #}
 
