@@ -34,6 +34,9 @@ import stripe # For Stripe integration
 # Import for recommendations
 from app.utils.helpers import get_recommendations
 
+# Imports for pymath statistics
+from app.libs.pymath.statistics import mean, median, mode, std_dev
+
 # Ensure these specific imports are present for set_theme_preference, though some might be redundant if already imported broadly.
 from flask import request, jsonify, current_app # request, jsonify, current_app
 from flask_login import current_user, login_required # current_user, login_required
@@ -4474,3 +4477,62 @@ def manage_titles():
         .all()
 
     return render_template('manage_titles.html', title='Manage Your Titles', owned_titles=owned_titles_uvg)
+
+
+@main.route('/pymath/stats_calculator', methods=['GET', 'POST'])
+def stats_calculator():
+    results = None
+    error_message = None
+    original_input = ""
+
+    if request.method == 'POST':
+        original_input = request.form.get('numbers_input', '')
+        if not original_input.strip():
+            error_message = "Input cannot be empty. Please enter some numbers."
+        else:
+            try:
+                # Attempt to convert comma-separated string to list of floats
+                numbers_str_list = original_input.split(',')
+                numbers = []
+                for s in numbers_str_list:
+                    s_stripped = s.strip()
+                    if not s_stripped: # Skip empty strings resulting from multiple commas e.g. "1,,2"
+                        continue
+                    try:
+                        # Try converting to float first, then int if it's a whole number
+                        # This handles cases like "1.0" and "1" appropriately
+                        num_float = float(s_stripped)
+                        if num_float.is_integer():
+                            numbers.append(int(num_float))
+                        else:
+                            numbers.append(num_float)
+                    except ValueError:
+                        raise TypeError(f"Invalid input: '{s_stripped}' is not a valid number.")
+
+                if not numbers: # If all inputs were empty strings or just commas
+                    error_message = "No valid numbers provided. Please enter comma-separated numbers."
+                else:
+                    calculated_mean = mean(numbers)
+                    calculated_median = median(numbers)
+                    calculated_mode = mode(numbers)
+                    calculated_std_dev = std_dev(numbers)
+                    results = {
+                        'mean': calculated_mean,
+                        'median': calculated_median,
+                        'mode': calculated_mode,
+                        'std_dev': calculated_std_dev,
+                        'count': len(numbers)
+                    }
+            except ValueError as ve: # Catches errors from statistics functions or empty list after parsing
+                error_message = f"Calculation Error: {str(ve)}"
+            except TypeError as te: # Catches non-numeric data errors from stats functions or parsing
+                error_message = f"Input Error: {str(te)}"
+            except Exception as e: # Catch any other unexpected errors
+                error_message = f"An unexpected error occurred: {str(e)}"
+                current_app.logger.error(f"Stats Calculator Error: {e} for input '{original_input}'")
+
+    return render_template('stats_calculator.html',
+                           title='Statistics Calculator',
+                           results=results,
+                           error_message=error_message,
+                           original_input=original_input)

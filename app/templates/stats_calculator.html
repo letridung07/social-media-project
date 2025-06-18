@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block app_content %}
+<div class="container mt-4">
+    <h1>Statistics Calculator</h1>
+    <p class="lead">Enter comma-separated numbers below to calculate mean, median, mode, and standard deviation.</p>
+
+    <div class="card">
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('main.stats_calculator') }}">
+                {{ form.hidden_tag() if form and form.hidden_tag }} {# Include CSRF token if forms are configured that way #}
+                <div class="form-group mb-3">
+                    <label for="numbers_input" class="form-label">Numbers Input:</label>
+                    <textarea class="form-control" id="numbers_input" name="numbers_input" rows="3" placeholder="e.g., 1, 2, 3.5, 4, 5, 5">{{ original_input }}</textarea>
+                </div>
+                <button type="submit" class="btn btn-primary">Calculate</button>
+            </form>
+        </div>
+    </div>
+
+    {% if error_message %}
+    <div class="alert alert-danger mt-4" role="alert">
+        <strong>Error:</strong> {{ error_message }}
+    </div>
+    {% endif %}
+
+    {% if results %}
+    <div class="card mt-4">
+        <div class="card-header">
+            Results
+        </div>
+        <div class="card-body">
+            <p><strong>Original Input:</strong> {{ original_input }}</p>
+            <p><strong>Count of Numbers:</strong> {{ results.count }}</p>
+            <hr>
+            <table class="table table-striped">
+                <tbody>
+                    <tr>
+                        <th scope="row">Mean (Average):</th>
+                        <td>{{ "%.4f" | format(results.mean) if results.mean is not none else 'N/A' }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Median:</th>
+                        <td>{{ "%.4f" | format(results.median) if results.median is not none else 'N/A' }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Mode(s):</th>
+                        <td>
+                            {% if results.mode is not none %}
+                                {% if results.mode %}
+                                    {{ results.mode | join(', ') }}
+                                {% else %}
+                                    No distinct mode (all values unique or list was empty for mode calculation by itself)
+                                {% endif %}
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Standard Deviation (Population):</th>
+                        <td>{{ "%.4f" | format(results.std_dev) if results.std_dev is not none else 'N/A' }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}
