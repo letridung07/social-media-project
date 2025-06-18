@@ -1,5 +1,8 @@
-from app import db
-from app.core.models import User, UserPoints, Badge, ActivityLog, Post, Story, Poll, Article, AudioPost, Comment, Reaction, Group, Event
+"""
+Utilities for the gamification system, including badge seeding and awarding logic.
+"""
+from app import db, socketio
+from app.core.models import User, UserPoints, Badge, ActivityLog, Post, Story, Poll, Article, AudioPost, Comment, Reaction, Group, Event, Notification
 from sqlalchemy import func # For distinct, date, count
 from datetime import datetime, date # For Dedicated Member badge
 
@@ -26,7 +29,12 @@ INITIAL_BADGES = [
 
 def seed_badges():
     """
-    Seeds the database with initial badges if the Badge table is empty.
+    Seeds the database with initial badges defined in `INITIAL_BADGES`.
+
+    This function checks if the Badge table is empty. If it is, it iterates
+    through the `INITIAL_BADGES` list, creates new `Badge` model instances,
+    and commits them to the database. This ensures that all predefined badges
+    are available in the system.
     """
     if Badge.query.first() is None: # Check if any badges exist
         for badge_data in INITIAL_BADGES:
@@ -47,7 +55,31 @@ def seed_badges():
 
 def check_and_award_badges(user):
     """
-    Checks and awards badges to a user based on predefined criteria.
+    Checks if a given user qualifies for any new badges and awards them.
+
+    The general flow is:
+    1. Ensure badges are seeded in the database (calls `seed_badges()` if needed).
+    2. Fetch all available badges and the user's currently earned badges.
+    3. For each available badge not already earned by the user:
+        a. Evaluate the specific criteria for that badge (based on `badge.criteria_key`).
+        b. If criteria are met:
+            i. Append the badge to the user's `badges` collection.
+            ii. Create an `ActivityLog` entry for earning the badge.
+            iii. Create a `Notification` for the user.
+            iv. Emit a SocketIO event to notify the user in real-time.
+    4. If any new badges were awarded, commit the changes to the database.
+
+    Args:
+        user (User): The user object for whom to check and award badges.
+                 The function will evaluate badge criteria based on this user's
+                 activities, posts, points, etc.
+
+    Side Effects:
+        - If new badges are awarded, this function will commit the changes to the
+          database session (`db.session.commit()`). This includes associating the
+          new badge(s) with the user, creating `ActivityLog` entries, and
+          `Notification` objects.
+        - Emits a 'new_notification' SocketIO event to the user if a badge is awarded.
     """
     if not Badge.query.first(): # Check if badges are seeded, if not, seed them.
         seed_badges() # This also commits the session if badges are added.
@@ -85,10 +117,12 @@ def check_and_award_badges(user):
                user.profile_picture_url and user.profile_picture_url != 'default_profile_pic.png':
                 awarded = True
         elif badge_obj.criteria_key == 'first_steps':
+            # Criteria: User has made at least one post.
             if Post.query.filter_by(user_id=user.id).count() >= 1:
                 awarded = True
         elif badge_obj.criteria_key == 'photographer':
-            # Assuming MediaItem model is related to Post as 'media_items'
+            # Criteria: User has made at least one post that contains any media items (images/videos).
+            # This is checked by looking for posts authored by the user that have a non-empty 'media_items' relationship.
             if Post.query.filter(Post.user_id == user.id, Post.media_items.any()).count() >= 1:
                 awarded = True
         elif badge_obj.criteria_key == 'storyteller':
@@ -107,14 +141,19 @@ def check_and_award_badges(user):
             if Comment.query.filter_by(user_id=user.id).count() >= 10:
                 awarded = True
         elif badge_obj.criteria_key == 'popular':
+            # Criteria: User's posts have received at least 25 'like' reactions in total.
+            # This query counts Reaction objects of type 'like' associated with posts authored by the user.
             like_reactions_count = db.session.query(func.count(Reaction.id)).join(Post, Reaction.post_id == Post.id).filter(Post.user_id == user.id, Reaction.reaction_type == 'like').scalar()
             if like_reactions_count >= 25:
                 awarded = True
         elif badge_obj.criteria_key == 'very_popular':
+            # Criteria: User's posts have received at least 100 'like' reactions in total.
             like_reactions_count = db.session.query(func.count(Reaction.id)).join(Post, Reaction.post_id == Post.id).filter(Post.user_id == user.id, Reaction.reaction_type == 'like').scalar()
             if like_reactions_count >= 100:
                 awarded = True
         elif badge_obj.criteria_key == 'influencer':
+            # Criteria: User has 10 or more followers.
+            # This uses the 'followers' backref relationship on the User model, which counts users following this user.
             if user.followers.count() >= 10: # Assuming user.followers is the relationship
                 awarded = True
         elif badge_obj.criteria_key == 'community_builder':
@@ -127,7 +166,8 @@ def check_and_award_badges(user):
             if user.followed.count() >= 5: # Assuming user.followed is the relationship
                 awarded = True
         elif badge_obj.criteria_key == 'dedicated_member':
-            # Count distinct days of 'daily_login' ActivityLog entries
+            # Criteria: User has logged in on 7 distinct calendar days.
+            # This is checked by counting distinct dates from 'daily_login' entries in the ActivityLog for the user.
             distinct_login_days = db.session.query(func.count(func.distinct(func.date(ActivityLog.timestamp)))) \
                                       .filter(ActivityLog.user_id == user.id, ActivityLog.activity_type == 'daily_login') \
                                       .scalar()
@@ -154,12 +194,30 @@ def check_and_award_badges(user):
             newly_awarded_badges_info.append({'name': badge_obj.name, 'icon_url': badge_obj.icon_url})
             print(f"User {user.username} awarded badge: {badge_obj.name}") # Or logger
 
+            # Create Notification object
+            notification = Notification(
+                recipient_id=user.id,
+                actor_id=user.id, # Self-awarded for earning a badge
+                type='new_badge',
+                # related_id could be badge_obj.id if Notification model supports generic related_id/type
+                # For now, details are in the socketio message.
+            )
+            db.session.add(notification)
+
+            # Emit SocketIO event
+            socketio.emit('new_notification', {
+                'type': 'new_badge',
+                'message': f"Congratulations! You've earned the '{badge_obj.name}' badge!",
+                'badge_name': badge_obj.name,
+                'badge_description': badge_obj.description,
+                'badge_icon_url': badge_obj.icon_url
+                # Client side will handle constructing full URL for static icon if needed
+            }, room=str(user.id))
+
     if newly_awarded_badges_info:
         try:
-            db.session.commit()
-            # Here you could trigger notifications for newly awarded badges
-            # For example, iterate through newly_awarded_badges_info and send SocketIO events or create Notification objects
-            print(f"Committed new badges for user {user.username}")
+            db.session.commit() # This will commit user.badges, activity_log, and notification
+            print(f"Committed new badges and notifications for user {user.username}")
         except Exception as e:
             db.session.rollback()
-            print(f"Error committing new badges for user {user.username}: {e}")
+            print(f"Error committing new badges/notifications for user {user.username}: {e}")

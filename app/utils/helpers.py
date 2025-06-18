@@ -567,8 +567,29 @@ def recommend_groups(user, limit=5):
 
 def award_points(user, action_name, points, related_item=None):
     """
-    Awards points to a user and creates an activity log.
-    Does not commit the session; the caller is responsible for db.session.commit().
+    Awards points to a user, creates an activity log, and checks for/awards new badges.
+
+    This function handles the core logic of point attribution:
+    1. Fetches or creates a `UserPoints` record for the specified user.
+    2. Increments the user's points.
+    3. Creates an `ActivityLog` entry detailing the action, points earned,
+       and optionally linking to a related item (e.g., a Post, Comment).
+    4. Calls `check_and_award_badges(user)` to evaluate if this action (or the new
+       point total) results in the user earning any new badges.
+
+    Important: This function adds new/updated objects (UserPoints, ActivityLog,
+    potentially new Badge associations via check_and_award_badges) to the
+    database session (`db.session.add()`). However, it does NOT commit the session.
+    The calling route or service is responsible for the final `db.session.commit()`
+    to ensure atomicity of operations.
+
+    Args:
+        user (User): The user object to award points to.
+        action_name (str): A string key identifying the action (e.g., 'create_post', 'daily_login').
+        points (int): The number of points to award.
+        related_item (db.Model, optional): A database model instance related to the
+                                           action (e.g., the Post created, the Comment made).
+                                           Defaults to None.
     """
     if not user or not user.is_authenticated: # Ensure user is valid and authenticated
         return

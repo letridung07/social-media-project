@@ -426,6 +426,7 @@ def login():
                 ).first()
 
                 if not daily_login_exists:
+                    # Gamification: Award points for daily login
                     award_points(user, 'daily_login', 5)
                     # Potentially commit here if it's a standalone action,
                     # or let it be committed with other session changes if any.
@@ -993,7 +994,7 @@ def create_post():
 
         # Create notifications for mentions and group posts ONLY IF the post is immediately published
         if post.is_published:
-            # Award points for creating a post
+            # Gamification: Award points for creating a post (more for media posts)
             points_for_post = 15 if media_items_to_add else 10
             award_points(current_user, 'create_post', points_for_post, related_item=post)
             # Note: award_points only adds to session, commit is handled below with other post data.
@@ -1201,9 +1202,10 @@ def follow(username):
         return redirect(url_for('main.profile', username=username))
 
     current_user.follow(user)
-    # Award points for following and being followed
-    award_points(current_user, 'follow_user', 1, related_item=user) # Points for the user who initiated the follow
-    award_points(user, 'receive_follower', 5, related_item=current_user) # Points for the user who gained a follower
+    # Gamification: Award points for following a user
+    award_points(current_user, 'follow_user', 1, related_item=user)
+    # Gamification: Award points to the user who gained a follower
+    award_points(user, 'receive_follower', 5, related_item=current_user)
 
     db.session.commit() # Commits follow action and points/activity logs
     flash(f'You are now following {username}!', 'success')
@@ -1253,10 +1255,10 @@ def add_comment(post_id):
         # Process mentions before committing the comment
         mentioned_users_in_comment = process_mentions(text_content=comment.body, owner_object=comment, actor_user=current_user)
 
-        # Award points for creating a comment
+        # Gamification: Award points to the commenter
         award_points(current_user, 'create_comment', 5, related_item=comment)
 
-        # Award points to the post author for receiving a comment (if not their own post)
+        # Gamification: Award points to the post author for receiving a comment (if not their own post)
         if post.author.id != current_user.id:
             award_points(post.author, 'receive_comment', 3, related_item=comment)
 
@@ -1391,6 +1393,7 @@ def react_to_post(post_id, reaction_type):
                 points_for_reaction = 3 # For other reactions like 'love', 'haha', etc.
 
             action_name_for_reaction = f'receive_{reaction_type}_reaction'
+            # Gamification: Award points to post author for receiving a reaction (more for non-likes)
             award_points(post.author, action_name_for_reaction, points_for_reaction, related_item=post)
 
         db.session.commit() # Commit reaction and any points/activity logs
@@ -1781,7 +1784,7 @@ def create_event():
             organizer_id=current_user.id
         )
         db.session.add(event)
-        # Award points for creating an event
+        # Gamification: Award points for creating an event
         award_points(current_user, 'create_event', 15, related_item=event)
         db.session.commit()
         flash('Event created successfully!', 'success')
@@ -1828,7 +1831,7 @@ def join_event(event_id):
                            },
                           room=str(event.organizer_id))
 
-        # Award points for joining an event
+        # Gamification: Award points for joining an event
         award_points(current_user, 'join_event', 5, related_item=event)
 
         db.session.commit()
@@ -2004,7 +2007,7 @@ def create_group():
         )
         db.session.add(membership)
 
-        # Award points for creating a group
+        # Gamification: Award points for creating a group
         award_points(current_user, 'create_group', 20, related_item=group)
 
         db.session.commit()
@@ -2074,7 +2077,7 @@ def join_group(group_id):
         membership = GroupMembership(user_id=current_user.id, group_id=group.id, role='member') # Default role
         db.session.add(membership)
 
-        # Award points for joining a group
+        # Gamification: Award points for joining a group
         award_points(current_user, 'join_group', 5, related_item=group)
 
         db.session.commit() # Commit membership and points/activity log first
@@ -2241,7 +2244,7 @@ def create_story():
                 story = Story(**story_data) # is_published is passed here, Story.__init__ handles expires_at
                 db.session.add(story)
 
-                # Award points for creating a story
+                # Gamification: Award points for creating a story (if immediately published)
                 if is_published_value: # Only award points if story is immediately published
                     award_points(current_user, 'create_story', 5, related_item=story)
 
@@ -2340,7 +2343,7 @@ def create_poll():
                 new_option = PollOption(poll_id=new_poll.id, option_text=option_text)
                 db.session.add(new_option)
 
-        # Award points for creating a poll
+        # Gamification: Award points for creating a poll
         award_points(current_user, 'create_poll', 10, related_item=new_poll)
 
         db.session.commit() # This commits the poll, its options, and points/activity log
@@ -3054,7 +3057,7 @@ def create_article():
 
         article = Article(title=title, body=body, author=current_user, slug=unique_slug)
         db.session.add(article)
-        # Award points for creating an article
+        # Gamification: Award points for creating an article
         award_points(current_user, 'create_article', 25, related_item=article)
         db.session.commit()
         flash('Article published successfully!', 'success')
@@ -3150,7 +3153,7 @@ def upload_audio():
                 duration=duration_seconds
             )
             db.session.add(audio_post)
-            # Award points for uploading audio
+            # Gamification: Award points for uploading an audio post
             award_points(current_user, 'upload_audio', 15, related_item=audio_post)
             db.session.commit()
             flash('Audio post uploaded successfully!', 'success')
