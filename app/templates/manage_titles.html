@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% from "_form_helpers.html" import render_field %} {# Assuming this might be useful, though not strictly for simple buttons #}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>{{ title }}</h2>
+
+    {% include '_flash_messages.html' %}
+
+    {% if owned_titles %}
+        <div class="list-group">
+            {% for user_title_entry in owned_titles %}
+                <div class="list-group-item list-group-item-action flex-column align-items-start mb-2">
+                    <div class="d-flex w-100 justify-content-between">
+                        <h5 class="mb-1">
+                            {% if user_title_entry.virtual_good.title_icon_url %}
+                                <img src="{{ user_title_entry.virtual_good.title_icon_url if user_title_entry.virtual_good.title_icon_url.startswith('http') else url_for('static', filename=user_title_entry.virtual_good.title_icon_url) }}"
+                                     alt="{{ (user_title_entry.virtual_good.title_text or user_title_entry.virtual_good.name) ~ ' icon' }}" class="img-fluid mr-2" style="max-height: 24px; max-width: 24px; vertical-align: middle;">
+                            {% endif %}
+                            {{ user_title_entry.virtual_good.title_text or user_title_entry.virtual_good.name }}
+                        </h5>
+                        <small>
+                            {% if current_user.active_title_id == user_title_entry.id %}
+                                <span class="badge badge-success">Currently Active</span>
+                            {% endif %}
+                        </small>
+                    </div>
+                    <p class="mb-1">{{ user_title_entry.virtual_good.description or "No description available." }}</p>
+                    <div class="mt-2">
+                        <form method="POST" action="{{ url_for('main.manage_titles') }}" style="display: inline;">
+                            {{ form.hidden_tag() if form and form.hidden_tag else '' }} {# Add CSRF if your forms usually have it globally #}
+                            <input type="hidden" name="user_virtual_good_id" value="{{ user_title_entry.id }}">
+                            <button type="submit" class="btn btn-sm {% if current_user.active_title_id == user_title_entry.id %}btn-secondary{% else %}btn-primary{% endif %}"
+                                    {% if current_user.active_title_id == user_title_entry.id %}disabled{% endif %}>
+                                {% if current_user.active_title_id == user_title_entry.id %}
+                                    <i class="fas fa-check-circle"></i> Active
+                                {% else %}
+                                    <i class="fas fa-user-tag"></i> Set as Active
+                                {% endif %}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+
+        <hr class="my-4">
+
+        <h4>Clear Active Title</h4>
+        <form method="POST" action="{{ url_for('main.manage_titles') }}">
+            {{ form.hidden_tag() if form and form.hidden_tag else '' }} {# CSRF #}
+            <input type="hidden" name="user_virtual_good_id" value="clear_active_title">
+            <button type="submit" class="btn btn-warning" {% if not current_user.active_title_id %}disabled{% endif %}>
+                <i class="fas fa-times-circle"></i> Clear Current Title
+            </button>
+        </form>
+
+    {% else %}
+        <div class="alert alert-info" role="alert">
+            You do not own any titles yet. Visit the <a href="{{ url_for('main.storefront') }}" class="alert-link">Store</a> to get some!
+        </div>
+    {% endif %}
+
+</div>
+{% endblock %}

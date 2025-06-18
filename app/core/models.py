@@ -210,6 +210,10 @@ class User(db.Model, UserMixin):
     reactions = db.relationship('Reaction', backref='user', lazy='dynamic', cascade='all, delete-orphan')
     comments = db.relationship('Comment', backref='author', lazy='dynamic', cascade='all, delete-orphan')
 
+    # Active title/flair
+    active_title_id = db.Column(db.Integer, db.ForeignKey('user_virtual_good.id'), nullable=True)
+    active_title = db.relationship('UserVirtualGood', foreign_keys=[active_title_id], backref=db.backref('active_title_for_user', uselist=False), uselist=False)
+
     def __repr__(self):
         return f'<User {self.username}>'
 
@@ -851,8 +855,10 @@ class VirtualGood(db.Model):
     description = db.Column(db.Text, nullable=True)
     price = db.Column(db.Numeric(10, 2), nullable=False)
     currency = db.Column(db.String(10), nullable=False, default='USD')
-    type = db.Column(db.String(50), nullable=False)  # e.g., "badge", "emoji", "profile_frame"
+    type = db.Column(db.String(50), nullable=False)  # e.g., "badge", "emoji", "profile_frame", "title"
     image_url = db.Column(db.String(255), nullable=True)
+    title_text = db.Column(db.String(255), nullable=True)  # Actual title/flair text
+    title_icon_url = db.Column(db.String(2048), nullable=True)  # Optional icon URL for flair
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
     updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow(), onupdate=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
@@ -870,8 +876,9 @@ class UserVirtualGood(db.Model):
     quantity = db.Column(db.Integer, default=1, nullable=False)
     is_equipped = db.Column(db.Boolean, default=False, nullable=False)
 
-    user = db.relationship('User', backref=db.backref('virtual_goods_inventory', lazy='dynamic'))
+    user = db.relationship('User', backref=db.backref('virtual_goods_inventory', lazy='dynamic'), foreign_keys=[user_id]) # Specify foreign_keys for clarity
     virtual_good = db.relationship('VirtualGood', backref=db.backref('user_inventories', lazy='dynamic'))
+    # The backref 'active_title_for_user' is created from User.active_title relationship and will be available on UserVirtualGood objects
 
     __table_args__ = (db.UniqueConstraint('user_id', 'virtual_good_id', name='_user_virtual_good_uc'),) # Assuming a user can only have one entry per virtual good type, quantity handles multiples. If multiple separate purchases of the same good should be distinct rows, remove this.
 

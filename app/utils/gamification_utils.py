@@ -1,8 +1,9 @@
 """
 Utilities for the gamification system, including badge seeding and awarding logic.
 """
+from flask import current_app # Added for logger
 from app import db, socketio
-from app.core.models import User, UserPoints, Badge, ActivityLog, Post, Story, Poll, Article, AudioPost, Comment, Reaction, Group, Event, Notification
+from app.core.models import User, UserPoints, Badge, ActivityLog, Post, Story, Poll, Article, AudioPost, Comment, Reaction, Group, Event, Notification, VirtualGood, UserVirtualGood
 from sqlalchemy import func # For distinct, date, count
 from datetime import datetime, date # For Dedicated Member badge
 
@@ -48,10 +49,10 @@ def seed_badges():
             db.session.add(badge)
         try:
             db.session.commit()
-            print("Badges seeded successfully.") # Or use current_app.logger
+            current_app.logger.info("Badges seeded successfully.")
         except Exception as e:
             db.session.rollback()
-            print(f"Error seeding badges: {e}") # Or use current_app.logger
+            current_app.logger.error(f"Error seeding badges: {e}", exc_info=True)
 
 def check_and_award_badges(user):
     """
@@ -86,7 +87,7 @@ def check_and_award_badges(user):
 
     all_badges = Badge.query.all()
     if not all_badges: # If still no badges after trying to seed (e.g. DB error in seed_badges)
-        print("No badges found in the database to check against.") # Or logger
+        current_app.logger.warning("No badges found in the database to check against during check_and_award_badges.")
         return
 
     # Eagerly load user's points if not already loaded by the caller of award_points
@@ -120,6 +121,29 @@ def check_and_award_badges(user):
             # Criteria: User has made at least one post.
             if Post.query.filter_by(user_id=user.id).count() >= 1:
                 awarded = True
+                if awarded: # If badge is awarded, try to award corresponding title
+                    try:
+                        title_good = VirtualGood.query.filter_by(name="First Steps Title", type="title").first()
+                        if title_good:
+                            # Check if user already owns this title
+                            existing_user_title = UserVirtualGood.query.filter_by(user_id=user.id, virtual_good_id=title_good.id).first()
+                            if not existing_user_title:
+                                new_user_title = UserVirtualGood(
+                                    user_id=user.id,
+                                    virtual_good_id=title_good.id,
+                                    quantity=1,
+                                    is_equipped=False # User can equip it later
+                                )
+                                db.session.add(new_user_title)
+                                current_app.logger.info(f"Awarded title '{title_good.name}' to user {user.username}")
+                                # The commit will happen with the badge award commit
+                            else:
+                                current_app.logger.info(f"User {user.username} already owns title '{title_good.name}'")
+                        else:
+                            current_app.logger.warning(f"VirtualGood 'First Steps Title' of type 'title' not found. Cannot award title.")
+                    except Exception as e:
+                        current_app.logger.error(f"Error awarding title for 'First Steps' badge to user {user.username}: {e}", exc_info=True)
+                        # Potentially db.session.rollback() if this error is critical, but for now, let the main commit handle it or fail.
         elif badge_obj.criteria_key == 'photographer':
             # Criteria: User has made at least one post that contains any media items (images/videos).
             # This is checked by looking for posts authored by the user that have a non-empty 'media_items' relationship.
@@ -192,7 +216,7 @@ def check_and_award_badges(user):
             )
             db.session.add(activity_log)
             newly_awarded_badges_info.append({'name': badge_obj.name, 'icon_url': badge_obj.icon_url})
-            print(f"User {user.username} awarded badge: {badge_obj.name}") # Or logger
+            current_app.logger.info(f"User {user.username} awarded badge: {badge_obj.name}")
 
             # Create Notification object
             notification = Notification(
@@ -216,8 +240,8 @@ def check_and_award_badges(user):
 
     if newly_awarded_badges_info:
         try:
-            db.session.commit() # This will commit user.badges, activity_log, and notification
-            print(f"Committed new badges and notifications for user {user.username}")
+            db.session.commit() # This will commit user.badges, activity_log, notifications, and any new UserVirtualGood titles
+            current_app.logger.info(f"Committed new badges/titles and related notifications for user {user.username}")
         except Exception as e:
             db.session.rollback()
-            print(f"Error committing new badges/notifications for user {user.username}: {e}")
+            current_app.logger.error(f"Error committing new badges/titles/notifications for user {user.username}: {e}", exc_info=True)

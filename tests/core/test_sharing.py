@@ -1,6 +1,6 @@
 import unittest
 from app import create_app, db, socketio, cache
-from app.models import User, Post, Share, Notification, Group, GroupMembership
+from app.core.models import User, Post, Share, Notification, Group, GroupMembership # Corrected import path
 from flask_login import login_user, logout_user, current_user
 from datetime import datetime, timedelta
 

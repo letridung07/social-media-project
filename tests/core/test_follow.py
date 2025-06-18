@@ -1,7 +1,7 @@
 # tests/test_follow.py
 import unittest
 from app import create_app, db
-from app.models import User, Post
+from app.core.models import User, Post # Corrected import path
 from config import TestingConfig
 from datetime import datetime, timedelta
 

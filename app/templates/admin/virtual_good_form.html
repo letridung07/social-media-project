@@ -36,6 +36,16 @@
                 <img src="{{ good.image_url if good.image_url.startswith('http') else url_for('static', filename=good.image_url) }}" alt="{{ good.name }}" style="max-width: 100px; max-height: 100px; margin-top: 10px;" loading="lazy">
             {% endif %}
         </div>
+        <div class="form-group">
+            {{ render_field(form.title_text, class="form-control", placeholder="E.g., Community Helper") }}
+        </div>
+        <div class="form-group">
+            {{ render_field(form.title_icon_url, class="form-control", placeholder="https://example.com/icon.png or /static/images/flair/icon.svg") }}
+            {% if good and good.title_icon_url %}
+                <small class="form-text text-muted">Current title icon:</small>
+                <img src="{{ good.title_icon_url if good.title_icon_url.startswith('http') else url_for('static', filename=good.title_icon_url) }}" alt="Title Icon" style="max-width: 32px; max-height: 32px; margin-top: 10px;" loading="lazy">
+            {% endif %}
+        </div>
         <div class="form-group form-check">
             {{ render_field(form.is_active, class="form-check-input") }}
         </div>

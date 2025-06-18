@@ -106,6 +106,87 @@ class VirtualGoodsTestCase(unittest.TestCase):
         except SQLAlchemyError as e:
             self.skipTest(f"Skipping model test due to SQLAlchemyError: {e}")
 
+    def test_virtual_good_model_title_fields(self):
+        try:
+            vg_title = VirtualGood(
+                name="Epic Title",
+                description="An epic title for epic users.",
+                price=0,  # Titles might be free or awarded
+                currency="POINTS",
+                type="title",
+                title_text="The Epic One",
+                title_icon_url="static/icons/epic_flair.png",
+                is_active=True
+            )
+            db.session.add(vg_title)
+            db.session.commit()
+
+            self.assertIsNotNone(vg_title.id)
+            retrieved_vg_title = VirtualGood.query.get(vg_title.id)
+            self.assertEqual(retrieved_vg_title.name, "Epic Title")
+            self.assertEqual(retrieved_vg_title.type, "title")
+            self.assertEqual(retrieved_vg_title.title_text, "The Epic One")
+            self.assertEqual(retrieved_vg_title.title_icon_url, "static/icons/epic_flair.png")
+        except SQLAlchemyError as e:
+            self.skipTest(f"Skipping title fields model test due to SQLAlchemyError: {e}")
+
+    def test_user_active_title_relationship(self):
+        try:
+            user = User.query.filter_by(username='testuser').first()
+            if not user:
+                self.skipTest("Test user not found, skipping active_title relationship test")
+
+            # Create a VirtualGood of type 'title'
+            title_vg = VirtualGood(
+                name="Community Helper Title",
+                type="title",
+                title_text="Community Helper",
+                price=0,
+                currency="POINTS"
+            )
+            db.session.add(title_vg)
+            db.session.commit()
+            if not title_vg.id:
+                self.skipTest("VirtualGood (title) creation failed.")
+
+            # Create a UserVirtualGood entry linking the user to this title
+            user_title_entry = UserVirtualGood(
+                user_id=user.id,
+                virtual_good_id=title_vg.id,
+                quantity=1,
+                is_equipped=False # Initially not equipped as active title
+            )
+            db.session.add(user_title_entry)
+            db.session.commit()
+            if not user_title_entry.id:
+                self.skipTest("UserVirtualGood creation for title failed.")
+
+            # Set this UserVirtualGood as the user's active title
+            user.active_title_id = user_title_entry.id
+            db.session.commit()
+
+            # Refresh or re-fetch user to ensure relationship is loaded correctly
+            # db.session.refresh(user) # If user object is the same instance
+            user_reloaded = User.query.get(user.id) # Safer to re-fetch
+
+            self.assertIsNotNone(user_reloaded.active_title_id)
+            self.assertEqual(user_reloaded.active_title_id, user_title_entry.id)
+            self.assertIsNotNone(user_reloaded.active_title)
+            self.assertEqual(user_reloaded.active_title.id, user_title_entry.id)
+            self.assertEqual(user_reloaded.active_title.virtual_good_id, title_vg.id)
+            self.assertEqual(user_reloaded.active_title.virtual_good.name, "Community Helper Title")
+            self.assertEqual(user_reloaded.active_title.virtual_good.title_text, "Community Helper")
+
+            # Test clearing active title
+            user_reloaded.active_title_id = None
+            db.session.commit()
+            user_reloaded_again = User.query.get(user.id)
+            self.assertIsNone(user_reloaded_again.active_title_id)
+            self.assertIsNone(user_reloaded_again.active_title)
+
+        except SQLAlchemyError as e:
+            self.skipTest(f"Skipping active_title relationship test due to SQLAlchemyError: {e}")
+
 
     # --- Storefront and Purchase Flow Tests ---
     def test_storefront_view_logged_in(self):

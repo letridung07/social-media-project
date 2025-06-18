@@ -133,9 +133,9 @@ class PostModelCase(unittest.TestCase):
 
         # Check for carousel class if multiple items
         if len(media_items) > 1:
-        self.assertIn(b'carousel slide mb-3', response.data) # Check for Bootstrap carousel classes
-        self.assertIn(b'carousel-indicators', response.data)
-        self.assertIn(b'carousel-inner', response.data)
+            self.assertIn(b'carousel slide mb-3', response.data) # Check for Bootstrap carousel classes
+            self.assertIn(b'carousel-indicators', response.data)
+            self.assertIn(b'carousel-inner', response.data)
         self.assertIn(b'carousel-item active', response.data) # First item should be active
         self.assertIn(b'carousel-control-prev', response.data)
         self.assertIn(b'carousel-control-next', response.data)

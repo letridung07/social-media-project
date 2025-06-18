@@ -1,6 +1,6 @@
 import unittest
 from app import create_app, db
-from app.models import User, Post, Story, Group, GroupMembership, Hashtag, followers, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_PRIVATE
+from app.core.models import User, Post, Story, Group, GroupMembership, Hashtag, followers, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_PRIVATE # Corrected import
 from flask import url_for
 from datetime import datetime, timedelta, timezone
 from config import TestingConfig
@@ -39,7 +39,7 @@ class TestContentVisibilityRoutes(unittest.TestCase):
         # u3's posts (not followed by u1)
         self.p7_u3_pub_public = Post(author=self.u3, body="U3 Public Post - Published", is_published=True, privacy_level=PRIVACY_PUBLIC, timestamp=datetime.now(timezone.utc) - timedelta(minutes=30))
         self.p8_u3_sched_public = Post(author=self.u3, body="U3 Public Post - Scheduled", is_published=False, scheduled_for=datetime.now(timezone.utc) + timedelta(days=1), privacy_level=PRIVACY_PUBLIC, timestamp=datetime.now(timezone.utc) - timedelta(minutes=20))
-        self.p9_u3_pub_private = Post(author=self.u3, body="U3 Private Post - Published", is_published=True, privacy_level=PRIVACY_PRIVATE, timestamp=datetime.now(timezone.utc) - timedelta(minutes LPARENTSHESES_EXPR_PLACEHOLDER=10))
+        self.p9_u3_pub_private = Post(author=self.u3, body="U3 Private Post - Published", is_published=True, privacy_level=PRIVACY_PRIVATE, timestamp=datetime.now(timezone.utc) - timedelta(minutes=10)) # Corrected Syntax
 
         db.session.add_all([
             self.p1_u1_pub, self.p2_u1_sched, self.p3_u2_pub_public, self.p4_u2_sched_public,

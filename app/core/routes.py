@@ -15,7 +15,8 @@ from werkzeug.utils import secure_filename
 from app import db, socketio, cache # Import cache
 from app.core.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm, FriendListForm, AddUserToFriendListForm, PRIVACY_CHOICES, ArticleForm, AudioPostForm, SubscriptionPlanForm, TOTPSetupForm, Verify2FAForm, Disable2FAForm, ConfirmPasswordAndTOTPForm # Added Disable2FAForm, ConfirmPasswordAndTOTPForm
 from app.core.models import User, Post, MediaItem, Reaction, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus, Mention, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE, FriendList, Article, AudioPost, SubscriptionPlan, UserSubscription, Bookmark, UserPoints, ActivityLog # Added UserPoints, ActivityLog for points system
-from app.utils.helpers import save_picture, save_group_image, save_story_media, process_mentions, get_historical_engagement, get_top_performing_hashtags, get_top_performing_groups, save_media_file, slugify, save_audio_file, get_audio_duration, process_hashtags, award_points # Added award_points
+from app.utils.helpers import save_picture, save_group_image, save_story_media, process_mentions, get_historical_engagement, get_top_performing_hashtags, get_top_performing_groups, save_media_file, slugify, save_audio_file, get_audio_duration, process_hashtags, award_points, get_current_utc # Added get_current_utc
+from app.services.purchase_service import process_virtual_good_purchase # Import the new service function
 from app.utils.email import send_password_reset_email # Import email utility
 import pyotp
 import qrcode
@@ -414,8 +415,8 @@ def login():
                 login_user(user, remember=form.remember_me.data)
 
                 # Award points for daily login
-                today_utc = datetime.now(timezone.utc).date()
-                start_of_day_utc = datetime(today_utc.year, today_utc.month, today_utc.day, tzinfo=timezone.utc)
+                today_utc = get_current_utc().date()
+                start_of_day_utc = datetime(today_utc.year, today_utc.month, today_utc.day, tzinfo=timezone.utc) # datetime() constructor is still needed here
                 end_of_day_utc = start_of_day_utc + timedelta(days=1)
 
                 daily_login_exists = ActivityLog.query.filter(
@@ -1374,7 +1375,7 @@ def react_to_post(post_id, reaction_type):
         else:
             # User changed their reaction
             existing_reaction.reaction_type = reaction_type
-            existing_reaction.timestamp = datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow()
+            existing_reaction.timestamp = get_current_utc()
             db.session.commit()
             flash(f'Your reaction has been updated to "{reaction_type}".', 'success')
             # Notification logic for changed reaction can be added here if needed
@@ -1733,7 +1734,7 @@ def analytics_export():
 
     # Create response
     output = make_response(si.getvalue())
-    filename = f"analytics_export_{current_user.username}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}.csv"
+    filename = f"analytics_export_{current_user.username}_{get_current_utc().strftime('%Y%m%d%H%M%S')}.csv"
     output.headers["Content-Disposition"] = f"attachment; filename={filename}"
     output.headers["Content-type"] = "text/csv"
     return output
@@ -2139,7 +2140,7 @@ def groups_list():
 @main.route('/stories')
 @login_required
 def display_stories():
-    now = datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow()
+    now = get_current_utc()
 
     stories_query = Story.query.filter(Story.expires_at > now)
 
@@ -3285,9 +3286,38 @@ def storefront():
 @main.route('/purchase_virtual_good/<int:good_id>', methods=['POST'])
 @login_required
 def purchase_virtual_good(good_id):
-    # good = VirtualGood.query.get_or_404(good_id) # Will be used when implementing logic
-    # For now, just a placeholder
-    flash('Purchase functionality is not yet implemented.', 'info')
+    good = VirtualGood.query.get_or_404(good_id)
+
+    # Call the service function to handle the purchase logic
+    purchase_result = process_virtual_good_purchase(user=current_user, virtual_good=good)
+
+    if purchase_result["success"]:
+        # Optionally, use a more specific message if available from result, or a general one
+        flash(purchase_result.get("message", "Purchase successful!"), "success")
+
+        # Example: If you wanted to award points specifically here after a successful purchase
+        # if purchase_result.get("user_virtual_good"): # Check if a new UVG was created
+        #     try:
+        #         # Define points_for_purchase, e.g., based on good.price or a fixed value
+        #         points_to_award = int(good.price / 10) if good.price > 0 else 1 # Example
+        #         if good.currency == "POINTS": # Only award if currency was points
+        #             award_points(current_user, 'purchase_virtual_good', points_to_award, related_item=good)
+        #             db.session.commit() # Commit points award
+        #             current_app.logger.info(f"Awarded {points_to_award} points to user {current_user.id} for purchasing {good.name}")
+        #     except Exception as e:
+        #         current_app.logger.error(f"Error awarding points post-purchase for {good.name} to user {current_user.id}: {e}", exc_info=True)
+                # Not critical to purchase flow, so don't rollback main purchase
+    else:
+        # Determine flash category based on status_key
+        flash_category = "info" # Default to info for non-critical failures like "already_owned"
+        if purchase_result["status_key"] in ["item_not_active", "purchase_failed_db_error", "purchase_failed_unexpected_error", "insufficient_funds"]:
+            flash_category = "danger"
+        elif purchase_result["status_key"] == "already_owned":
+             flash_category = "info"
+        # For "already_owned_generic", "info" is also suitable.
+
+        flash(purchase_result.get("message", "Could not complete purchase."), flash_category)
+
     return redirect(url_for('main.storefront'))
 
 # -------------------- Subscription Plan Management Routes --------------------
@@ -3682,7 +3712,7 @@ def cancel_user_subscription(subscription_id):
         # Fallback for local subscriptions without a Stripe ID (should be rare for active ones)
         current_app.logger.warning(f"UserSubscription {user_sub.id} for user {current_user.id} has no stripe_subscription_id. Cancelling locally.")
         user_sub.status = 'cancelled'
-        user_sub.end_date = datetime.now(timezone.utc)
+        user_sub.end_date = get_current_utc()
         try:
             db.session.commit()
             flash('Your subscription has been cancelled locally as no payment provider ID was found.', 'info')
@@ -4142,3 +4172,67 @@ def leaderboard():
 def badges_catalog():
     all_badges = Badge.query.order_by(Badge.name).all()
     return render_template('badges_catalog.html', title=_l('Badge Catalog'), all_badges=all_badges)
+
+# -------------------- Title Management Route --------------------
+@main.route('/manage-titles', methods=['GET', 'POST'])
+@login_required
+def manage_titles():
+    if request.method == 'POST':
+        selected_uvg_id_str = request.form.get('user_virtual_good_id')
+
+        if selected_uvg_id_str == 'clear_active_title':
+            if current_user.active_title_id:
+                current_user.active_title_id = None
+                try:
+                    db.session.commit()
+                    flash('Active title has been cleared.', 'success')
+                except SQLAlchemyError as e:
+                    db.session.rollback()
+                    current_app.logger.error(f"Error clearing active title for user {current_user.id}: {e}")
+                    flash('Error clearing active title. Please try again.', 'danger')
+            else:
+                flash('No active title was set.', 'info')
+        else:
+            try:
+                selected_uvg_id = int(selected_uvg_id_str)
+                uvg_to_equip = UserVirtualGood.query.get(selected_uvg_id)
+
+                if uvg_to_equip and \
+                   uvg_to_equip.user_id == current_user.id and \
+                   uvg_to_equip.virtual_good and \
+                   uvg_to_equip.virtual_good.type == 'title':
+
+                    current_user.active_title_id = uvg_to_equip.id
+                    # Also mark as equipped in UserVirtualGood table
+                    # Unequip previous title if any
+                    previously_equipped_uvg = UserVirtualGood.query.filter_by(user_id=current_user.id, is_equipped=True).first()
+                    if previously_equipped_uvg and previously_equipped_uvg.id != uvg_to_equip.id:
+                        previously_equipped_uvg.is_equipped = False
+                    uvg_to_equip.is_equipped = True # Mark new one as equipped
+
+                    db.session.commit()
+                    flash(f"Title '{uvg_to_equip.virtual_good.name}' is now your active title!", 'success')
+                else:
+                    flash('Invalid selection or title not found.', 'danger')
+            except ValueError:
+                flash('Invalid title ID format.', 'danger')
+            except SQLAlchemyError as e:
+                db.session.rollback()
+                current_app.logger.error(f"Error setting active title for user {current_user.id}: {e}")
+                flash('Error setting active title. Please try again.', 'danger')
+            except Exception as e:
+                db.session.rollback()
+                current_app.logger.error(f"Unexpected error setting active title for user {current_user.id}: {e}")
+                flash('An unexpected error occurred. Please try again.', 'danger')
+
+        return redirect(url_for('main.manage_titles'))
+
+    # GET request
+    owned_titles_uvg = UserVirtualGood.query \
+        .join(VirtualGood, UserVirtualGood.virtual_good_id == VirtualGood.id) \
+        .filter(UserVirtualGood.user_id == current_user.id, VirtualGood.type == 'title') \
+        .options(db.joinedload(UserVirtualGood.virtual_good)) \
+        .order_by(VirtualGood.name) \
+        .all()
+
+    return render_template('manage_titles.html', title='Manage Your Titles', owned_titles=owned_titles_uvg)

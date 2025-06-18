@@ -4,7 +4,7 @@ import io
 from datetime import datetime, timezone
 
 from app import create_app, db, socketio
-from app.models import User, Post, Notification, Comment, Like, Conversation, ChatMessage
+from app.core.models import User, Post, Notification, Comment, Conversation, ChatMessage # Removed Like
 # conversation_participants table is not directly imported/used in tests usually, but through model relationships
 from config import TestingConfig
 from flask_login import current_user # login_user, logout_user are not directly used in test logic after _login/_logout helpers

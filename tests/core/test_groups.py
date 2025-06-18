@@ -3,7 +3,7 @@ import os
 import io
 from flask import current_app
 from app import create_app, db
-from app.models import User, Post, Group, GroupMembership, Notification
+from app.core.models import User, Post, Group, GroupMembership, Notification # Corrected import path
 from config import TestingConfig
 from werkzeug.datastructures import FileStorage # For mock files
 import base64 # For dummy image data

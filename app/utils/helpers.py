@@ -32,6 +32,9 @@ from app.utils.gamification_utils import check_and_award_badges # Import for bad
 # Imports for iCalendar generation
 from icalendar import Calendar, Event as IcsEvent
 
+def get_current_utc():
+    """Returns the current datetime in UTC with timezone info."""
+    return datetime.now(timezone.utc)
 
 def slugify(text_to_slugify: str, model_to_check=None, target_column_name: str = 'slug', max_slug_length: int = 200) -> str:
     """

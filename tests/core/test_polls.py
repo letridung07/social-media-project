@@ -1,7 +1,7 @@
 import unittest
 import json
 from app import create_app, db
-from app.models import User, Post, Group, Poll, PollOption, PollVote
+from app.core.models import User, Post, Group, Poll, PollOption, PollVote # Corrected import path
 from config import TestingConfig
 
 class PollTests(unittest.TestCase):

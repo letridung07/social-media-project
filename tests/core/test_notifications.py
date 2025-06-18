@@ -6,7 +6,7 @@ from flask_login import current_user
 from flask_socketio import SocketIOTestClient
 
 from app import create_app, db, socketio
-from app.models import User, Post, Notification, Comment, Like
+from app.core.models import User, Post, Notification, Comment, Reaction # Corrected import, changed Like to Reaction
 from config import TestingConfig
 
 class NotificationTests(unittest.TestCase):
