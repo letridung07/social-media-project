@@ -8,7 +8,18 @@
             <div class="card">
                 <div class="card-body text-center">
                     <img src="{{ url_for('static', filename='images/' + user.profile_picture_url) }}" loading="lazy" alt="{{ _("%(username)s's profile picture", username=user.username) }}" class="img-fluid rounded-circle mb-3" style="width: 150px; height: 150px;">
-                    <h2 class="card-title mt-2">{{ user.username }}</h2>
+                    <h2 class="card-title mt-2">
+                        {{ user.username }}
+                        {% if user.active_title and user.active_title.virtual_good %}
+                            <span class="user-active-title ml-2" style="font-size: 0.7em; color: #6c757d; vertical-align: middle;">
+                                {% if user.active_title.virtual_good.title_icon_url %}
+                                    <img src="{{ user.active_title.virtual_good.title_icon_url if user.active_title.virtual_good.title_icon_url.startswith('http') else url_for('static', filename=user.active_title.virtual_good.title_icon_url) }}"
+                                         alt="Title Icon" class="img-fluid" style="max-height: 20px; max-width: 20px; vertical-align: middle; margin-right: 3px;">
+                                {% endif %}
+                                {{ user.active_title.virtual_good.title_text or user.active_title.virtual_good.name }}
+                            </span>
+                        {% endif %}
+                    </h2>
                     {% if user.bio %}
                         <p class="card-text text-muted mb-3">{{ user.bio }}</p>
                     {% endif %}

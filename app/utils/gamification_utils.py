@@ -2,7 +2,7 @@
 Utilities for the gamification system, including badge seeding and awarding logic.
 """
 from app import db, socketio
-from app.core.models import User, UserPoints, Badge, ActivityLog, Post, Story, Poll, Article, AudioPost, Comment, Reaction, Group, Event, Notification
+from app.core.models import User, UserPoints, Badge, ActivityLog, Post, Story, Poll, Article, AudioPost, Comment, Reaction, Group, Event, Notification, VirtualGood, UserVirtualGood
 from sqlalchemy import func # For distinct, date, count
 from datetime import datetime, date # For Dedicated Member badge
 
@@ -120,6 +120,29 @@ def check_and_award_badges(user):
             # Criteria: User has made at least one post.
             if Post.query.filter_by(user_id=user.id).count() >= 1:
                 awarded = True
+                if awarded: # If badge is awarded, try to award corresponding title
+                    try:
+                        title_good = VirtualGood.query.filter_by(name="First Steps Title", type="title").first()
+                        if title_good:
+                            # Check if user already owns this title
+                            existing_user_title = UserVirtualGood.query.filter_by(user_id=user.id, virtual_good_id=title_good.id).first()
+                            if not existing_user_title:
+                                new_user_title = UserVirtualGood(
+                                    user_id=user.id,
+                                    virtual_good_id=title_good.id,
+                                    quantity=1,
+                                    is_equipped=False # User can equip it later
+                                )
+                                db.session.add(new_user_title)
+                                print(f"Awarded title '{title_good.name}' to user {user.username}") # Or logger
+                                # The commit will happen with the badge award commit
+                            else:
+                                print(f"User {user.username} already owns title '{title_good.name}'") # Or logger
+                        else:
+                            print(f"VirtualGood 'First Steps Title' of type 'title' not found. Cannot award title.") # Or logger
+                    except Exception as e:
+                        print(f"Error awarding title for 'First Steps' badge to user {user.username}: {e}") # Or logger
+                        # Potentially db.session.rollback() if this error is critical, but for now, let the main commit handle it or fail.
         elif badge_obj.criteria_key == 'photographer':
             # Criteria: User has made at least one post that contains any media items (images/videos).
             # This is checked by looking for posts authored by the user that have a non-empty 'media_items' relationship.

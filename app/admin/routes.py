@@ -74,6 +74,8 @@ def add_virtual_good():
             currency=form.currency.data,
             type=form.type.data,
             image_url=form.image_url.data if form.image_url.data else None,
+            title_text=form.title_text.data,
+            title_icon_url=form.title_icon_url.data if form.title_icon_url.data else None,
             is_active=form.is_active.data
         )
         try:
@@ -106,6 +108,8 @@ def edit_virtual_good(good_id):
         good.currency = form.currency.data
         good.type = form.type.data
         good.image_url = form.image_url.data if form.image_url.data else None
+        good.title_text = form.title_text.data
+        good.title_icon_url = form.title_icon_url.data if form.title_icon_url.data else None
         good.is_active = form.is_active.data
         try:
             db.session.commit()

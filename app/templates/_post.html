@@ -19,6 +19,15 @@
             <img src="{{ url_for('static', filename='images/' + post.author.profile_picture_url) }}" loading="lazy" alt="{{ post.author.username }}'s profile picture" class="rounded-circle mr-2" width="40" height="40">
             <div>
                 <a href="{{ url_for('main.profile', username=post.author.username) }}" class="font-weight-bold text-dark text-decoration-none">{{ post.author.username }}</a>
+                {% if post.author.active_title and post.author.active_title.virtual_good %}
+                    <span class="user-active-title ml-1" style="font-size: 0.65em; color: #6c757d; vertical-align: middle; font-weight: normal;">
+                        {% if post.author.active_title.virtual_good.title_icon_url %}
+                            <img src="{{ post.author.active_title.virtual_good.title_icon_url if post.author.active_title.virtual_good.title_icon_url.startswith('http') else url_for('static', filename=post.author.active_title.virtual_good.title_icon_url) }}"
+                                 alt="Title Icon" class="img-fluid" style="max-height: 16px; max-width: 16px; vertical-align: middle; margin-right: 2px;">
+                        {% endif %}
+                        {{ post.author.active_title.virtual_good.title_text or post.author.active_title.virtual_good.name }}
+                    </span>
+                {% endif %}
                 <small class="text-muted d-block">
                     {% if item_wrapper.type == 'share' %}
                         Original post on {{ post.timestamp.strftime('%Y-%m-%d %H:%M') }} UTC

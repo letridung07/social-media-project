@@ -10,7 +10,7 @@ This module includes tests for:
 """
 import pytest
 from app import create_app, db, socketio
-from app.core.models import User, Post, Reaction, UserPoints, Badge, ActivityLog, Notification, Story, Poll, Article, AudioPost, Comment, Group, Event # Add all models used in badge criteria
+from app.core.models import User, Post, Reaction, UserPoints, Badge, ActivityLog, Notification, Story, Poll, Article, AudioPost, Comment, Group, Event, VirtualGood, UserVirtualGood # Add all models used in badge criteria
 from app.utils.helpers import award_points
 from app.utils.gamification_utils import seed_badges, check_and_award_badges, INITIAL_BADGES
 from config import TestingConfig
@@ -354,3 +354,93 @@ def test_badge_not_awarded_twice(mock_socketio_emit, init_database, new_user):
     activity_log_count = ActivityLog.query.filter_by(user_id=new_user.id, activity_type='earn_badge', related_id=first_steps_badge.id).count()
     assert activity_log_count == 1
     mock_socketio_emit.assert_not_called() # Should not be called for an already awarded badge
+
+
+@patch('app.utils.gamification_utils.socketio.emit') # Mock socketio for badge notifications
+def test_award_first_steps_title_with_badge(mock_badge_socketio_emit, init_database, new_user):
+    """
+    Test that earning the 'First Steps' badge also awards the corresponding title.
+    """
+    seed_badges() # Ensure badges exist
+
+    # 1. Create the 'First Steps Title' VirtualGood
+    first_steps_title_vg = VirtualGood(
+        name="First Steps Title",
+        type="title",
+        title_text="Newcomer",
+        price=0,
+        currency="POINTS", # Assuming points or free for awarded titles
+        is_active=True
+    )
+    db.session.add(first_steps_title_vg)
+    db.session.commit()
+    assert first_steps_title_vg.id is not None, "Failed to create 'First Steps Title' VirtualGood"
+
+    # 2. User creates their first post (criteria for 'First Steps' badge)
+    post = Post(body="My very first post!", author=new_user)
+    db.session.add(post)
+    db.session.commit()
+
+    # 3. Call check_and_award_badges
+    check_and_award_badges(new_user)
+    # The check_and_award_badges function now commits internally if badges/titles are awarded.
+
+    # 4. Assert 'First Steps' badge is awarded
+    first_steps_badge_db = Badge.query.filter_by(criteria_key='first_steps').first()
+    assert first_steps_badge_db is not None, "'First Steps' badge not found in DB"
+    assert first_steps_badge_db in new_user.badges, "'First Steps' badge not awarded to user"
+
+    # 5. Assert 'First Steps Title' UserVirtualGood is created
+    user_title_entry = UserVirtualGood.query.join(VirtualGood).filter(
+        UserVirtualGood.user_id == new_user.id,
+        VirtualGood.id == first_steps_title_vg.id
+    ).first()
+    assert user_title_entry is not None, "UserVirtualGood for 'First Steps Title' was not created"
+    assert user_title_entry.virtual_good_id == first_steps_title_vg.id
+    assert user_title_entry.is_equipped is False, "Newly awarded title should not be automatically equipped"
+    assert user_title_entry.quantity == 1
+
+    # 6. Test Idempotency: Call again, ensure no duplicates for title
+    initial_uvg_count = UserVirtualGood.query.filter_by(user_id=new_user.id, virtual_good_id=first_steps_title_vg.id).count()
+
+    check_and_award_badges(new_user) # Call again
+
+    final_uvg_count = UserVirtualGood.query.filter_by(user_id=new_user.id, virtual_good_id=first_steps_title_vg.id).count()
+    assert final_uvg_count == initial_uvg_count, "Duplicate UserVirtualGood created for title"
+    assert final_uvg_count == 1, "UserVirtualGood count for title is not 1 after re-check"
+
+
+@patch('app.utils.gamification_utils.socketio.emit')
+def test_award_first_steps_title_fails_if_vg_not_found(mock_badge_socketio_emit, init_database, new_user, other_user): # Added other_user to avoid interference
+    """
+    Test that if the 'First Steps Title' VirtualGood doesn't exist,
+    the badge is still awarded but the title is not.
+    """
+    seed_badges()
+    # Ensure the specific title VG does NOT exist
+    existing_title = VirtualGood.query.filter_by(name="First Steps Title", type="title").first()
+    if existing_title:
+        # If tests run in non-deterministic order or DB is not perfectly clean, remove it.
+        # For more robust testing, ensure this VG is not created by other tests or is cleaned up.
+        db.session.delete(existing_title)
+        db.session.commit()
+
+    # Use 'other_user' for this test to ensure clean slate regarding UserVirtualGood
+    post = Post(body="My first post for no-title test!", author=other_user)
+    db.session.add(post)
+    db.session.commit()
+
+    check_and_award_badges(other_user)
+
+    # Assert badge is awarded
+    first_steps_badge_db = Badge.query.filter_by(criteria_key='first_steps').first()
+    assert first_steps_badge_db is not None
+    assert first_steps_badge_db in other_user.badges
+
+    # Assert title is NOT awarded
+    user_title_entry = UserVirtualGood.query.join(VirtualGood).filter(
+        UserVirtualGood.user_id == other_user.id,
+        VirtualGood.name == "First Steps Title",
+        VirtualGood.type == "title"
+    ).first()
+    assert user_title_entry is None, "UserVirtualGood title was created even though the VirtualGood for it should not exist"

@@ -3285,9 +3285,60 @@ def storefront():
 @main.route('/purchase_virtual_good/<int:good_id>', methods=['POST'])
 @login_required
 def purchase_virtual_good(good_id):
-    # good = VirtualGood.query.get_or_404(good_id) # Will be used when implementing logic
-    # For now, just a placeholder
-    flash('Purchase functionality is not yet implemented.', 'info')
+    good = VirtualGood.query.get_or_404(good_id)
+
+    if not good.is_active:
+        flash(f"'{good.name}' is currently not available for purchase.", 'warning')
+        return redirect(url_for('main.storefront'))
+
+    # Simulate payment/points deduction here.
+    # For this task, we assume payment is successful if the code reaches here.
+    # Actual payment/points logic would be:
+    # if not current_user.can_afford(good.price):
+    #     flash("You do not have enough points/balance.", "danger")
+    #     return redirect(url_for('main.storefront'))
+    # current_user.deduct_points_or_charge(good.price)
+
+    if good.type == 'title':
+        existing_user_title = UserVirtualGood.query.filter_by(
+            user_id=current_user.id,
+            virtual_good_id=good.id
+        ).first()
+
+        if existing_user_title:
+            flash(f"You already own the title: '{good.name}'.", 'info')
+        else:
+            try:
+                new_user_title = UserVirtualGood(
+                    user_id=current_user.id,
+                    virtual_good_id=good.id,
+                    quantity=1,
+                    purchase_date=datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow(),
+                    is_equipped=False # User can equip it later
+                )
+                db.session.add(new_user_title)
+                db.session.commit()
+                flash(f"Title '{good.name}' purchased successfully!", 'success')
+                # Gamification: Award points for purchasing a virtual good (e.g., title)
+                # award_points(current_user, 'purchase_virtual_good', points_value, related_item=good)
+                # db.session.commit() # If award_points doesn't commit itself
+            except SQLAlchemyError as e:
+                db.session.rollback()
+                current_app.logger.error(f"Error purchasing title '{good.name}' for user {current_user.id}: {e}")
+                flash('There was an error processing your title purchase. Please try again.', 'danger')
+            except Exception as e: # Catch any other unexpected errors
+                db.session.rollback()
+                current_app.logger.error(f"Unexpected error purchasing title '{good.name}' for user {current_user.id}: {e}")
+                flash('An unexpected error occurred during your purchase. Please try again.', 'danger')
+    else:
+        # Handle other types of virtual goods if necessary, or a generic success message
+        # For now, let's assume other goods might have different handling or this is just a placeholder
+        # for further development.
+        # For this task, we are primarily concerned with 'title' type.
+        flash(f"'{good.name}' (type: {good.type}) purchased successfully (basic handling).", 'success')
+        # If other types also create UserVirtualGood entries, that logic would be similar to titles,
+        # possibly without the "is_equipped" concept or with different default quantities.
+
     return redirect(url_for('main.storefront'))
 
 # -------------------- Subscription Plan Management Routes --------------------
@@ -4142,3 +4193,67 @@ def leaderboard():
 def badges_catalog():
     all_badges = Badge.query.order_by(Badge.name).all()
     return render_template('badges_catalog.html', title=_l('Badge Catalog'), all_badges=all_badges)
+
+# -------------------- Title Management Route --------------------
+@main.route('/manage-titles', methods=['GET', 'POST'])
+@login_required
+def manage_titles():
+    if request.method == 'POST':
+        selected_uvg_id_str = request.form.get('user_virtual_good_id')
+
+        if selected_uvg_id_str == 'clear_active_title':
+            if current_user.active_title_id:
+                current_user.active_title_id = None
+                try:
+                    db.session.commit()
+                    flash('Active title has been cleared.', 'success')
+                except SQLAlchemyError as e:
+                    db.session.rollback()
+                    current_app.logger.error(f"Error clearing active title for user {current_user.id}: {e}")
+                    flash('Error clearing active title. Please try again.', 'danger')
+            else:
+                flash('No active title was set.', 'info')
+        else:
+            try:
+                selected_uvg_id = int(selected_uvg_id_str)
+                uvg_to_equip = UserVirtualGood.query.get(selected_uvg_id)
+
+                if uvg_to_equip and \
+                   uvg_to_equip.user_id == current_user.id and \
+                   uvg_to_equip.virtual_good and \
+                   uvg_to_equip.virtual_good.type == 'title':
+
+                    current_user.active_title_id = uvg_to_equip.id
+                    # Also mark as equipped in UserVirtualGood table
+                    # Unequip previous title if any
+                    previously_equipped_uvg = UserVirtualGood.query.filter_by(user_id=current_user.id, is_equipped=True).first()
+                    if previously_equipped_uvg and previously_equipped_uvg.id != uvg_to_equip.id:
+                        previously_equipped_uvg.is_equipped = False
+                    uvg_to_equip.is_equipped = True # Mark new one as equipped
+
+                    db.session.commit()
+                    flash(f"Title '{uvg_to_equip.virtual_good.name}' is now your active title!", 'success')
+                else:
+                    flash('Invalid selection or title not found.', 'danger')
+            except ValueError:
+                flash('Invalid title ID format.', 'danger')
+            except SQLAlchemyError as e:
+                db.session.rollback()
+                current_app.logger.error(f"Error setting active title for user {current_user.id}: {e}")
+                flash('Error setting active title. Please try again.', 'danger')
+            except Exception as e:
+                db.session.rollback()
+                current_app.logger.error(f"Unexpected error setting active title for user {current_user.id}: {e}")
+                flash('An unexpected error occurred. Please try again.', 'danger')
+
+        return redirect(url_for('main.manage_titles'))
+
+    # GET request
+    owned_titles_uvg = UserVirtualGood.query \
+        .join(VirtualGood, UserVirtualGood.virtual_good_id == VirtualGood.id) \
+        .filter(UserVirtualGood.user_id == current_user.id, VirtualGood.type == 'title') \
+        .options(db.joinedload(UserVirtualGood.virtual_good)) \
+        .order_by(VirtualGood.name) \
+        .all()
+
+    return render_template('manage_titles.html', title='Manage Your Titles', owned_titles=owned_titles_uvg)

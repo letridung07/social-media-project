@@ -85,78 +85,37 @@ class MediaServerService:
         return {"active": False, "viewers": 0, "reason": "Stream not publishing or key unknown (mock)"}
 
 # Example of how to potentially initialize and use (not part of the class itself):
-# if __name__ == '__main__':
-#     # This part is for testing the service directly, not for Flask app use.
-#     # For Flask, you'd typically instantiate this service where needed,
-#     # or make its methods static if no state is involved, or use a factory.
-+    # class MockApp:
-+    #     def __init__(self):
-+    #         self.config = {'MEDIA_SERVER_BASE_URL': 'rtmp://test.server/app'}
-+    # current_app = MockApp() # Mock current_app for direct script execution test
-+
-#     logging.basicConfig(level=logging.INFO)
-#     service = MediaServerService()
-#     key = "test_stream_123"
-
-#     success, url, err = service.start_stream_on_server(key)
-#     if success:
-#         print(f"Mock stream started. URL: {url}")
-#     else:
-#         print(f"Mock stream start failed: {err}")
-
-#     status = service.get_stream_status_from_server(key)
-#     print(f"Mock stream status for {key}: {status}")
-
-#     active_key = "test_stream_active_mock"
-#     status_active = service.get_stream_status_from_server(active_key)
-#     print(f"Mock stream status for {active_key}: {status_active}")
-
-#     success, err = service.end_stream_on_server(key)
-#     if success:
-#         print(f"Mock stream ended for key: {key}")
-#     else:
-#         print(f"Mock stream end failed: {err}")
+# [This section has been cleaned up to remove problematic syntax]
+#
+# The following comments provide context on how this service might be used
+# within a Flask application.
 
 # To make current_app available for the __init__ method when this module is loaded,
 # it must be within a Flask application context or mocked.
 # For actual usage within Flask, current_app will be available if the service
 # is instantiated or its methods are called within a request context or app context.
 # The __init__ using current_app.config is fine for that.
-# The direct execution (__name__ == '__main__') part has been adjusted to reflect this.
-# The commented out main block is just for conceptual testing.
+
 # In a real Flask app, you might register this service with the app or use dependency injection.
 # For this project, we will likely instantiate it in the routes.py or import its instance.
 
-# A global instance could be created if configuration is static after app setup:
-# media_service = MediaServerService()
-# However, this means current_app must be available at import time, which is tricky.
-# Better to instantiate on demand or pass app/config.
-# For now, will instantiate in routes.py.
+# A global instance could be created if configuration is static after app setup,
+# but that can be tricky with current_app availability at import time.
+# Instantiating on demand or passing app/config is generally safer.
+
 # Consider if this service should be a singleton or instantiated per request/use.
 # Given its nature (external interaction), a singleton configured at app start might be suitable.
-# But for simplicity, let's try instantiating in the route functions first.
-# If that becomes repetitive, we can refactor to a shared instance later (e.g., on app object or g).
+# For simplicity, direct instantiation in route functions is a valid approach.
+# If instantiation becomes repetitive, refactor to a shared instance (e.g., on app object or g).
 
-# Adding a simple factory function for easier use might be an option too:
-# def get_media_service():
-#     if 'media_service' not in g:
-#         g.media_service = MediaServerService()
-#     return g.media_service
-# This would make it a per-request singleton.
-# For now, direct instantiation in the route.
-# The service methods primarily log, so multiple instances are not harmful.
-# The config access in __init__ is the main part needing current_app.
-# If MEDIA_SERVER_BASE_URL is fixed, it could be a global constant.
-# But using current_app.config is more flexible.
-# The logger also benefits from being named and potentially configured by the app.
-# Final decision: Instantiate in routes.
-# The logger is defined at module level, which is fine.
-# `logger = logging.getLogger(__name__)` uses the module's name.
-# `current_app.logger` could also be used if calls are within app context.
+# A factory function like get_media_service (using Flask's `g` object for per-request singleton)
+# is also a common pattern.
+
+# The service methods primarily log, so multiple instances are not inherently harmful.
+# The config access in __init__ is the main part needing `current_app`.
+# Using `current_app.config` is flexible.
+# The module-level logger `logging.getLogger(__name__)` is standard.
+# `current_app.logger` could also be used if calls are within an app context.
 # Stick with `logging.getLogger(__name__)` for service-specific logs.
-# The service's methods use `logger.info/error` which is fine.
 # The `__init__` using `current_app.config` implies instantiation must happen
-# when `current_app` is available.
-# This is true if instantiated inside a request context (e.g., in a route function).
-# Example: `media_service = MediaServerService()` inside `start_live_stream` route.
-# This is acceptable.
+# when `current_app` is available (e.g., inside a request context).

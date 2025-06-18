@@ -204,9 +204,12 @@ class VirtualGoodForm(FlaskForm):
         ('badge', _l('Badge')),
         ('emoji', _l('Emoji')),
         ('profile_frame', _l('Profile Frame')),
+        ('title', _l('Title/Flair')),
         ('other', _l('Other'))
     ], validators=[DataRequired()])
     image_url = StringField(_l('Image URL'), validators=[Optional(), URL(), Length(max=255)])
+    title_text = StringField(_l('Title Text (if type is Title/Flair)'), validators=[Optional(), Length(max=255)])
+    title_icon_url = StringField(_l('Title Icon URL (if type is Title/Flair)'), validators=[Optional(), URL(), Length(max=255)])
     is_active = BooleanField(_l('Is Active'), default=True)
     submit = SubmitField(_l('Save Virtual Good'))
 
