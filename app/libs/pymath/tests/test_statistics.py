@@ -1,5 +1,11 @@
 import unittest
-from app.libs.pymath.statistics import mean, median, mode, std_dev, pearson_correlation, simple_linear_regression, multiple_linear_regression, polynomial_regression
+import math # For math.exp, math.sqrt, math.pi, math.pow, math.factorial
+from app.libs.pymath.statistics import (
+    mean, median, mode, std_dev,
+    pearson_correlation, simple_linear_regression,
+    multiple_linear_regression, polynomial_regression,
+    binomial_pmf, poisson_pmf, normal_pdf
+)
 
 class TestMean(unittest.TestCase):
     def test_positive_integers(self):
@@ -386,3 +392,121 @@ class TestRegressionModels(unittest.TestCase):
     def test_poly_error_non_numeric_y(self):
         with self.assertRaisesRegex(TypeError, "Non-numeric data found in y_values"):
             polynomial_regression([1, 2], [1, 'b'], 1)
+
+class TestDistributionFunctions(unittest.TestCase):
+    # Test Methods for binomial_pmf
+    def test_binomial_pmf_known_values(self):
+        self.assertAlmostEqual(binomial_pmf(k=2, n=5, p=0.5), 0.3125)
+        self.assertAlmostEqual(binomial_pmf(k=1, n=3, p=0.25), 0.421875)
+        self.assertAlmostEqual(binomial_pmf(k=0, n=2, p=0.1), 0.81)
+        self.assertAlmostEqual(binomial_pmf(k=3, n=3, p=1.0/3.0), (1.0/27.0)) # (1/3)^3
+
+    def test_binomial_pmf_edge_p(self):
+        self.assertAlmostEqual(binomial_pmf(k=0, n=5, p=0.0), 1.0)
+        self.assertAlmostEqual(binomial_pmf(k=1, n=5, p=0.0), 0.0) # k > 0 and p=0
+        self.assertAlmostEqual(binomial_pmf(k=5, n=5, p=0.0), 0.0)
+        self.assertAlmostEqual(binomial_pmf(k=5, n=5, p=1.0), 1.0)
+        self.assertAlmostEqual(binomial_pmf(k=0, n=5, p=1.0), 0.0) # k < n and p=1
+        self.assertAlmostEqual(binomial_pmf(k=4, n=5, p=1.0), 0.0)
+
+    def test_binomial_pmf_edge_k(self):
+        self.assertAlmostEqual(binomial_pmf(k=0, n=10, p=0.3), math.pow(0.7, 10))
+        self.assertAlmostEqual(binomial_pmf(k=10, n=10, p=0.3), math.pow(0.3, 10))
+
+    def test_binomial_sum_to_one(self):
+        n=3
+        p=0.4
+        total_prob = sum(binomial_pmf(k, n, p) for k in range(n + 1))
+        self.assertAlmostEqual(total_prob, 1.0)
+
+    def test_binomial_type_errors(self):
+        with self.assertRaisesRegex(TypeError, "Number of successes 'k' must be an integer"):
+            binomial_pmf(k=2.5, n=5, p=0.5)
+        with self.assertRaisesRegex(TypeError, "Number of trials 'n' must be an integer"):
+            binomial_pmf(k=2, n=5.5, p=0.5)
+        with self.assertRaisesRegex(TypeError, "Probability 'p' must be a float"):
+            binomial_pmf(k=2, n=5, p="0.5") # p as string
+        with self.assertRaisesRegex(TypeError, "Probability 'p' must be a float"):
+             binomial_pmf(k=2, n=5, p=1) # p as int (strict float check)
+
+
+    def test_binomial_value_errors_p(self):
+        with self.assertRaisesRegex(ValueError, "Probability 'p' must be between 0.0 and 1.0"):
+            binomial_pmf(k=2, n=5, p=-0.1)
+        with self.assertRaisesRegex(ValueError, "Probability 'p' must be between 0.0 and 1.0"):
+            binomial_pmf(k=2, n=5, p=1.1)
+
+    def test_binomial_value_errors_n(self):
+         with self.assertRaisesRegex(ValueError, "Number of trials 'n' cannot be negative"):
+            binomial_pmf(k=2, n=-5, p=0.5)
+
+    def test_binomial_value_errors_k(self):
+        with self.assertRaisesRegex(ValueError, "Number of successes 'k' cannot be negative"):
+            binomial_pmf(k=-1, n=5, p=0.5)
+        with self.assertRaisesRegex(ValueError, "Number of successes 'k' .* cannot be greater than .* 'n'"):
+            binomial_pmf(k=6, n=5, p=0.5)
+        # Also check if _combinations error propagates, e.g. n becomes < k due to negative n
+        # This is covered by test_binomial_value_errors_n as _combinations would fail first if n is negative.
+
+    # Test Methods for poisson_pmf
+    def test_poisson_pmf_known_values(self):
+        self.assertAlmostEqual(poisson_pmf(k=2, lambda_val=1.0), (math.pow(1,2)*math.exp(-1))/math.factorial(2), places=7)
+        self.assertAlmostEqual(poisson_pmf(k=5, lambda_val=3.0), (math.pow(3,5)*math.exp(-3))/math.factorial(5), places=7)
+        self.assertAlmostEqual(poisson_pmf(k=0, lambda_val=1.5), math.exp(-1.5) / math.factorial(0), places=7)
+
+
+    def test_poisson_pmf_edge_lambda(self):
+        self.assertAlmostEqual(poisson_pmf(k=0, lambda_val=0.0), 1.0)
+        self.assertAlmostEqual(poisson_pmf(k=1, lambda_val=0.0), 0.0)
+        self.assertAlmostEqual(poisson_pmf(k=5, lambda_val=0.0), 0.0)
+
+
+    def test_poisson_pmf_edge_k_is_zero(self):
+        self.assertAlmostEqual(poisson_pmf(k=0, lambda_val=2.5), math.exp(-2.5))
+        self.assertAlmostEqual(poisson_pmf(k=0, lambda_val=1.0), math.exp(-1.0))
+
+
+    def test_poisson_type_errors(self):
+        with self.assertRaisesRegex(TypeError, "Number of occurrences 'k' must be an integer"):
+            poisson_pmf(k=2.5, lambda_val=1.0)
+        with self.assertRaisesRegex(TypeError, "Average rate 'lambda_val' must be a number"):
+            poisson_pmf(k=2, lambda_val="1.0")
+
+    def test_poisson_value_errors_k(self):
+        with self.assertRaisesRegex(ValueError, "Number of occurrences 'k' cannot be negative"):
+            poisson_pmf(k=-1, lambda_val=1.0)
+
+    def test_poisson_value_errors_lambda(self):
+        with self.assertRaisesRegex(ValueError, "Average rate 'lambda_val' cannot be negative"):
+            poisson_pmf(k=2, lambda_val=-1.0)
+
+    # Test Methods for normal_pdf
+    def test_normal_pdf_known_values(self):
+        # mu=0, sigma=1 (Standard Normal)
+        self.assertAlmostEqual(normal_pdf(x=0.0, mu=0.0, sigma=1.0), 1 / (1 * math.sqrt(2 * math.pi)), places=7)
+        self.assertAlmostEqual(normal_pdf(x=1.0, mu=0.0, sigma=1.0), (1 / (1 * math.sqrt(2 * math.pi))) * math.exp(-0.5), places=7)
+        self.assertAlmostEqual(normal_pdf(x=-1.0, mu=0.0, sigma=1.0), (1 / (1 * math.sqrt(2 * math.pi))) * math.exp(-0.5), places=7)
+
+        # mu=5, sigma=2
+        self.assertAlmostEqual(normal_pdf(x=5.0, mu=5.0, sigma=2.0), 1 / (2 * math.sqrt(2 * math.pi)), places=7)
+        # x = mu + sigma = 7
+        expected_val_mu_plus_sigma = (1 / (2 * math.sqrt(2 * math.pi))) * math.exp(-0.5)
+        self.assertAlmostEqual(normal_pdf(x=7.0, mu=5.0, sigma=2.0), expected_val_mu_plus_sigma, places=7)
+
+    def test_normal_pdf_symmetry(self):
+        self.assertAlmostEqual(normal_pdf(x=-1.0, mu=0.0, sigma=2.0), normal_pdf(x=1.0, mu=0.0, sigma=2.0), places=7)
+        self.assertAlmostEqual(normal_pdf(x=3.0, mu=5.0, sigma=3.0), normal_pdf(x=7.0, mu=5.0, sigma=3.0), places=7) # mu-2, mu+2 if sigma was 1. mu-2/3 sigma, mu+2/3 sigma
+
+    def test_normal_type_errors(self):
+        with self.assertRaisesRegex(TypeError, "Value 'x' must be a number"):
+            normal_pdf(x="0", mu=0.0, sigma=1.0)
+        with self.assertRaisesRegex(TypeError, "Mean 'mu' must be a number"):
+            normal_pdf(x=0.0, mu="0", sigma=1.0)
+        with self.assertRaisesRegex(TypeError, "Standard deviation 'sigma' must be a number"):
+            normal_pdf(x=0.0, mu=0.0, sigma="1")
+
+    def test_normal_value_errors_sigma(self):
+        with self.assertRaisesRegex(ValueError, "Standard deviation 'sigma' must be positive"):
+            normal_pdf(x=0.0, mu=0.0, sigma=0.0)
+        with self.assertRaisesRegex(ValueError, "Standard deviation 'sigma' must be positive"):
+            normal_pdf(x=0.0, mu=0.0, sigma=-1.0)

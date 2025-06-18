@@ -1,6 +1,252 @@
 import math
 from typing import List, Union, Tuple
 
+# --- Internal Helper Functions ---
+
+def _factorial(n: int) -> int:
+    """Calculates the factorial of a non-negative integer n.
+    Internal helper function.
+
+    Args:
+        n: A non-negative integer.
+
+    Returns:
+        The factorial of n (n!).
+
+    Raises:
+        TypeError: If n is not an integer.
+        ValueError: If n is negative.
+    """
+    if not isinstance(n, int):
+        # math.factorial would raise TypeError, but good to be explicit for non-int types if they bypass isinstance somehow
+        raise TypeError(f"Factorial input must be an integer. Got type {type(n)}.")
+    if n < 0:
+        # math.factorial would raise ValueError
+        raise ValueError("Factorial is not defined for negative numbers.")
+    return math.factorial(n)
+
+def _combinations(n: int, k: int) -> int:
+    """Calculates 'n choose k', the number of combinations of selecting k items
+    from a set of n items without regard to the order of selection.
+    Internal helper function.
+
+    Args:
+        n: The total number of items (non-negative integer).
+        k: The number of items to choose (non-negative integer, k <= n).
+
+    Returns:
+        The number of combinations C(n, k).
+
+    Raises:
+        TypeError: If n or k are not integers.
+        ValueError: If n is negative, or if k is negative or k > n.
+    """
+    if not isinstance(n, int) or not isinstance(k, int):
+        raise TypeError(f"Inputs n and k for combinations must be integers. Got n: {type(n)}, k: {type(k)}.")
+    if n < 0:
+        raise ValueError("Total number of items 'n' cannot be negative for combinations.")
+    if k < 0:
+        raise ValueError("Number of items to choose 'k' cannot be negative for combinations.")
+    if k > n:
+        raise ValueError("Number of items to choose 'k' cannot be greater than total items 'n'.")
+
+    # C(n, k) = n! / (k! * (n-k)!)
+    # Using our _factorial helper:
+    return _factorial(n) // (_factorial(k) * _factorial(n - k))
+
+# --- Public Statistical Functions ---
+
+def binomial_pmf(k: int, n: int, p: float) -> float:
+    """Calculates the Probability Mass Function (PMF) for the Binomial distribution.
+
+    This gives the probability of observing exactly k successes in n independent
+    Bernoulli trials, where p is the probability of success on a single trial.
+
+    Args:
+        k: The number of successes (non-negative integer, k <= n).
+        n: The number of trials (non-negative integer).
+        p: The probability of success on a single trial (float, 0 <= p <= 1).
+
+    Returns:
+        The probability P(X=k) for the Binomial distribution.
+
+    Raises:
+        TypeError: If k or n are not integers, or if p is not a float.
+        ValueError: If p is not between 0 and 1 (inclusive), if n is negative,
+                    or if k is negative or k > n.
+    """
+    # Input Validation
+    if not isinstance(k, int):
+        raise TypeError(f"Number of successes 'k' must be an integer. Got {type(k)}.")
+    if not isinstance(n, int):
+        raise TypeError(f"Number of trials 'n' must be an integer. Got {type(n)}.")
+    if not isinstance(p, float):
+        # Strict check for float type as per function signature.
+        raise TypeError(f"Probability 'p' must be a float. Got {type(p)}.")
+
+    if not (0.0 <= p <= 1.0):
+        raise ValueError(f"Probability 'p' must be between 0.0 and 1.0. Got {p}.")
+
+    # The _combinations function will validate:
+    #   - n >= 0 (via its own _factorial call)
+    #   - k >= 0
+    #   - k <= n
+    # We add explicit checks here for n < 0 and k < 0 for clearer error messages
+    # specific to binomial_pmf context before _combinations is even called.
+    # The k > n check is also good here to be explicit, though _combinations would catch it.
+    if n < 0:
+        raise ValueError(f"Number of trials 'n' cannot be negative. Got {n}.")
+    if k < 0: # This is also checked by _combinations, but an early clear message is good.
+        raise ValueError(f"Number of successes 'k' cannot be negative. Got {k}.")
+    if k > n: # This is also checked by _combinations.
+        raise ValueError(f"Number of successes 'k' ({k}) cannot be greater than the number of trials 'n' ({n}).")
+
+    # Calculate combinations C(n, k)
+    # _combinations handles n, k type checks and relative value checks (e.g. k <= n)
+    comb = _combinations(n, k) # This can raise ValueError or TypeError from _combinations
+
+    # Handle edge cases for p to avoid issues with math.pow(0.0, 0)
+    # math.pow(0.0, 0) is 1.0. math.pow(0.0, positive) is 0.0.
+    if p == 0.0:
+        return 1.0 if k == 0 else 0.0
+    if p == 1.0:
+        return 1.0 if k == n else 0.0
+
+    # Calculate p^k and (1-p)^(n-k)
+    term_p_k = math.pow(p, k)
+    term_1_minus_p_nk = math.pow(1.0 - p, n - k)
+
+    return float(comb) * term_p_k * term_1_minus_p_nk
+
+def poisson_pmf(k: int, lambda_val: float) -> float:
+    """Calculates the Probability Mass Function (PMF) for the Poisson distribution.
+
+    This gives the probability of observing exactly k events in a fixed interval
+    of time or space, given lambda_val (λ) is the average number of events in
+    that interval.
+
+    Args:
+        k: The number of occurrences of the event (non-negative integer).
+        lambda_val: The average rate of occurrences (λ, float, must be >= 0).
+                    While the type hint is float, integer lambda_val will be accepted and cast to float.
+
+    Returns:
+        The probability P(X=k) for the Poisson distribution.
+
+    Raises:
+        TypeError: If k is not an integer or lambda_val is not a number.
+        ValueError: If k is negative or lambda_val is negative.
+    """
+    # Input Validation
+    if not isinstance(k, int):
+        raise TypeError(f"Number of occurrences 'k' must be an integer. Got {type(k)}.")
+    if not isinstance(lambda_val, (int, float)): # Allow int lambda, will convert to float
+        raise TypeError(f"Average rate 'lambda_val' must be a number (int or float). Got {type(lambda_val)}.")
+
+    lambda_float = float(lambda_val) # Convert to float for calculations
+
+    if k < 0:
+        raise ValueError(f"Number of occurrences 'k' cannot be negative. Got {k}.")
+    if lambda_float < 0:
+        raise ValueError(f"Average rate 'lambda_val' cannot be negative. Got {lambda_float}.")
+
+    # Edge case: If lambda_val is 0
+    if lambda_float == 0.0:
+        return 1.0 if k == 0 else 0.0
+
+    # Calculate k! using the helper function
+    # _factorial will raise ValueError for k < 0, but we've already checked this.
+    k_factorial = _factorial(k) # _factorial returns int
+
+    # Calculate lambda_val^k * e^(-lambda_val)
+    # math.pow ensures float result. math.exp always returns float.
+    try:
+        term_lambda_k = math.pow(lambda_float, k)
+        term_exp_neg_lambda = math.exp(-lambda_float)
+    except OverflowError:
+        # If lambda_float^k or exp(-lambda_float) is too large/small to represent,
+        # the PMF is likely extremely close to 0 or involves numbers beyond float precision.
+        # For very large k and lambda, direct computation can be unstable.
+        # Returning 0.0 for overflow cases is a pragmatic approach if result is tiny.
+        # If term_lambda_k is huge and term_exp_neg_lambda is tiny, their product might be normal.
+        # However, if lambda_float^k itself overflows, it's problematic.
+        # A more robust implementation might use log-probabilities for stability.
+        # For this implementation, we'll let it raise OverflowError or return inf/0 if Python's math does.
+        # Or, if we catch it, we can decide. Let's assume for now that if intermediate terms overflow,
+        # the true probability is likely 0 or 1, or calculation is beyond standard float capacity.
+        # A common result of overflow in numerator terms when k! is also huge is that PMF approaches 0.
+        return 0.0 # Pragmatic choice for overflow in numerator terms
+
+    numerator = term_lambda_k * term_exp_neg_lambda
+
+    # PMF = numerator / k!
+    # k_factorial is int. Numerator is float. Result will be float.
+    # Since k_factorial comes from math.factorial (via _factorial), it's >= 1 for k>=0.
+    # No division by zero from k_factorial unless k is huge and _factorial overflows to a non-standard int (unlikely).
+    if k_factorial == 0: # Defensive, though math.factorial(non_negative_int) >= 1
+        # This would only happen if _factorial was modified to return 0 for huge numbers,
+        # which is not its current behavior.
+        raise ValueError("Factorial of k resulted in zero, which is unexpected for non-negative k.")
+
+    return numerator / float(k_factorial) # Ensure float division
+
+def normal_pdf(x: float, mu: float, sigma: float) -> float:
+    """Calculates the Probability Density Function (PDF) for the Normal (Gaussian) distribution.
+
+    Args:
+        x: The value at which to evaluate the PDF (float).
+           While type hint is float, integer x will be accepted and cast to float.
+        mu: The mean of the distribution (μ, float).
+            While type hint is float, integer mu will be accepted and cast to float.
+        sigma: The standard deviation of the distribution (σ, float, must be > 0).
+               While type hint is float, integer sigma will be accepted and cast to float.
+
+    Returns:
+        The value of the PDF at x for the given Normal distribution.
+
+    Raises:
+        TypeError: If x, mu, or sigma are not numbers (int or float).
+        ValueError: If sigma is not positive (sigma <= 0).
+    """
+    # Input Validation
+    if not isinstance(x, (int, float)):
+        raise TypeError(f"Value 'x' must be a number. Got {type(x)}.")
+    if not isinstance(mu, (int, float)):
+        raise TypeError(f"Mean 'mu' must be a number. Got {type(mu)}.")
+    if not isinstance(sigma, (int, float)):
+        raise TypeError(f"Standard deviation 'sigma' must be a number. Got {type(sigma)}.")
+
+    x_float, mu_float, sigma_float = float(x), float(mu), float(sigma)
+
+    if sigma_float <= 0:
+        raise ValueError(f"Standard deviation 'sigma' must be positive. Got {sigma_float}.")
+
+    # Formula: (1 / (sigma * sqrt(2 * pi))) * e^(-0.5 * ((x - mu) / sigma)^2)
+
+    try:
+        coefficient = 1.0 / (sigma_float * math.sqrt(2 * math.pi))
+        exponent_term = (x_float - mu_float) / sigma_float
+        exponent_numerator = -0.5 * math.pow(exponent_term, 2)
+        # More direct: exponent_numerator = -0.5 * ((x_float - mu_float) / sigma_float)**2
+    except OverflowError:
+        # This could happen if sigma_float is extremely small, making coefficient huge,
+        # or if (x_float - mu_float) / sigma_float is huge, making pow overflow.
+        # If these terms overflow, the final result is likely 0 (due to exp of large negative) or inf.
+        # A very large exponent_term leading to pow overflow would make exp(very_negative) -> 0
+        return 0.0
+
+
+    try:
+        pdf_value = coefficient * math.exp(exponent_numerator)
+    except OverflowError:
+        # If math.exp(exponent_numerator) results in overflow (e.g. exponent_numerator is too large positive, which is not possible here as it's -0.5 * square)
+        # or underflow (exponent_numerator is very large negative).
+        # exp of a large negative number correctly underflows to 0.0 in Python.
+        # This catch is more for extreme cases or if coefficient itself was problematic (e.g. sigma was near zero before validation).
+        pdf_value = 0.0 # Result is effectively zero if exp term underflows
+
+    return pdf_value
+
 def mean(data: List[Union[int, float]]):
   """
   Calculates the arithmetic mean of a list of numbers.

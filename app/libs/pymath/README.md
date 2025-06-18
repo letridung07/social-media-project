@@ -89,6 +89,41 @@ Provides a set of functions to perform common statistical calculations on numeri
         *   `ValueError`: If input lists are empty or have mismatched lengths, `degree` is less than 1, there are insufficient data points for the given `degree`, or if multicollinearity arises in the transformed polynomial features.
         *   `TypeError`: If `x_values` or `y_values` contain non-numeric data, or if `degree` is not an integer.
 
+*   **`binomial_pmf(k: int, n: int, p: float) -> float`**:
+    Calculates the Probability Mass Function (PMF) for the Binomial distribution. This gives the probability of observing exactly `k` successes in `n` independent Bernoulli trials, where `p` is the probability of success on a single trial.
+    *   **Parameters:**
+        *   `k (int)`: The number of successes (non-negative, `k <= n`).
+        *   `n (int)`: The number of trials (non-negative).
+        *   `p (float)`: The probability of success on a single trial (`0 <= p <= 1`).
+    *   **Returns:**
+        *   `float`: The probability P(X=k).
+    *   **Raises:**
+        *   `TypeError`: If `k` or `n` are not integers, or `p` is not a float.
+        *   `ValueError`: If `p` is outside [0, 1], `n` is negative, or `k` is negative or `k > n`.
+
+*   **`poisson_pmf(k: int, lambda_val: float) -> float`**:
+    Calculates the Probability Mass Function (PMF) for the Poisson distribution. This gives the probability of observing exactly `k` events in a fixed interval, given `lambda_val` (λ) as the average number of events in that interval.
+    *   **Parameters:**
+        *   `k (int)`: The number of occurrences of the event (non-negative).
+        *   `lambda_val (float)`: The average rate of occurrences (λ, must be >= 0). Accepts int, casts to float.
+    *   **Returns:**
+        *   `float`: The probability P(X=k).
+    *   **Raises:**
+        *   `TypeError`: If `k` is not an integer or `lambda_val` is not a number.
+        *   `ValueError`: If `k` is negative or `lambda_val` is negative.
+
+*   **`normal_pdf(x: float, mu: float, sigma: float) -> float`**:
+    Calculates the Probability Density Function (PDF) for the Normal (Gaussian) distribution at a given value `x`.
+    *   **Parameters:**
+        *   `x (float)`: The value at which to evaluate the PDF. Accepts int, casts to float.
+        *   `mu (float)`: The mean (μ) of the distribution. Accepts int, casts to float.
+        *   `sigma (float)`: The standard deviation (σ) of the distribution (must be > 0). Accepts int, casts to float.
+    *   **Returns:**
+        *   `float`: The value of the PDF at `x`.
+    *   **Raises:**
+        *   `TypeError`: If `x`, `mu`, or `sigma` are not numbers.
+        *   `ValueError`: If `sigma` is not positive (`sigma <= 0`).
+
 **How to Import and Examples:**
 
 Functions from the statistics module can be imported as follows:
@@ -97,7 +132,8 @@ Functions from the statistics module can be imported as follows:
 from app.libs.pymath.statistics import (
     mean, median, mode, std_dev,
     pearson_correlation, simple_linear_regression,
-    multiple_linear_regression, polynomial_regression
+    multiple_linear_regression, polynomial_regression,
+    binomial_pmf, poisson_pmf, normal_pdf
 )
 from typing import List, Union, Tuple # For type hints if needed in calling code
 
@@ -154,6 +190,27 @@ try:
         print(f"Polynomial Regression (deg {poly_degree}) Coefficients (intercept, b_x, b_x^2): {poly_coeffs}")
     except (ValueError, TypeError) as e_poly:
         print(f"Polynomial Regression Error: {e_poly}")
+
+    # Example for Binomial PMF
+    try:
+        prob_binom = binomial_pmf(k=2, n=5, p=0.5)
+        print(f"\nBinomial P(X=2; n=5, p=0.5): {prob_binom:.5f}") # Expected: 0.31250
+    except (ValueError, TypeError) as e_binom:
+        print(f"Binomial PMF Error: {e_binom}")
+
+    # Example for Poisson PMF
+    try:
+        prob_poisson = poisson_pmf(k=2, lambda_val=1.0)
+        print(f"Poisson P(X=2; lambda=1.0): {prob_poisson:.5f}") # Expected: 0.18394
+    except (ValueError, TypeError) as e_poisson:
+        print(f"Poisson PMF Error: {e_poisson}")
+
+    # Example for Normal PDF
+    try:
+        density_normal = normal_pdf(x=0.0, mu=0.0, sigma=1.0)
+        print(f"Normal PDF N(0,1) at x=0: {density_normal:.5f}") # Expected: 0.39894
+    except (ValueError, TypeError) as e_normal:
+        print(f"Normal PDF Error: {e_normal}")
 
 except ValueError as e:
     print(f"Calculation Error: {e}")
