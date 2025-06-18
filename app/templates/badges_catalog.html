@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}{{ _('Badge Catalog') }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <h1 class="mb-4 text-center">{{ _('Badge Catalog') }}</h1>
+            <p class="text-center text-muted">{{ _('Discover all the badges you can earn by participating in our community!') }}</p>
+        </div>
+    </div>
+
+    {% if all_badges %}
+        <div class="row mt-3">
+            {% for badge in all_badges %}
+                <div class="col-md-6 col-lg-4 mb-4 d-flex align-items-stretch">
+                    <div class="card h-100 w-100">
+                        <div class="card-body text-center d-flex flex-column">
+                            {% if badge.icon_url %}
+                                <img src="{{ url_for('static', filename=badge.icon_url.replace('static/', '', 1)) if badge.icon_url.startswith('static/') else badge.icon_url }}"
+                                     alt="{{ badge.name }}" class="img-fluid mb-3 mx-auto" style="max-height: 80px; max-width: 80px; display: block;"
+                                     onerror="this.onerror=null; this.src='{{ url_for('static', filename='badges/default_badge.png') }}';">
+                            {% else %}
+                                <div class="badge-placeholder-icon mb-3 mx-auto" style="font-size: 50px; line-height: 80px; width: 80px; height: 80px; background-color: #e9ecef; border-radius: 50%;">🏅</div>
+                            {% endif %}
+                            <h5 class="card-title mt-2">{{ badge.name }}</h5>
+                            <p class="card-text text-muted small flex-grow-1">{{ badge.description }}</p>
+                            {# The badge.description is intended to cover the criteria text for users. #}
+                            {# If a separate 'criteria' field with user-friendly text exists and is populated, it could be used here. #}
+                            {# Example: <p class="card-text"><em>{{ _('How to earn:') }} {{ badge.criteria }}</em></p> #}
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="alert alert-info text-center" role="alert">
+            <p class="lead mb-0">{{ _('No badges are currently available in the catalog. Check back soon!') }}</p>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

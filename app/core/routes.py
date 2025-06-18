@@ -14,8 +14,8 @@ from sqlalchemy.orm import joinedload # Import joinedload
 from werkzeug.utils import secure_filename
 from app import db, socketio, cache # Import cache
 from app.core.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm, FriendListForm, AddUserToFriendListForm, PRIVACY_CHOICES, ArticleForm, AudioPostForm, SubscriptionPlanForm, TOTPSetupForm, Verify2FAForm, Disable2FAForm, ConfirmPasswordAndTOTPForm # Added Disable2FAForm, ConfirmPasswordAndTOTPForm
-from app.core.models import User, Post, MediaItem, Reaction, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus, Mention, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE, FriendList, Article, AudioPost, SubscriptionPlan, UserSubscription, Bookmark # Like removed from import, Bookmark added
-from app.utils.helpers import save_picture, save_group_image, save_story_media, process_mentions, get_historical_engagement, get_top_performing_hashtags, get_top_performing_groups, save_media_file, slugify, save_audio_file, get_audio_duration, process_hashtags # Added process_hashtags
+from app.core.models import User, Post, MediaItem, Reaction, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus, Mention, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE, FriendList, Article, AudioPost, SubscriptionPlan, UserSubscription, Bookmark, UserPoints, ActivityLog # Added UserPoints, ActivityLog for points system
+from app.utils.helpers import save_picture, save_group_image, save_story_media, process_mentions, get_historical_engagement, get_top_performing_hashtags, get_top_performing_groups, save_media_file, slugify, save_audio_file, get_audio_duration, process_hashtags, award_points # Added award_points
 from app.utils.email import send_password_reset_email # Import email utility
 import pyotp
 import qrcode
@@ -412,6 +412,27 @@ def login():
                 return redirect(url_for('main.verify_2fa'))
             else:
                 login_user(user, remember=form.remember_me.data)
+
+                # Award points for daily login
+                today_utc = datetime.now(timezone.utc).date()
+                start_of_day_utc = datetime(today_utc.year, today_utc.month, today_utc.day, tzinfo=timezone.utc)
+                end_of_day_utc = start_of_day_utc + timedelta(days=1)
+
+                daily_login_exists = ActivityLog.query.filter(
+                    ActivityLog.user_id == user.id,
+                    ActivityLog.activity_type == 'daily_login',
+                    ActivityLog.timestamp >= start_of_day_utc,
+                    ActivityLog.timestamp < end_of_day_utc
+                ).first()
+
+                if not daily_login_exists:
+                    # Gamification: Award points for daily login
+                    award_points(user, 'daily_login', 5)
+                    # Potentially commit here if it's a standalone action,
+                    # or let it be committed with other session changes if any.
+                    # For daily login, committing immediately might be okay.
+                    db.session.commit()
+
                 next_page = request.args.get('next')
                 return redirect(next_page) if next_page else redirect(url_for('main.index'))
         else:
@@ -647,6 +668,24 @@ def edit_profile():
         current_user.profile_visibility = form.profile_visibility.data
         current_user.default_post_privacy = form.default_post_privacy.data
         current_user.default_story_privacy = form.default_story_privacy.data
+
+        # Award points for profile completion
+        # Check if already awarded
+        profile_completion_awarded = ActivityLog.query.filter_by(
+            user_id=current_user.id,
+            activity_type='complete_profile'
+        ).first()
+
+        if not profile_completion_awarded:
+            # Check conditions for profile completion
+            # Ensure profile_picture_url is not None before checking against default
+            has_bio = bool(current_user.bio and current_user.bio.strip())
+            has_custom_picture = bool(current_user.profile_picture_url and \
+                                      current_user.profile_picture_url != 'default_profile_pic.png')
+
+            if has_bio and has_custom_picture:
+                award_points(current_user, 'complete_profile', 25)
+                # The main commit below will save this.
 
         db.session.commit()
         # Invalidate cache for the profile page of the current user
@@ -955,6 +994,11 @@ def create_post():
 
         # Create notifications for mentions and group posts ONLY IF the post is immediately published
         if post.is_published:
+            # Gamification: Award points for creating a post (more for media posts)
+            points_for_post = 15 if media_items_to_add else 10
+            award_points(current_user, 'create_post', points_for_post, related_item=post)
+            # Note: award_points only adds to session, commit is handled below with other post data.
+
             if mentioned_users_in_post:
                 for tagged_user in mentioned_users_in_post:
                     if tagged_user.id != current_user.id:
@@ -1158,7 +1202,12 @@ def follow(username):
         return redirect(url_for('main.profile', username=username))
 
     current_user.follow(user)
-    db.session.commit()
+    # Gamification: Award points for following a user
+    award_points(current_user, 'follow_user', 1, related_item=user)
+    # Gamification: Award points to the user who gained a follower
+    award_points(user, 'receive_follower', 5, related_item=current_user)
+
+    db.session.commit() # Commits follow action and points/activity logs
     flash(f'You are now following {username}!', 'success')
 
     # Notification and event for follow
@@ -1204,10 +1253,16 @@ def add_comment(post_id):
         db.session.add(comment)
 
         # Process mentions before committing the comment
-        # The actual notification creation will be handled in a subsequent step/subtask
         mentioned_users_in_comment = process_mentions(text_content=comment.body, owner_object=comment, actor_user=current_user)
 
-        db.session.commit()
+        # Gamification: Award points to the commenter
+        award_points(current_user, 'create_comment', 5, related_item=comment)
+
+        # Gamification: Award points to the post author for receiving a comment (if not their own post)
+        if post.author.id != current_user.id:
+            award_points(post.author, 'receive_comment', 3, related_item=comment)
+
+        db.session.commit() # Commit comment, points, and activity logs
 
         # Create notifications for mentions in the comment
         if mentioned_users_in_comment:
@@ -1327,7 +1382,21 @@ def react_to_post(post_id, reaction_type):
         # New reaction
         new_reaction = Reaction(user_id=current_user.id, post_id=post.id, reaction_type=reaction_type)
         db.session.add(new_reaction)
-        db.session.commit()
+        # db.session.commit() # Commit will be done after potential points awarding and notifications
+
+        # Award points to the post author for receiving a new reaction
+        if post.author.id != current_user.id: # Don't award points if user reacts to their own post
+            points_for_reaction = 0
+            if reaction_type == 'like':
+                points_for_reaction = 2
+            else:
+                points_for_reaction = 3 # For other reactions like 'love', 'haha', etc.
+
+            action_name_for_reaction = f'receive_{reaction_type}_reaction'
+            # Gamification: Award points to post author for receiving a reaction (more for non-likes)
+            award_points(post.author, action_name_for_reaction, points_for_reaction, related_item=post)
+
+        db.session.commit() # Commit reaction and any points/activity logs
         flash(f'You reacted with "{reaction_type}" to the post!', 'success')
 
         # Notification for the post author (if not reacting to own post)
@@ -1339,7 +1408,7 @@ def react_to_post(post_id, reaction_type):
                 related_post_id=post.id
             )
             db.session.add(notification)
-            db.session.commit()
+            db.session.commit() # Commit notification separately or ensure it's part of a larger transaction
             socketio.emit('new_notification', {
                 'message': f'{current_user.username} reacted with "{reaction_type}" to your post.',
                 'type': f'reaction_{reaction_type}',
@@ -1715,6 +1784,8 @@ def create_event():
             organizer_id=current_user.id
         )
         db.session.add(event)
+        # Gamification: Award points for creating an event
+        award_points(current_user, 'create_event', 15, related_item=event)
         db.session.commit()
         flash('Event created successfully!', 'success')
         return redirect(url_for('main.view_event', event_id=event.id)) # Assuming view_event route exists
@@ -1759,6 +1830,9 @@ def join_event(event_id):
                            'event_name': event.name
                            },
                           room=str(event.organizer_id))
+
+        # Gamification: Award points for joining an event
+        award_points(current_user, 'join_event', 5, related_item=event)
 
         db.session.commit()
         flash(f'You are now attending {event.name}!', 'success')
@@ -1932,6 +2006,10 @@ def create_group():
             role='admin'
         )
         db.session.add(membership)
+
+        # Gamification: Award points for creating a group
+        award_points(current_user, 'create_group', 20, related_item=group)
+
         db.session.commit()
         flash('Group created successfully!', 'success')
         return redirect(url_for('main.view_group', group_id=group.id))
@@ -1998,7 +2076,11 @@ def join_group(group_id):
     else:
         membership = GroupMembership(user_id=current_user.id, group_id=group.id, role='member') # Default role
         db.session.add(membership)
-        db.session.commit() # Commit membership first
+
+        # Gamification: Award points for joining a group
+        award_points(current_user, 'join_group', 5, related_item=group)
+
+        db.session.commit() # Commit membership and points/activity log first
 
         # Notify group admins about the new member
         admins = User.query.join(GroupMembership).filter(
@@ -2161,6 +2243,11 @@ def create_story():
 
                 story = Story(**story_data) # is_published is passed here, Story.__init__ handles expires_at
                 db.session.add(story)
+
+                # Gamification: Award points for creating a story (if immediately published)
+                if is_published_value: # Only award points if story is immediately published
+                    award_points(current_user, 'create_story', 5, related_item=story)
+
                 db.session.commit()
 
                 if is_published_value:
@@ -2256,7 +2343,10 @@ def create_poll():
                 new_option = PollOption(poll_id=new_poll.id, option_text=option_text)
                 db.session.add(new_option)
 
-        db.session.commit() # This commits the poll and its options
+        # Gamification: Award points for creating a poll
+        award_points(current_user, 'create_poll', 10, related_item=new_poll)
+
+        db.session.commit() # This commits the poll, its options, and points/activity log
         flash('Poll created successfully!', 'success')
 
         # --- Notification Logic Start ---
@@ -2967,6 +3057,8 @@ def create_article():
 
         article = Article(title=title, body=body, author=current_user, slug=unique_slug)
         db.session.add(article)
+        # Gamification: Award points for creating an article
+        award_points(current_user, 'create_article', 25, related_item=article)
         db.session.commit()
         flash('Article published successfully!', 'success')
         return redirect(url_for('main.view_article', slug=article.slug))
@@ -3061,6 +3153,8 @@ def upload_audio():
                 duration=duration_seconds
             )
             db.session.add(audio_post)
+            # Gamification: Award points for uploading an audio post
+            award_points(current_user, 'upload_audio', 15, related_item=audio_post)
             db.session.commit()
             flash('Audio post uploaded successfully!', 'success')
             return redirect(url_for('main.view_audio_post', audio_id=audio_post.id))
@@ -4027,3 +4121,24 @@ def set_theme_preference():
     else:
         # This case should ideally not be hit due to @login_required
         return jsonify({'status': 'error', 'message': 'User not authenticated.'}), 401
+
+
+# -------------------- Leaderboard Route --------------------
+@main.route('/leaderboard')
+def leaderboard():
+    # Query top users by points. Using UserPoints.points directly.
+    # The result is a list of tuples: (User_object, points_value)
+    top_users_with_points = db.session.query(User, UserPoints.points) \
+        .join(UserPoints, User.id == UserPoints.user_id) \
+        .order_by(UserPoints.points.desc()) \
+        .limit(25) \
+        .all()
+
+    return render_template('leaderboard.html', title=_l('Leaderboard'), top_users_with_points=top_users_with_points)
+
+
+# -------------------- Badge Catalog Route --------------------
+@main.route('/badges')
+def badges_catalog():
+    all_badges = Badge.query.order_by(Badge.name).all()
+    return render_template('badges_catalog.html', title=_l('Badge Catalog'), all_badges=all_badges)

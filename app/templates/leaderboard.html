@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% from "_macros.html" import render_pagination %} {# Assuming pagination might be added later, or for consistency #}
+
+{% block title %}{{ _('Leaderboard') }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-10 offset-md-1">
+            <h1 class="mb-4 text-center">{{ _('Leaderboard') }}</h1>
+
+            {% if top_users_with_points %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col" class="text-center" style="width: 5%;">#</th>
+                                <th scope="col" style="width: 65%;">{{ _('User') }}</th>
+                                <th scope="col" class="text-end" style="width: 30%;">{{ _('Points') }}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for user_data in top_users_with_points %}
+                            {# user_data is a tuple (User_object, points_value) #}
+                            <tr>
+                                <td class="text-center fw-bold">{{ loop.index }}</td>
+                                <td>
+                                    <a href="{{ url_for('main.profile', username=user_data[0].username) }}" class="text-decoration-none text-dark d-flex align-items-center">
+                                        <img src="{{ url_for('static', filename='images/' + (user_data[0].profile_picture_url if user_data[0].profile_picture_url else 'default_profile_pic.png')) }}"
+                                             alt="{{ _('Profile picture of %(username)s', username=user_data[0].username) }}"
+                                             class="img-thumbnail rounded-circle me-2" style="width: 40px; height: 40px; object-fit: cover;"
+                                             onerror="this.onerror=null; this.src='{{ url_for('static', filename='images/default_profile_pic.png') }}';"
+                                             loading="lazy">
+                                        <span class="fw-medium">{{ user_data[0].username }}</span>
+                                    </a>
+                                </td>
+                                <td class="text-end fs-5">{{ user_data[1] }}</td> {# Access points directly from the tuple's second element #}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="alert alert-info text-center" role="alert">
+                    <p class="lead mb-0">{{ _('The leaderboard is currently empty. Start engaging to earn points and climb the ranks!') }}</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

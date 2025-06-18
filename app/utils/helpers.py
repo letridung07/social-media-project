@@ -25,8 +25,9 @@ except ImportError:
 # Imports for recommendation functions
 from sqlalchemy import func, desc, not_, and_, or_, distinct
 from app import db # Assuming db instance is available in app package
-from app.core.models import User, Post, Reaction, Comment, Hashtag, Group, GroupMembership, followers, Mention, HistoricalAnalytics, post_hashtags, Article, Event as AppEvent, UserSubscription, SubscriptionPlan # Added Article and AppEvent, replaced Like with Reaction
+from app.core.models import User, Post, Reaction, Comment, Hashtag, Group, GroupMembership, followers, Mention, HistoricalAnalytics, post_hashtags, Article, Event as AppEvent, UserSubscription, SubscriptionPlan, UserPoints, ActivityLog # Added UserPoints, ActivityLog
 from datetime import datetime, timedelta, timezone # Ensure timezone is imported
+from app.utils.gamification_utils import check_and_award_badges # Import for badge checking
 
 # Imports for iCalendar generation
 from icalendar import Calendar, Event as IcsEvent
@@ -563,6 +564,60 @@ def recommend_groups(user, limit=5):
 
 
 # Analytics Utility Functions
+
+def award_points(user, action_name, points, related_item=None):
+    """
+    Awards points to a user, creates an activity log, and checks for/awards new badges.
+
+    This function handles the core logic of point attribution:
+    1. Fetches or creates a `UserPoints` record for the specified user.
+    2. Increments the user's points.
+    3. Creates an `ActivityLog` entry detailing the action, points earned,
+       and optionally linking to a related item (e.g., a Post, Comment).
+    4. Calls `check_and_award_badges(user)` to evaluate if this action (or the new
+       point total) results in the user earning any new badges.
+
+    Important: This function adds new/updated objects (UserPoints, ActivityLog,
+    potentially new Badge associations via check_and_award_badges) to the
+    database session (`db.session.add()`). However, it does NOT commit the session.
+    The calling route or service is responsible for the final `db.session.commit()`
+    to ensure atomicity of operations.
+
+    Args:
+        user (User): The user object to award points to.
+        action_name (str): A string key identifying the action (e.g., 'create_post', 'daily_login').
+        points (int): The number of points to award.
+        related_item (db.Model, optional): A database model instance related to the
+                                           action (e.g., the Post created, the Comment made).
+                                           Defaults to None.
+    """
+    if not user or not user.is_authenticated: # Ensure user is valid and authenticated
+        return
+
+    # Get or create UserPoints
+    user_points = UserPoints.query.filter_by(user_id=user.id).first()
+    if not user_points:
+        user_points = UserPoints(user_id=user.id, points=0)
+        db.session.add(user_points)
+
+    user_points.points += points
+
+    # Create ActivityLog entry
+    activity_log = ActivityLog(
+        user_id=user.id,
+        activity_type=action_name, # Renamed from 'action' to 'activity_type' to match model
+        points_earned=points
+    )
+    if related_item:
+        activity_log.related_id = related_item.id
+        # Ensure __tablename__ or a similar attribute is used for type, or __class__.__name__
+        activity_log.related_item_type = related_item.__class__.__name__.lower()
+
+    db.session.add(activity_log)
+    # db.session.add(user_points) # user_points is already in session if fetched, or added if new
+
+    # After points are updated and activity logged, check for new badges
+    check_and_award_badges(user)
 
 def get_historical_engagement(user_id, time_period_str='7days', custom_start_date=None, custom_end_date=None):
     """

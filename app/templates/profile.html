@@ -68,6 +68,12 @@
                     {% endif %}
                     {# End Display Equipped Virtual Goods #}
 
+                    {# Display Total Points #}
+                    <div class="user-points mt-3">
+                        <h4>{{ _('Points:') }} {{ user.points.points if user.points else 0 }}</h4>
+                    </div>
+                    {# End Display Total Points #}
+
                 </div>
             </div>
         </div>
@@ -133,6 +139,41 @@
                 {% else %}
                     <p>{{ _("%(username)s has not uploaded any audio yet.", username=user.username) }}</p>
                 {% endif %}
+
+                <hr class="my-4"> {# Visual separator #}
+
+                {# Display Earned Badges #}
+                {% if user.badges %} {# Check if the collection itself is not None/empty first #}
+                    <h3 class="mt-3">{{ _('Badges Earned') }}</h3>
+                    {% if user.badges.all()|length > 0 %} {# If it's a dynamic relationship, .all() or check count #}
+                        <div class="row">
+                            {% for badge in user.badges.order_by(False) %} {# Assuming default order is fine for now. Add specific order if needed later by adjusting relationship or query in route #}
+                                <div class="col-md-6 col-lg-4 mb-3">
+                                    <div class="card h-100">
+                                        <div class="card-body text-center d-flex flex-column">
+                                            {% if badge.icon_url %}
+                                                <img src="{{ url_for('static', filename=badge.icon_url.replace('static/', '', 1)) if badge.icon_url.startswith('static/') else badge.icon_url }}"
+                                                     alt="{{ badge.name }}" class="img-fluid mb-2 mx-auto" style="max-height: 64px; max-width: 64px;"
+                                                     onerror="this.onerror=null; this.src='{{ url_for('static', filename='badges/default_badge.png') }}';">
+                                            {% else %}
+                                                <div class="badge-placeholder-icon mb-2 mx-auto" style="font-size: 40px;">🏅</div>
+                                            {% endif %}
+                                            <h5 class="card-title mt-2">{{ badge.name }}</h5>
+                                            <p class="card-text text-muted small flex-grow-1"><small>{{ badge.description }}</small></p>
+                                            {# Omitted earned_at display for simplicity as discussed #}
+                                        </div>
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                         <p>{{ _('No badges earned yet. Keep engaging to unlock them!') }}</p>
+                    {% endif %}
+                {% else %}
+                    <p>{{ _('No badges earned yet. Keep engaging to unlock them!') }}</p> {# Fallback if user.badges is None or empty #}
+                {% endif %}
+                {# End Display Earned Badges #}
+
             {% endif %}
         </div>
     </div>

@@ -28,6 +28,12 @@
                 <li class="nav-item">
                     <a class="nav-link" href="{{ url_for('main.trending_hashtags') }}">Trending</a>
                 </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('main.leaderboard') }}">{{ _('Leaderboard') }}</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('main.badges_catalog') }}">{{ _('Badge Catalog') }}</a>
+                </li>
                 {% if current_user.is_authenticated %}
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('main.profile', username=current_user.username) }}">My Profile</a>
