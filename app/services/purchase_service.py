@@ -1,5 +1,7 @@
+from typing import TYPE_CHECKING
 from app import db
-from app.core.models import User, VirtualGood, UserVirtualGood # Assuming User is needed for type hint, can be removed if not directly used in this func beyond type hint
+# User is now only imported for type hinting, VirtualGood and UserVirtualGood are used at runtime
+from app.core.models import VirtualGood, UserVirtualGood
 from sqlalchemy.exc import SQLAlchemyError
 from flask import current_app
 # datetime might still be needed if other functions use it, but timezone was for the local helper.
@@ -7,7 +9,10 @@ from flask import current_app
 # from datetime import datetime
 from app.utils.helpers import get_current_utc # Import the centralized helper
 
-def process_virtual_good_purchase(user: User, virtual_good: VirtualGood) -> dict:
+if TYPE_CHECKING:
+    from app.core.models import User # User for type hinting
+
+def process_virtual_good_purchase(user: 'User', virtual_good: VirtualGood) -> dict: # Use string literal for User hint
     """
     Processes the purchase of a virtual good for a user.
 
