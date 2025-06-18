@@ -246,3 +246,297 @@ def simple_linear_regression(data_x: List[Union[int, float]], data_y: List[Union
     y_intercept = mean_y - slope * mean_x
 
     return slope, y_intercept
+
+# --- Matrix Helper Functions ---
+def _matrix_transpose(matrix: List[List[float]]) -> List[List[float]]:
+    if not matrix or not matrix[0]:
+        raise ValueError("Input matrix cannot be empty for transpose.")
+    rows = len(matrix)
+    cols = len(matrix[0])
+    # Validate consistent row lengths
+    for r_idx, row_val in enumerate(matrix):
+        if len(row_val) != cols:
+            raise ValueError(f"Inconsistent row length at index {r_idx} for transpose. Expected {cols}, got {len(row_val)}.")
+
+    transpose = [[0.0] * rows for _ in range(cols)]
+    for i in range(rows):
+        for j in range(cols):
+            transpose[j][i] = matrix[i][j]
+    return transpose
+
+def _matrix_multiply(matrix_a: List[List[float]], matrix_b: List[List[float]]) -> List[List[float]]:
+    if not matrix_a or not matrix_a[0] or not matrix_b or not matrix_b[0]:
+        raise ValueError("Input matrices cannot be empty for multiplication.")
+    rows_a = len(matrix_a)
+    cols_a = len(matrix_a[0])
+    rows_b = len(matrix_b)
+    cols_b = len(matrix_b[0])
+
+    # Validate consistent row lengths for matrix_a
+    for r_idx, row_val in enumerate(matrix_a):
+        if len(row_val) != cols_a:
+            raise ValueError(f"Inconsistent row length in matrix_a at index {r_idx}. Expected {cols_a}, got {len(row_val)}.")
+    # Validate consistent row lengths for matrix_b
+    for r_idx, row_val in enumerate(matrix_b):
+        if len(row_val) != cols_b:
+            raise ValueError(f"Inconsistent row length in matrix_b at index {r_idx}. Expected {cols_b}, got {len(row_val)}.")
+
+    if cols_a != rows_b:
+        raise ValueError(f"Matrices are not compatible for multiplication. Cols A ({cols_a}) != Rows B ({rows_b}).")
+
+    result_matrix = [[0.0] * cols_b for _ in range(rows_a)]
+    for i in range(rows_a):
+        for j in range(cols_b):
+            sum_val = 0.0
+            for k in range(cols_a): # or rows_b
+                sum_val += matrix_a[i][k] * matrix_b[k][j]
+            result_matrix[i][j] = sum_val
+    return result_matrix
+
+# Helper function for solving linear systems using Gauss-Jordan elimination
+def _solve_linear_system(matrix_a: List[List[float]], vector_b: List[float]) -> List[float]:
+    """Solves a system of linear equations Ax = b using Gauss-Jordan elimination.
+
+    This is an internal helper function.
+
+    Args:
+        matrix_a: A list of lists representing the coefficient matrix A (must be square).
+        vector_b: A list representing the constant vector b.
+
+    Returns:
+        A list of floats representing the solution vector x.
+
+    Raises:
+        ValueError: If the matrix is not square, dimensions are incompatible,
+                    or if the matrix is singular or near-singular.
+    """
+    # Check dimensions and squareness
+    if not matrix_a or not matrix_a[0]:
+        raise ValueError("Input matrix 'matrix_a' cannot be empty.")
+    n = len(matrix_a)
+    if n != len(vector_b):
+        raise ValueError("Matrix 'matrix_a' and vector 'vector_b' must have compatible dimensions for solving Ax=b.")
+    for row_idx, r in enumerate(matrix_a):
+        if len(r) != n:
+            raise ValueError(f"Matrix 'matrix_a' must be square. Row {row_idx} has length {len(r)}, expected {n}.")
+
+    # Create augmented matrix (deep copy to avoid modifying original input lists)
+    # Each element of matrix_a and vector_b should already be float, or convertible.
+    # Forcing conversion to float for robustness within the augmented matrix.
+    aug_matrix = [[float(val) for val in row] + [float(vector_b[i])] for i, row in enumerate(matrix_a)]
+
+    # Forward elimination and reduction to row-echelon form (Gauss-Jordan)
+    for i in range(n):  # Iterate through columns (which will become pivot columns)
+        # Pivoting: Find the row with the largest absolute value in the current column i, from row i downwards
+        max_row_idx = i
+        for k in range(i + 1, n):
+            if abs(aug_matrix[k][i]) > abs(aug_matrix[max_row_idx][i]):
+                max_row_idx = k
+
+        # Swap current row (i) with the row found to have the max pivot element (max_row_idx)
+        aug_matrix[i], aug_matrix[max_row_idx] = aug_matrix[max_row_idx], aug_matrix[i]
+
+        # Check for singularity or near-singularity
+        pivot_val = aug_matrix[i][i]
+        if abs(pivot_val) < 1e-12: # Using a small epsilon for float comparison
+            # This check is crucial. If pivot is ~0, division by it will cause issues or NaN/inf.
+            raise ValueError("Matrix is singular or near-singular; cannot solve system uniquely.")
+
+        # Normalize the current pivot row: divide all elements in row i by the pivot value
+        # This makes the pivot element aug_matrix[i][i] equal to 1.
+        for j in range(i, n + 1): # Iterate from column i through the augmented part
+            aug_matrix[i][j] /= pivot_val
+
+        # Eliminate other rows: for all other rows k (where k != i),
+        # subtract a multiple of the pivot row (row i) from row k
+        # such that aug_matrix[k][i] becomes 0.
+        for k in range(n): # Iterate through all rows
+            if k != i: # Skip the pivot row itself
+                factor = aug_matrix[k][i] # This is the element we want to make zero
+                # For each element in row k, from column i to the end (augmented part)
+                for j in range(i, n + 1):
+                    aug_matrix[k][j] -= factor * aug_matrix[i][j]
+
+    # At this point, the left side of aug_matrix (A part) should be an identity matrix.
+    # The solution vector x is now in the last column of the augmented matrix.
+    solution = [aug_matrix[row_idx][n] for row_idx in range(n)]
+    return solution
+
+# --- Regression Functions ---
+def multiple_linear_regression(X_data: List[List[Union[int, float]]], y_data: List[Union[int, float]]) -> List[float]:
+    """Performs multiple linear regression.
+
+    Calculates the coefficients (beta values) for a linear model with one or more
+    independent variables (features). The model is of the form:
+    y = β₀ + β₁x₁ + β₂x₂ + ... + βₚxₚ
+
+    Args:
+        X_data: A list of lists, where each inner list represents an observation,
+                and each element in the inner list is a feature value.
+                Example: [[feature1_obs1, feature2_obs1], [feature1_obs2, feature2_obs2]]
+        y_data: A list of dependent variable values, corresponding to each observation.
+
+    Returns:
+        A list of float coefficients [β₀, β₁, β₂, ..., βₚ], where β₀ is the
+        intercept, and β₁, ..., βₚ are the coefficients for the features.
+
+    Raises:
+        ValueError: If input data is empty, dimensions are mismatched,
+                    number of observations is less than number of features + intercept,
+                    or if the (X^T X) matrix is singular (multicollinearity).
+        TypeError: If input data contains non-numeric values.
+    """
+    if not X_data or not y_data:
+        raise ValueError("Input data (X_data, y_data) cannot be empty.")
+
+    num_observations = len(X_data)
+    if num_observations != len(y_data):
+        raise ValueError("Number of observations in X_data must match length of y_data.")
+
+    if num_observations == 0: # Should be caught by the first check, but for clarity
+        raise ValueError("Input data cannot be empty.")
+
+    # Validate and convert X_data, determine num_features
+    num_features = 0
+    X_design_rows = []
+    # Validate and convert X_data, determine num_features
+    # Handle case for intercept-only model where X_data might be list of empty lists
+    if X_data and isinstance(X_data[0], list):
+        num_features = len(X_data[0])
+    else: # Should not happen if X_data is List[List[...]] but as a fallback
+        raise TypeError("X_data must be a list of lists (observations with features).")
+
+    X_design_rows = []
+    for i, x_obs in enumerate(X_data):
+        if len(x_obs) != num_features: # This now correctly checks consistency against first observation's feature count
+            raise ValueError(f"Inconsistent number of features in X_data. Observation {i} has {len(x_obs)} features, expected {num_features}.")
+
+        current_row = [1.0] # For intercept β₀
+        for val_idx, val in enumerate(x_obs):
+            if not isinstance(val, (int, float)):
+                raise TypeError(f"Non-numeric data found in X_data at observation {i}, feature index {val_idx}: {val}")
+            current_row.append(float(val))
+        X_design_rows.append(current_row)
+
+    # Validate and convert y_data
+    y_column_matrix_rows = []
+    for i, y_val in enumerate(y_data):
+        if not isinstance(y_val, (int, float)):
+            raise TypeError(f"Non-numeric data found in y_data at index {i}: {y_val}")
+        y_column_matrix_rows.append([float(y_val)])
+
+    # Number of parameters to estimate is num_features + 1 (for the intercept)
+    num_parameters = num_features + 1
+    if num_observations < num_parameters:
+        raise ValueError(f"Number of observations ({num_observations}) must be greater than or equal to "
+                         f"the number of parameters to estimate ({num_parameters}).")
+
+    X_design = X_design_rows
+    y_column_matrix = y_column_matrix_rows
+
+    # Calculate (X^T X) and (X^T y)
+    # X_transpose: (num_parameters) x num_observations
+    # X_design: num_observations x (num_parameters)
+    # XTX: (num_parameters) x (num_parameters)
+    # y_column_matrix: num_observations x 1
+    # XTy_matrix: (num_parameters) x 1
+    try:
+        X_transpose = _matrix_transpose(X_design)
+        XTX = _matrix_multiply(X_transpose, X_design)
+        XTy_matrix = _matrix_multiply(X_transpose, y_column_matrix)
+    except ValueError as e: # Catch errors from matrix operations like inconsistent row lengths
+        raise ValueError(f"Error during matrix operations for regression: {e}")
+
+
+    # Flatten XTy_matrix to XTy_vector for _solve_linear_system
+    XTy_vector = [row[0] for row in XTy_matrix]
+
+    # Solve the normal equations: (X^T X) * beta_coefficients = (X^T y)
+    try:
+        beta_coefficients = _solve_linear_system(XTX, XTy_vector)
+    except ValueError as e:
+        # Catch singularity or other issues from solver
+        raise ValueError(f"Could not solve for regression coefficients. This might be due to multicollinearity (X^T X is singular). Original error: {e}")
+
+    return beta_coefficients
+
+def polynomial_regression(x_values: List[Union[int, float]], y_values: List[Union[int, float]], degree: int) -> List[float]:
+    """Performs polynomial regression.
+
+    Fits a polynomial model of a specified degree to the data (x_values, y_values).
+    The model is of the form: y = β₀ + β₁x + β₂x² + ... + β_degree * x^degree.
+
+    This function transforms the single independent variable x into multiple features
+    (x, x², ..., x^degree) and then applies multiple linear regression.
+
+    Args:
+        x_values: A list of independent variable values (numbers).
+        y_values: A list of dependent variable values (numbers).
+        degree: The degree of the polynomial to fit (integer, must be >= 1).
+
+    Returns:
+        A list of float coefficients [β₀, β₁, β₂, ..., β_degree], where β₀ is
+        the intercept, β₁ is the coefficient for x, β₂ for x², and so on.
+
+    Raises:
+        ValueError: If input lists are empty, have mismatched lengths, degree is less
+                    than 1, or if there are insufficient data points for the given
+                    degree (e.g., number of points < degree + 1).
+                    Also re-raises ValueErrors from multiple_linear_regression
+                    (e.g., due to multicollinearity in the transformed features).
+        TypeError: If x_values, y_values contain non-numeric data, or if degree
+                   is not an integer.
+    """
+    # Input Validation
+    if not isinstance(degree, int):
+        raise TypeError(f"Degree must be an integer, got {type(degree)}.")
+    if degree < 1:
+        raise ValueError(f"Degree must be at least 1, got {degree}.")
+    if not x_values or not y_values:
+        raise ValueError("Input lists 'x_values' and 'y_values' cannot be empty.")
+    if len(x_values) != len(y_values):
+        raise ValueError("Input lists 'x_values' and 'y_values' must have the same length.")
+
+    # Convert x_values to float and validate type early
+    x_floats = []
+    for i, x_val in enumerate(x_values):
+        if not isinstance(x_val, (int, float)):
+            raise TypeError(f"Non-numeric data found in x_values at index {i}: {x_val}")
+        x_floats.append(float(x_val))
+
+    # y_values will be validated by multiple_linear_regression, but good to check type here too for consistency
+    # and to ensure they are converted to float if they are integers, as MLR expects List[List[float]] for X
+    # and List[float] for y (though it handles Union[int, float] for y_data input).
+    y_floats = []
+    for i, y_val in enumerate(y_values):
+        if not isinstance(y_val, (int, float)):
+            raise TypeError(f"Non-numeric data found in y_values at index {i}: {y_val}")
+        y_floats.append(float(y_val))
+
+    num_observations = len(x_values)
+    # Number of parameters to estimate = degree (for x, x^2...x^degree) + 1 (for intercept)
+    num_parameters = degree + 1
+    if num_observations < num_parameters:
+        raise ValueError(
+            f"Insufficient data points ({num_observations}) for the given polynomial degree ({degree}). "
+            f"Need at least {num_parameters} points."
+        )
+
+    # Feature Engineering: Transform x_values into polynomial features
+    # X_poly_features will be [[x1, x1^2, ..., x1^degree], [x2, x2^2, ..., x2^degree], ...]
+    X_poly_features = []
+    for x_val_float in x_floats:
+        record = [x_val_float**d for d in range(1, degree + 1)]
+        X_poly_features.append(record)
+
+    # Call multiple_linear_regression
+    # The multiple_linear_regression function will add the intercept term.
+    # It expects X_data as list of lists of features, and y_data as a list.
+    try:
+        # Pass y_floats to ensure consistent float types for MLR
+        coefficients = multiple_linear_regression(X_poly_features, y_floats)
+    except ValueError as e:
+        # Re-raise with potentially more context or just let it propagate
+        raise ValueError(f"Error during multiple linear regression for polynomial fitting: {e}")
+
+    return coefficients

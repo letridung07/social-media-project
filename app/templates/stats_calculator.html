@@ -19,6 +19,11 @@
                     <textarea class="form-control" id="numbers_input_y" name="numbers_input_y" rows="3" placeholder="e.g., 2, 4, 5, 4, 6.1">{{ numbers_input_y_raw or '' }}</textarea>
                     <small class="form-text text-muted">Enter comma-separated numbers. Must be the same length as List X if provided.</small>
                 </div>
+                <div class="form-group mb-3">
+                    <label for="polynomial_degree" class="form-label">Polynomial Degree (for X vs Y regression):</label>
+                    <input type="number" class="form-control" id="polynomial_degree" name="polynomial_degree" min="1" value="{{ polynomial_degree_raw or '' }}" placeholder="e.g., 2">
+                    <small class="form-text text-muted">Optional. Enter a positive integer (e.g., 1, 2, 3) to perform polynomial regression using List X as 'x' and List Y as 'y'.</small>
+                </div>
                 <button type="submit" class="btn btn-primary">Calculate Statistics</button>
             </form>
         </div>
@@ -119,11 +124,46 @@
                     <tr>
                         <td colspan="2" style="padding-left: 2em;">Not calculated (e.g., due to error, mismatched lengths, or all X values being the same).</td>
                     </tr>
+                    {% endif %} {# End of simple linear regression block #}
+
+                    {# Polynomial Regression Results #}
+                    {% if results.poly_coeffs is not none and polynomial_degree_raw %}
+                    <tr>
+                        <th scope="row" colspan="2">Polynomial Regression (Degree: {{ polynomial_degree_raw }}) using X and Y:</th>
+                    </tr>
+                    <tr>
+                        <th scope="row" style="padding-left: 2em;">Coefficients (β₀, β₁, ...):</th>
+                        <td>
+                            {% for coeff in results.poly_coeffs %}
+                                {{ "%.4f"|format(coeff) }}{% if not loop.last %}, {% endif %}
+                            {% endfor %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row" style="padding-left: 2em;">Equation:</th>
+                        <td>
+                            y =
+                            {% for i in range(results.poly_coeffs|length) %}
+                                {{ "%.4f"|format(results.poly_coeffs[i]) }}
+                                {% if i == 1 %}x{% elif i > 1 %}x<sup>{{ i }}</sup>{% endif %}
+                                {% if not loop.last %} + {% endif %}
+                            {% endfor %}
+                        </td>
+                    </tr>
+                    {% elif polynomial_degree_raw and not results.poly_coeffs %}
+                    {# This condition might be hit if polynomial calculation failed but degree was entered #}
+                    <tr>
+                        <th scope="row" colspan="2">Polynomial Regression (Degree: {{ polynomial_degree_raw }}):</th>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="padding-left: 2em;">Not calculated (e.g., due to error, insufficient data for degree, or List Y not provided/valid).</td>
+                    </tr>
+                    {% endif %} {# End of polynomial regression block #}
                 </tbody>
             </table>
         </div>
     </div>
-    {% endif %}
+    {% endif %} {# End of numbers_input_y_raw and results.count_y block #}
 
 </div>
 {% endblock %}
