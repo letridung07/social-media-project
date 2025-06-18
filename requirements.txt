@@ -16,7 +16,7 @@ crashtest==0.4.1
 cryptography==41.0.7
 distlib==0.3.9
 distro==1.9.0
-distro-info==1.7+build1
+distro-info==1.0
 dnspython==2.7.0
 dulwich==0.22.8
 email_validator==2.2.0
@@ -31,7 +31,6 @@ Flask-Login==0.6.3
 Flask-SocketIO==5.3.6
 Flask-Migrate
 greenlet==3.2.3
-gyp==0.1
 h11==0.16.0
 httpcore==1.0.9
 httplib2==0.20.4
@@ -73,7 +72,6 @@ pytest==8.3.5
 pytest-cov==6.1.1
 pytest-json-report==1.5.0
 pytest-metadata==3.1.1
-python-apt==2.7.7+ubuntu4
 RapidFuzz==3.13.0
 requests==2.32.3
 requests-toolbelt==1.0.0
@@ -89,7 +87,6 @@ tornado==6.4.2
 tox==4.25.0
 trove-classifiers==2025.5.1.12
 typing_extensions==4.13.2
-unattended-upgrades==0.1
 urllib3==2.4.0
 virtualenv==20.31.1
 wadllib==1.3.6

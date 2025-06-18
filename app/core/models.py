@@ -100,6 +100,26 @@ class FriendList(db.Model):
     def __repr__(self):
         return f'<FriendList {self.name} owned by User ID {self.user_id}>'
 
+# Association table for User and Badge (many-to-many)
+# This must be defined before the User model that references it.
+user_badge_association = db.Table('user_badge',
+    db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
+    db.Column('badge_id', db.Integer, db.ForeignKey('badge.id'), primary_key=True),
+    db.Column('earned_at', db.DateTime, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+)
+
+class Badge(db.Model):
+    __tablename__ = 'badge'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False, unique=True)
+    description = db.Column(db.Text, nullable=True)
+    icon_url = db.Column(db.String(255), nullable=True)
+    criteria = db.Column(db.Text, nullable=True) # How to earn the badge (descriptive)
+    criteria_key = db.Column(db.String(50), nullable=True, unique=True) # Key for programmatic checking
+
+    def __repr__(self):
+        return f'<Badge {self.name}>'
+
 class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(64), index=True, unique=True, nullable=False)
@@ -134,6 +154,15 @@ class User(db.Model, UserMixin):
     articles = db.relationship('Article', backref='author', lazy='dynamic', cascade='all, delete-orphan') # New relationship for Articles
     audio_posts = db.relationship('AudioPost', backref='uploader', lazy='dynamic', cascade='all, delete-orphan') # New relationship for AudioPosts
     bookmarks = db.relationship('Bookmark', backref='user', lazy='dynamic', cascade='all, delete-orphan')
+    # Gamification relationships
+    # User.points will access UserPoints.points_data via this relationship.
+    # UserPoints.user_profile is the backref to User from UserPoints.
+    points = db.relationship('UserPoints', backref='user_profile', uselist=False, cascade='all, delete-orphan')
+    badges = db.relationship('Badge', secondary=user_badge_association, lazy='dynamic',
+                             backref=db.backref('users_earning_badge', lazy='dynamic')) # users_earning_badge links Badge back to User
+    # User.activity_logs will access ActivityLog.activity_logs_data via this relationship.
+    # ActivityLog.user_activity is the backref to User from ActivityLog.
+    activity_logs = db.relationship('ActivityLog', backref='user_activity', lazy='dynamic', cascade='all, delete-orphan')
     historical_analytics = db.relationship('HistoricalAnalytics', backref='user', lazy='dynamic')
     polls = db.relationship('Poll', backref='author', lazy='dynamic', foreign_keys='Poll.user_id')
     poll_votes = db.relationship('PollVote', backref='user', lazy='dynamic')
@@ -922,3 +951,49 @@ class AccessToken(db.Model):
 
     def __repr__(self):
         return f'<AccessToken {self.token} for User {self.user_id} to App {self.application_id}>'
+
+
+# Gamification Models
+class UserPoints(db.Model):
+    __tablename__ = 'user_points'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, unique=True)
+    points = db.Column(db.Integer, default=0, nullable=False)
+    last_updated = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow(), onupdate=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+
+    user = db.relationship('User', backref=db.backref('points_data_ref', uselist=False)) # Changed backref to avoid conflict
+
+    def __repr__(self):
+        return f'<UserPoints UserID:{self.user_id} Points:{self.points}>'
+
+class UserBadge(db.Model): # This model represents the earning of a badge by a user.
+    __tablename__ = 'user_badge_earned'
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), primary_key=True)
+    badge_id = db.Column(db.Integer, db.ForeignKey('badge.id'), primary_key=True)
+    earned_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+
+    # Relationships to User and Badge to easily access related objects
+    # The backref on User allows accessing all UserBadgeEarned records (and thus badges) for a user.
+    # The backref on Badge allows accessing all UserBadgeEarned records (and thus users) for a badge.
+    user = db.relationship("User", backref=db.backref("user_badges_earned_association", cascade="all, delete-orphan"))
+    badge = db.relationship("Badge", backref=db.backref("users_earned_badge_association", cascade="all, delete-orphan"))
+
+    def __repr__(self):
+        return f'<UserBadge UserID:{self.user_id} BadgeID:{self.badge_id} EarnedAt:{self.earned_at}>'
+
+
+class ActivityLog(db.Model):
+    __tablename__ = 'activity_log'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    activity_type = db.Column(db.String(50), nullable=False) # E.g., 'post_created', 'comment_added', 'badge_earned'
+    description = db.Column(db.Text, nullable=True) # E.g., "User created a new post: 'My First Post'"
+    points_earned = db.Column(db.Integer, default=0)
+    related_id = db.Column(db.Integer, nullable=True) # ID of related entity (e.g., post_id, comment_id, badge_id)
+    timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+
+    # The backref on User allows accessing all activity logs for a user.
+    user = db.relationship('User', backref=db.backref('activity_logs_data_ref', lazy='dynamic')) # Changed backref to avoid conflict
+
+    def __repr__(self):
+        return f'<ActivityLog UserID:{self.user_id} Type:{self.activity_type}>'

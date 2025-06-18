@@ -1,23 +1,42 @@
 import logging
 from logging.config import fileConfig
+import os # Retain this import as it's used by ini_path later
 
+from flask import Flask # Added Flask
+from config import Config # Added Config
 from flask import current_app
 
 from alembic import context
 
 # Ensure models are imported before metadata is accessed.
-from app import models  # noqa
+from app.core import models  # noqa
 # Import the db object directly from the app package
 from app import db as application_db # noqa
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
+
+# Create a minimal Flask app for context to get DB URI
+# This ensures that any environment variables or complex setup in Config are respected
+flask_app = Flask(__name__)
+flask_app.config.from_object(Config)
+db_url = flask_app.config['SQLALCHEMY_DATABASE_URI']
+
 config = context.config
+
+# Set database URL in Alembic config BEFORE fileConfig is called if it relies on it,
+# or ensure fileConfig doesn't need the db url.
+# For safety, we set it here.
+config.set_main_option('sqlalchemy.url', db_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
-fileConfig(config.config_file_name)
+# Assuming alembic.ini is in the directory above 'migrations/'
+import os # Add import os here
+ini_path = os.path.join(os.path.dirname(__file__), '..', 'alembic.ini')
+fileConfig(ini_path)
 logger = logging.getLogger('alembic.env')
+
 
 
 def get_engine():
@@ -41,7 +60,7 @@ def get_engine_url():
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
-config.set_main_option('sqlalchemy.url', get_engine_url())
+# config.set_main_option('sqlalchemy.url', get_engine_url()) # Replaced by setting db_url above
 # target_db is still used by get_engine indirectly via current_app, so keep it or adjust get_engine.
 # For now, get_metadata will use application_db.metadata directly.
 target_db = current_app.extensions['migrate'].db
@@ -95,7 +114,7 @@ def run_migrations_online():
     if conf_args.get("process_revision_directives") is None:
         conf_args["process_revision_directives"] = process_revision_directives
 
-    connectable = get_engine()
+    connectable = application_db.engine # Changed from get_engine()
 
     with connectable.connect() as connection:
         context.configure(
