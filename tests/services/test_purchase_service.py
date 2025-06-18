@@ -129,5 +129,30 @@ class PurchaseServiceTestCase(unittest.TestCase):
         uvg_from_db = UserVirtualGood.query.get(result["user_virtual_good"].id)
         self.assertIsNotNone(uvg_from_db)
 
+    def test_purchase_non_title_good_already_owned(self):
+        """Test purchasing a non-title good that is already owned."""
+        # self.badge_active is an active, non-title good.
+        # First, ensure user1 owns it.
+        owned_badge_uvg = UserVirtualGood(user_id=self.user1.id, virtual_good_id=self.badge_active.id, quantity=1)
+        db.session.add(owned_badge_uvg)
+        db.session.commit()
+        self.assertIsNotNone(owned_badge_uvg.id)
+
+        # Attempt to "purchase" it again
+        result = process_virtual_good_purchase(user=self.user1, virtual_good=self.badge_active)
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status_key"], "already_owned_generic")
+        self.assertIn("You already have", result["message"])
+        self.assertEqual(result["user_virtual_good"].id, owned_badge_uvg.id)
+
+        # Verify the quantity hasn't changed and no new entry was made
+        uvg_count = UserVirtualGood.query.filter_by(user_id=self.user1.id, virtual_good_id=self.badge_active.id).count()
+        self.assertEqual(uvg_count, 1)
+
+        uvg_from_db = UserVirtualGood.query.get(owned_badge_uvg.id)
+        self.assertEqual(uvg_from_db.quantity, 1)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

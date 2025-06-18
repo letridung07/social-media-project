@@ -2,14 +2,10 @@ from app import db
 from app.core.models import User, VirtualGood, UserVirtualGood # Assuming User is needed for type hint, can be removed if not directly used in this func beyond type hint
 from sqlalchemy.exc import SQLAlchemyError
 from flask import current_app
-from datetime import datetime, timezone # For purchase_date
-
-def get_current_utc():
-    """Returns the current datetime in UTC with timezone info."""
-    # This is a simplified version. Ideally, this would be imported from app.utils.helpers
-    # but for this subtask, defining it locally to avoid import issues if helpers.py is complex.
-    # In a real scenario, ensure this is consistent with the one in helpers.py or import it.
-    return datetime.now(timezone.utc)
+# datetime might still be needed if other functions use it, but timezone was for the local helper.
+# For now, let's assume it's not needed by other functions in this file. If it is, it can be re-added.
+# from datetime import datetime
+from app.utils.helpers import get_current_utc # Import the centralized helper
 
 def process_virtual_good_purchase(user: User, virtual_good: VirtualGood) -> dict:
     """

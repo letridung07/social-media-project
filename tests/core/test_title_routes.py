@@ -33,9 +33,20 @@ class TitleRoutesTestCase(unittest.TestCase):
         # Create VirtualGoods (titles and other types)
         self.title_vg1 = VirtualGood(name="Hero Of The Day", type="title", title_text="Hero Of The Day", price=0, currency="POINTS", is_active=True)
         self.title_vg2 = VirtualGood(name="Community Helper", type="title", title_text="Community Helper", title_icon_url="static/icons/helper.png", price=0, currency="POINTS", is_active=True)
+        self.title_inactive = VirtualGood(
+            name="Inactive Title",
+            description="This title cannot be purchased.",
+            price=0.99,
+            currency="USD", # Example currency
+            type="title",
+            image_url="static/images/inactive_title.png", # Example
+            title_text="The Inactive",
+            title_icon_url="static/icons/inactive.png", # Example
+            is_active=False
+        )
         self.other_vg1 = VirtualGood(name="Cool Badge", type="badge", price=10, currency="POINTS", is_active=True)
 
-        db.session.add_all([self.title_vg1, self.title_vg2, self.other_vg1])
+        db.session.add_all([self.title_vg1, self.title_vg2, self.title_inactive, self.other_vg1])
         db.session.commit()
 
         # Create UserVirtualGood entries for user1 (owned titles)
