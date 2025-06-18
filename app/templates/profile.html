@@ -14,7 +14,7 @@
                             <span class="user-active-title ml-2" style="font-size: 0.7em; color: #6c757d; vertical-align: middle;">
                                 {% if user.active_title.virtual_good.title_icon_url %}
                                     <img src="{{ user.active_title.virtual_good.title_icon_url if user.active_title.virtual_good.title_icon_url.startswith('http') else url_for('static', filename=user.active_title.virtual_good.title_icon_url) }}"
-                                         alt="Title Icon" class="img-fluid" style="max-height: 20px; max-width: 20px; vertical-align: middle; margin-right: 3px;">
+                                         alt="{{ (user.active_title.virtual_good.title_text or user.active_title.virtual_good.name) ~ ' icon' }}" class="img-fluid" style="max-height: 20px; max-width: 20px; vertical-align: middle; margin-right: 3px;">
                                 {% endif %}
                                 {{ user.active_title.virtual_good.title_text or user.active_title.virtual_good.name }}
                             </span>

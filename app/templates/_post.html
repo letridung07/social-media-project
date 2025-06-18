@@ -23,7 +23,7 @@
                     <span class="user-active-title ml-1" style="font-size: 0.65em; color: #6c757d; vertical-align: middle; font-weight: normal;">
                         {% if post.author.active_title.virtual_good.title_icon_url %}
                             <img src="{{ post.author.active_title.virtual_good.title_icon_url if post.author.active_title.virtual_good.title_icon_url.startswith('http') else url_for('static', filename=post.author.active_title.virtual_good.title_icon_url) }}"
-                                 alt="Title Icon" class="img-fluid" style="max-height: 16px; max-width: 16px; vertical-align: middle; margin-right: 2px;">
+                                 alt="{{ (post.author.active_title.virtual_good.title_text or post.author.active_title.virtual_good.name) ~ ' icon' }}" class="img-fluid" style="max-height: 16px; max-width: 16px; vertical-align: middle; margin-right: 2px;">
                         {% endif %}
                         {{ post.author.active_title.virtual_good.title_text or post.author.active_title.virtual_good.name }}
                     </span>

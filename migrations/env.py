@@ -114,6 +114,9 @@ def run_migrations_online():
     if conf_args.get("process_revision_directives") is None:
         conf_args["process_revision_directives"] = process_revision_directives
 
+    # Ensure compare_type is True to detect column type changes like String length
+    conf_args['compare_type'] = True
+
     connectable = application_db.engine # Changed from get_engine()
 
     with connectable.connect() as connection:
