@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+
+{% block app_content %}
+<div class="container mt-4">
+    <h1>Statistics Calculator</h1>
+    <p class="lead">Enter comma-separated numbers below to calculate mean, median, mode, and standard deviation.</p>
+
+    <div class="card">
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('main.stats_calculator') }}">
+                {{ form.hidden_tag() if form and form.hidden_tag }} {# Include CSRF token if forms are configured that way #}
+                <div class="form-group mb-3">
+                    <label for="numbers_input_x" class="form-label">Numbers List X:</label>
+                    <textarea class="form-control" id="numbers_input_x" name="numbers_input_x" rows="3" placeholder="e.g., 1, 2, 3.5, 4, 5, 5" required>{{ numbers_input_x_raw or '' }}</textarea>
+                    <small class="form-text text-muted">Enter comma-separated numbers for List X (required for all calculations).</small>
+                </div>
+                <div class="form-group mb-3">
+                    <label for="numbers_input_y" class="form-label">Numbers List Y (optional, for correlation/regression):</label>
+                    <textarea class="form-control" id="numbers_input_y" name="numbers_input_y" rows="3" placeholder="e.g., 2, 4, 5, 4, 6.1">{{ numbers_input_y_raw or '' }}</textarea>
+                    <small class="form-text text-muted">Enter comma-separated numbers. Must be the same length as List X if provided.</small>
+                </div>
+                <div class="form-group mb-3">
+                    <label for="polynomial_degree" class="form-label">Polynomial Degree (for X vs Y regression):</label>
+                    <input type="number" class="form-control" id="polynomial_degree" name="polynomial_degree" min="1" value="{{ polynomial_degree_raw or '' }}" placeholder="e.g., 2">
+                    <small class="form-text text-muted">Optional. Enter a positive integer (e.g., 1, 2, 3) to perform polynomial regression using List X as 'x' and List Y as 'y'.</small>
+                </div>
+                <button type="submit" class="btn btn-primary">Calculate Statistics</button>
+            </form>
+        </div>
+    </div>
+
+    {% if error_message %}
+    <div class="alert alert-danger mt-4" role="alert">
+        <strong>Error:</strong> {{ error_message }}
+    </div>
+    {% endif %}
+
+    {% if results %}
+    <div class="card mt-4">
+        <div class="card-header">
+            Results for List X
+        </div>
+        <div class="card-body">
+            <p><strong>Original Input (List X):</strong> {{ numbers_input_x_raw }}</p>
+            <p><strong>Count of Numbers (List X):</strong> {{ results.count_x }}</p>
+            <hr>
+            <table class="table table-striped">
+                <tbody>
+                    <tr>
+                        <th scope="row">Mean (List X):</th>
+                        <td>{{ "%.4f" | format(results.mean) if results.mean is not none else 'N/A' }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Median (List X):</th>
+                        <td>{{ "%.4f" | format(results.median) if results.median is not none else 'N/A' }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Mode(s) (List X):</th>
+                        <td>
+                            {% if results.mode is not none %}
+                                {% if results.mode %}
+                                    {{ results.mode | join(', ') }}
+                                {% else %}
+                                    No distinct mode
+                                {% endif %}
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Standard Deviation (List X):</th>
+                        <td>{{ "%.4f" | format(results.std_dev) if results.std_dev is not none else 'N/A' }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {# Display results for List Y and Advanced Statistics if Y was provided #}
+    {% if numbers_input_y_raw.strip() and results.count_y %}
+    <div class="card mt-4">
+        <div class="card-header">
+            Results for List Y and Advanced Statistics
+        </div>
+        <div class="card-body">
+            <p><strong>Original Input (List Y):</strong> {{ numbers_input_y_raw }}</p>
+            <p><strong>Count of Numbers (List Y):</strong> {{ results.count_y }}</p>
+            <hr>
+            <table class="table table-striped">
+                <tbody>
+                    {% if results.correlation is not none %}
+                    <tr>
+                        <th scope="row">Pearson Correlation (X, Y):</th>
+                        <td>{{ "%.4f"|format(results.correlation) }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <th scope="row">Pearson Correlation (X, Y):</th>
+                        <td>Not calculated (e.g., due to error or mismatched lengths).</td>
+                    </tr>
+                    {% endif %}
+
+                    {% if results.slope is not none and results.intercept is not none %}
+                    <tr>
+                        <th scope="row" colspan="2">Simple Linear Regression (y = mx + b, using X and Y):</th>
+                    </tr>
+                    <tr>
+                        <th scope="row" style="padding-left: 2em;">Slope (m):</th>
+                        <td>{{ "%.4f"|format(results.slope) }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row" style="padding-left: 2em;">Y-Intercept (b):</th>
+                        <td>{{ "%.4f"|format(results.intercept) }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row" style="padding-left: 2em;">Equation:</th>
+                        <td>y = {{ "%.2f"|format(results.slope) }}x + {{ "%.2f"|format(results.intercept) }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <th scope="row" colspan="2">Simple Linear Regression (y = mx + b, using X and Y):</th>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="padding-left: 2em;">Not calculated (e.g., due to error, mismatched lengths, or all X values being the same).</td>
+                    </tr>
+                    {% endif %} {# End of simple linear regression block #}
+
+                    {# Polynomial Regression Results #}
+                    {% if results.poly_coeffs is not none and polynomial_degree_raw %}
+                    <tr>
+                        <th scope="row" colspan="2">Polynomial Regression (Degree: {{ polynomial_degree_raw }}) using X and Y:</th>
+                    </tr>
+                    <tr>
+                        <th scope="row" style="padding-left: 2em;">Coefficients (β₀, β₁, ...):</th>
+                        <td>
+                            {% for coeff in results.poly_coeffs %}
+                                {{ "%.4f"|format(coeff) }}{% if not loop.last %}, {% endif %}
+                            {% endfor %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row" style="padding-left: 2em;">Equation:</th>
+                        <td>
+                            y =
+                            {% for i in range(results.poly_coeffs|length) %}
+                                {{ "%.4f"|format(results.poly_coeffs[i]) }}
+                                {% if i == 1 %}x{% elif i > 1 %}x<sup>{{ i }}</sup>{% endif %}
+                                {% if not loop.last %} + {% endif %}
+                            {% endfor %}
+                        </td>
+                    </tr>
+                    {% elif polynomial_degree_raw and not results.poly_coeffs %}
+                    {# This condition might be hit if polynomial calculation failed but degree was entered #}
+                    <tr>
+                        <th scope="row" colspan="2">Polynomial Regression (Degree: {{ polynomial_degree_raw }}):</th>
+                    </tr>
+                    <tr>
+                        <td colspan="2" style="padding-left: 2em;">Not calculated (e.g., due to error, insufficient data for degree, or List Y not provided/valid).</td>
+                    </tr>
+                    {% endif %} {# End of polynomial regression block #}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %} {# End of numbers_input_y_raw and results.count_y block #}
+
+</div>
+{% endblock %}

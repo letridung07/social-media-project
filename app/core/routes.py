@@ -34,6 +34,9 @@ import stripe # For Stripe integration
 # Import for recommendations
 from app.utils.helpers import get_recommendations
 
+# Imports for pymath statistics
+from app.libs.pymath.statistics import mean, median, mode, std_dev, pearson_correlation, simple_linear_regression, polynomial_regression
+
 # Ensure these specific imports are present for set_theme_preference, though some might be redundant if already imported broadly.
 from flask import request, jsonify, current_app # request, jsonify, current_app
 from flask_login import current_user, login_required # current_user, login_required
@@ -4474,3 +4477,122 @@ def manage_titles():
         .all()
 
     return render_template('manage_titles.html', title='Manage Your Titles', owned_titles=owned_titles_uvg)
+
+
+@main.route('/pymath/stats_calculator', methods=['GET', 'POST'])
+def stats_calculator():
+    results = {} # Initialize as dict
+    error_message = None
+    numbers_input_x_raw = ""
+    numbers_input_y_raw = ""
+    polynomial_degree_raw = "" # For polynomial degree
+    data_x = None
+    data_y = None # To store parsed numbers for y
+
+
+    if request.method == 'POST':
+        numbers_input_x_raw = request.form.get('numbers_input_x', '')
+        numbers_input_y_raw = request.form.get('numbers_input_y', '')
+        polynomial_degree_raw = request.form.get('polynomial_degree', '')
+
+        if not numbers_input_x_raw.strip():
+            error_message = "Input for List X cannot be empty. Please enter some numbers."
+        else:
+            try:
+                # Parse data_x
+                numbers_str_list_x = numbers_input_x_raw.split(',')
+                data_x = []
+                for s in numbers_str_list_x:
+                    s_stripped = s.strip()
+                    if not s_stripped: continue
+                    num_float = float(s_stripped)
+                    data_x.append(int(num_float) if num_float.is_integer() else num_float)
+
+                if not data_x:
+                    error_message = "No valid numbers provided for List X."
+                else:
+                    results['mean'] = mean(data_x)
+                    results['median'] = median(data_x)
+                    results['mode'] = mode(data_x)
+                    results['std_dev'] = std_dev(data_x)
+                    results['count_x'] = len(data_x)
+                    results['correlation'] = None
+                    results['slope'] = None
+                    results['intercept'] = None
+                    results['poly_coeffs'] = None # Initialize for polynomial regression
+
+                    # Process data_y if provided (for correlation, simple linear regression, and polynomial regression)
+                    if numbers_input_y_raw.strip():
+                        numbers_str_list_y = numbers_input_y_raw.split(',')
+                        data_y = [] # Initialize data_y here
+                        for s in numbers_str_list_y:
+                            s_stripped = s.strip()
+                            if not s_stripped: continue
+                            num_float = float(s_stripped) # Can raise ValueError if s_stripped is not a number
+                            data_y.append(int(num_float) if num_float.is_integer() else num_float)
+
+                        if not data_y:
+                            flash("List Y was provided but contained no valid numbers. Correlation, Simple Linear Regression, and Polynomial Regression will not be calculated.", "warning")
+                        else:
+                            results['count_y'] = len(data_y)
+                            # Try Pearson Correlation and Simple Linear Regression
+                            try:
+                                results['correlation'] = pearson_correlation(data_x, data_y)
+                                slope, intercept = simple_linear_regression(data_x, data_y)
+                                results['slope'] = slope
+                                results['intercept'] = intercept
+                            except (ValueError, TypeError) as adv_e:
+                                flash(f"Error in Correlation/Simple Linear Regression: {str(adv_e)}", "danger")
+                                results['correlation'] = None
+                                results['slope'] = None
+                                results['intercept'] = None
+
+                            # Try Polynomial Regression if degree is provided and data_y is valid
+                            if polynomial_degree_raw.strip():
+                                try:
+                                    degree_int = int(polynomial_degree_raw)
+                                    if degree_int >= 1:
+                                        results['poly_coeffs'] = polynomial_regression(data_x, data_y, degree_int)
+                                    else:
+                                        flash("Polynomial degree must be an integer greater than or equal to 1.", "warning")
+                                        results['poly_coeffs'] = None
+                                except ValueError: # Handles non-integer degree
+                                    flash("Polynomial degree must be a valid integer.", "warning")
+                                    results['poly_coeffs'] = None
+                                except (TypeError, ValueError) as poly_e: # Catches errors from polynomial_regression
+                                    flash(f"Error in Polynomial Regression (Degree {polynomial_degree_raw}): {str(poly_e)}", "danger")
+                                    results['poly_coeffs'] = None
+                            # No else needed here, if degree_raw is empty, poly_coeffs remains None
+
+                    # If List Y is not provided, but polynomial degree is, it implies using List X as both x and y.
+                    # This is not standard for the current polynomial_regression which expects distinct x and y.
+                    # For now, polynomial regression strictly requires List Y.
+                    elif polynomial_degree_raw.strip() and not numbers_input_y_raw.strip():
+                         flash("List Y is required for Polynomial Regression.", "warning")
+                         results['poly_coeffs'] = None
+
+            except ValueError as ve: # Catches errors from parsing List X or basic stats functions
+                error_message = f"Calculation Error (List X): {str(ve)}"
+                data_x = None
+            except TypeError as te: # Catches non-numeric data errors from List X or basic stats
+                error_message = f"Input Error (List X): {str(te)}"
+
+
+            except ValueError as ve:
+                error_message = f"Calculation Error (List X): {str(ve)}"
+                data_x = None # Ensure data_x is None if parsing failed
+            except TypeError as te:
+                error_message = f"Input Error (List X): {str(te)}"
+                data_x = None # Ensure data_x is None if parsing failed
+            except Exception as e:
+                error_message = f"An unexpected error occurred: {str(e)}"
+                current_app.logger.error(f"Stats Calculator Error: {e} for input X '{numbers_input_x_raw}', Y '{numbers_input_y_raw}', Degree '{polynomial_degree_raw}'")
+                data_x = None
+
+    return render_template('stats_calculator.html',
+                           title='Statistics Calculator',
+                           results=results if data_x else None,
+                           error_message=error_message,
+                           numbers_input_x_raw=numbers_input_x_raw,
+                           numbers_input_y_raw=numbers_input_y_raw,
+                           polynomial_degree_raw=polynomial_degree_raw)
