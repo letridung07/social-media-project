@@ -54,6 +54,40 @@ def _combinations(n: int, k: int) -> int:
     # Using our _factorial helper:
     return _factorial(n) // (_factorial(k) * _factorial(n - k))
 
+def _sample_variance(sample: List[Union[int, float]]) -> float:
+    """Calculates the sample variance of a list of numbers.
+    Sample variance uses (n-1) in the denominator.
+    Internal helper function.
+
+    Args:
+        sample: A list of numbers (integers or floats). Must contain at least 2 elements.
+
+    Returns:
+        The sample variance as a float.
+
+    Raises:
+        TypeError: If the sample contains non-numeric data.
+        ValueError: If the sample contains fewer than 2 elements.
+    """
+    n = len(sample)
+    if n < 2:
+        raise ValueError("Sample must contain at least two elements to calculate sample variance.")
+
+    # Validate data types and convert to float
+    sample_floats = []
+    for x in sample:
+        if not isinstance(x, (int, float)):
+            raise TypeError(f"All elements in sample must be numbers. Found type {type(x)} for value '{x}'.")
+        sample_floats.append(float(x))
+
+    mean_val = mean(sample_floats) # Use existing mean function
+
+    sum_squared_deviations = 0.0
+    for x_float in sample_floats:
+        sum_squared_deviations += (x_float - mean_val)**2
+
+    return sum_squared_deviations / (n - 1)
+
 # --- Public Statistical Functions ---
 
 def binomial_pmf(k: int, n: int, p: float) -> float:
@@ -246,6 +280,129 @@ def normal_pdf(x: float, mu: float, sigma: float) -> float:
         pdf_value = 0.0 # Result is effectively zero if exp term underflows
 
     return pdf_value
+
+def two_sample_ttest_statistic(
+    sample1: List[Union[int, float]],
+    sample2: List[Union[int, float]],
+    equal_variances: bool = True
+) -> Tuple[float, float]:
+    """Calculates the t-statistic and degrees of freedom for a two-sample independent t-test.
+
+    Args:
+        sample1: A list of numbers representing the first sample. Must contain at least 2 elements.
+        sample2: A list of numbers representing the second sample. Must contain at least 2 elements.
+        equal_variances: If True (default), assumes equal population variances and performs
+                         Student's t-test. If False, performs Welch's t-test, which does
+                         not assume equal population variances.
+
+    Returns:
+        A tuple (t_statistic, degrees_of_freedom).
+        Returns (float('nan'), float('nan')) for t_statistic or df if the calculation
+        involves division by zero (e.g., zero standard error or zero denominator for Welch's df).
+
+    Raises:
+        TypeError: If samples contain non-numeric data or if equal_variances is not boolean.
+        ValueError: If samples contain fewer than 2 elements.
+    """
+    # Input Validation for types
+    if not isinstance(sample1, list) or not isinstance(sample2, list):
+        # This check is mostly for direct calls; if data comes from other internal processing,
+        # it might already be a list. However, good for robustness.
+        raise TypeError("Inputs sample1 and sample2 must be lists.")
+    if not isinstance(equal_variances, bool):
+        raise TypeError("Argument 'equal_variances' must be a boolean.")
+
+    # Length validation (n>=2 for _sample_variance)
+    n1 = len(sample1)
+    n2 = len(sample2)
+    if n1 < 2:
+        raise ValueError("Sample 1 must contain at least two elements.")
+    if n2 < 2:
+        raise ValueError("Sample 2 must contain at least two elements.")
+
+    # Calculate means and sample variances.
+    # These functions will raise TypeError for non-numeric elements within samples
+    # and ValueError if somehow length check was bypassed (e.g. n<2 for _sample_variance).
+    try:
+        mean1 = mean(sample1)
+        var1 = _sample_variance(sample1)
+
+        mean2 = mean(sample2)
+        var2 = _sample_variance(sample2)
+    except (TypeError, ValueError) as e:
+        # Re-raise to indicate error during pre-requisite calculations
+        raise type(e)(f"Error calculating mean or variance for samples: {e}")
+
+
+    t_stat: float
+    df: float
+
+    if equal_variances:
+        # Student's t-test (assumes equal variances)
+        df = float(n1 + n2 - 2) # Denominator n1+n2-2 is >= 2 because n1,n2 >=2.
+
+        # Pooled variance: sp_squared = ((n1 - 1) * var1 + (n2 - 1) * var2) / df
+        # (n1-1) and (n2-1) are >= 1. var1, var2 are >= 0.
+        pooled_variance_numerator = (n1 - 1) * var1 + (n2 - 1) * var2
+
+        if df == 0: # Should not happen given n1,n2 >= 2
+            sp_squared = float('nan') # Or handle as error, but df=0 is impossible here
+        else:
+            sp_squared = pooled_variance_numerator / df
+
+        # Standard error: sqrt(sp_squared * (1/n1 + 1/n2))
+        # (1/n1 + 1/n2) is > 0. sp_squared is >=0.
+        standard_error_term_val = sp_squared * (1.0/n1 + 1.0/n2)
+
+        if standard_error_term_val < 0: # Should only happen if sp_squared became negative due to float issues with tiny variances.
+             # This implies a problem with variance calculation or extreme data.
+             # For safety, treat as effectively zero variance if negative, leading to inf/nan t_stat.
+             standard_error_term_val = 0.0
+
+        if abs(standard_error_term_val) < 1e-12: # Standard error is effectively zero
+            # If means are also equal (or very close), t_stat is 0/0 -> nan.
+            # If means differ, t_stat is non-zero / 0 -> +/- inf.
+            if abs(mean1 - mean2) < 1e-12:
+                t_stat = float('nan')
+            else:
+                t_stat = float('inf') if mean1 > mean2 else float('-inf')
+        else:
+            t_stat = (mean1 - mean2) / math.sqrt(standard_error_term_val)
+    else:
+        # Welch's t-test (does not assume equal variances)
+        term1 = var1 / n1
+        term2 = var2 / n2
+        standard_error_sum = term1 + term2
+
+        if abs(standard_error_sum) < 1e-12: # Standard error sum is effectively zero
+            if abs(mean1 - mean2) < 1e-12:
+                t_stat = float('nan')
+            else:
+                t_stat = float('inf') if mean1 > mean2 else float('-inf')
+            df = float('nan') # df calculation would also involve division by zero
+        else:
+            t_stat = (mean1 - mean2) / math.sqrt(standard_error_sum)
+
+            # Welch-Satterthwaite equation for degrees of freedom
+            # df_num = (var1/n1 + var2/n2)^2
+            # df_den = ((var1/n1)^2 / (n1-1)) + ((var2/n2)^2 / (n2-1))
+            # n1-1 and n2-1 are >= 1.
+            df_numerator = math.pow(standard_error_sum, 2)
+
+            df_denominator_term1 = math.pow(term1, 2) / (n1 - 1)
+            df_denominator_term2 = math.pow(term2, 2) / (n2 - 1)
+            df_denominator = df_denominator_term1 + df_denominator_term2
+
+            if abs(df_denominator) < 1e-12:
+                # If denominator is zero, df is undefined or infinite.
+                # This can happen if variances are zero or very small.
+                # If numerator is also zero (variances are zero), then 0/0 -> nan.
+                # If numerator is non-zero and denominator is zero -> inf.
+                df = float('nan') if abs(df_numerator) < 1e-12 else float('inf')
+            else:
+                df = df_numerator / df_denominator
+
+    return t_stat, df
 
 def mean(data: List[Union[int, float]]):
   """

@@ -4,7 +4,8 @@ from app.libs.pymath.statistics import (
     mean, median, mode, std_dev,
     pearson_correlation, simple_linear_regression,
     multiple_linear_regression, polynomial_regression,
-    binomial_pmf, poisson_pmf, normal_pdf
+    binomial_pmf, poisson_pmf, normal_pdf,
+    _sample_variance, two_sample_ttest_statistic # Added new imports
 )
 
 class TestMean(unittest.TestCase):
@@ -510,3 +511,102 @@ class TestDistributionFunctions(unittest.TestCase):
             normal_pdf(x=0.0, mu=0.0, sigma=0.0)
         with self.assertRaisesRegex(ValueError, "Standard deviation 'sigma' must be positive"):
             normal_pdf(x=0.0, mu=0.0, sigma=-1.0)
+
+class TestTTestStatistic(unittest.TestCase):
+    # Test Methods for _sample_variance
+    def test_sample_variance_known_values(self):
+        self.assertAlmostEqual(_sample_variance([1, 2, 3, 4, 5]), 2.5)
+        self.assertAlmostEqual(_sample_variance([10.0, 12.5, 11.3, 13.0, 10.7]), 1.545, places=3) # Corrected expected value
+        self.assertAlmostEqual(_sample_variance([-1, 0, 1]), 1.0)
+        self.assertAlmostEqual(_sample_variance([2.0, 2.0, 2.0, 2.0]), 0.0)
+
+
+    def test_sample_variance_error_insufficient_data(self):
+        with self.assertRaisesRegex(ValueError, "Sample must contain at least two elements"):
+            _sample_variance([1])
+        with self.assertRaisesRegex(ValueError, "Sample must contain at least two elements"):
+            _sample_variance([])
+
+    def test_sample_variance_error_non_numeric(self):
+        with self.assertRaisesRegex(TypeError, "All elements in sample must be numbers"):
+            _sample_variance([1, 'a'])
+
+    # Test Methods for two_sample_ttest_statistic
+    def test_ttest_students_known_values(self):
+        s1 = [1, 2, 3, 4, 5] # mean1 = 3, var1 = 2.5
+        s2 = [6, 7, 8, 9, 10] # mean2 = 8, var2 = 2.5
+        # Pooled variance = ((4*2.5) + (4*2.5)) / (5+5-2) = (10+10)/8 = 20/8 = 2.5
+        # SE = sqrt(2.5 * (1/5 + 1/5)) = sqrt(2.5 * 2/5) = sqrt(2.5 * 0.4) = sqrt(1) = 1
+        # t_stat = (3-8)/1 = -5.0
+        # df = 5+5-2 = 8
+        t, df = two_sample_ttest_statistic(s1, s2, equal_variances=True)
+        self.assertAlmostEqual(t, -5.0)
+        self.assertAlmostEqual(df, 8.0)
+
+    def test_ttest_welchs_known_values(self):
+        s1 = [17, 20, 22, 18] # mean1=19.25, var1=4.916666... (14.75/3)
+        s2 = [10, 12, 15, 11, 13, 14] # mean2=12.5, var2=3.5 (17.5/5)
+        # Using online calculator for Welch's t-test with these values:
+        # t ≈ 5.01377, df ≈ 5.74657 (recalculated based on the function's logic)
+        t, df = two_sample_ttest_statistic(s1, s2, equal_variances=False)
+        self.assertAlmostEqual(t, 5.01377, places=5)
+        self.assertAlmostEqual(df, 5.74657, places=5) # Corrected more precise df
+
+    def test_ttest_identical_samples_students(self):
+        s1 = [1,2,3]
+        s2 = [1,2,3]
+        t, df = two_sample_ttest_statistic(s1, s2, equal_variances=True)
+        self.assertAlmostEqual(t, 0.0)
+        self.assertEqual(df, 4.0) # 3+3-2 = 4
+
+    def test_ttest_identical_samples_welchs(self):
+        s1 = [1,2,3] # var1 = 1
+        s2 = [1,2,3] # var2 = 1
+        t, df = two_sample_ttest_statistic(s1, s2, equal_variances=False)
+        self.assertAlmostEqual(t, 0.0)
+        # For Welch's with identical samples (and thus identical variances and n):
+        # df_num = (1/3 + 1/3)^2 = (2/3)^2 = 4/9
+        # df_den = ((1/3)^2 / 2) + ((1/3)^2 / 2) = (1/9)/2 + (1/9)/2 = 1/18 + 1/18 = 2/18 = 1/9
+        # df = (4/9) / (1/9) = 4
+        self.assertAlmostEqual(df, 4.0)
+
+    def test_ttest_zero_variance_students(self):
+        s1 = [1,1,1] # var1 = 0
+        s2 = [2,2,2] # var2 = 0
+        # Pooled variance will be 0. SE will be 0.
+        t, df = two_sample_ttest_statistic(s1, s2, equal_variances=True)
+        self.assertTrue(math.isinf(t) and t < 0, f"Expected negative infinity, got {t}") # (1-2)/0 -> -inf
+        self.assertEqual(df, 4.0) # 3+3-2 = 4
+
+    def test_ttest_zero_variance_welchs(self):
+        s1 = [1,1,1] # var1 = 0
+        s2 = [2,2,2] # var2 = 0
+        # var1/n1 + var2/n2 = 0. SE will be 0.
+        t, df = two_sample_ttest_statistic(s1, s2, equal_variances=False)
+        self.assertTrue(math.isinf(t) and t < 0, f"Expected negative infinity, got {t}")
+        # df_num = (0/3 + 0/3)^2 = 0
+        # df_den = ((0/3)^2 / 2) + ((0/3)^2 / 2) = 0
+        # df = 0/0 -> nan
+        self.assertTrue(math.isnan(df), f"Expected NaN for df, got {df}")
+
+    def test_ttest_zero_variance_means_equal_students(self):
+        s1 = [1,1,1]
+        s2 = [1,1,1]
+        t, df = two_sample_ttest_statistic(s1, s2, equal_variances=True)
+        self.assertTrue(math.isnan(t), f"Expected NaN for t-statistic, got {t}") # (1-1)/0 -> 0/0
+        self.assertEqual(df, 4.0)
+
+    def test_ttest_error_handling_sample_size(self):
+        with self.assertRaisesRegex(ValueError, "Sample 1 must contain at least two elements"):
+            two_sample_ttest_statistic([1], [1,2,3])
+        with self.assertRaisesRegex(ValueError, "Sample 2 must contain at least two elements"):
+            two_sample_ttest_statistic([1,2,3], [1])
+
+    def test_ttest_error_handling_types(self):
+        # Error from _sample_variance, re-raised by two_sample_ttest_statistic
+        with self.assertRaisesRegex(TypeError, "Error calculating mean or variance for samples: All elements in the list must be numeric"):
+            two_sample_ttest_statistic([1,'a'], [1,2,3])
+        with self.assertRaisesRegex(TypeError, "Error calculating mean or variance for samples: All elements in the list must be numeric"):
+            two_sample_ttest_statistic([1,2], [1,'b',3])
+        with self.assertRaisesRegex(TypeError, "Argument 'equal_variances' must be a boolean"):
+            two_sample_ttest_statistic([1,2], [1,2,3], equal_variances="true")

@@ -124,6 +124,20 @@ Provides a set of functions to perform common statistical calculations on numeri
         *   `TypeError`: If `x`, `mu`, or `sigma` are not numbers.
         *   `ValueError`: If `sigma` is not positive (`sigma <= 0`).
 
+*   **`two_sample_ttest_statistic(sample1: List[Union[int, float]], sample2: List[Union[int, float]], equal_variances: bool = True) -> Tuple[float, float]`**:
+    Calculates the t-statistic and degrees of freedom for a two-sample independent t-test. This test is used to determine if there is a significant difference between the means of two independent groups.
+    *   **Parameters:**
+        *   `sample1 (List[Union[int, float]])`: A list of numbers representing the first sample. Must contain at least 2 elements.
+        *   `sample2 (List[Union[int, float]])`: A list of numbers representing the second sample. Must contain at least 2 elements.
+        *   `equal_variances (bool, optional)`: If `True` (default), assumes equal population variances and calculates Student's t-statistic and corresponding degrees of freedom (`n1 + n2 - 2`). If `False`, performs Welch's t-test which does not assume equal population variances, and calculates the t-statistic and degrees of freedom using the Welch-Satterthwaite equation.
+    *   **Returns:**
+        *   `Tuple[float, float]`: A tuple `(t_statistic, degrees_of_freedom)`.
+        *   Note: This function returns the t-statistic and degrees of freedom only. Calculation of the p-value is not included and would typically require a CDF of the t-distribution.
+        *   Returns `(float('nan'), float('nan'))` or `(float('inf'), ...)` for t-statistic or df if calculations involve division by zero or undefined conditions.
+    *   **Raises:**
+        *   `TypeError`: If `sample1` or `sample2` are not lists, if samples contain non-numeric data, or if `equal_variances` is not a boolean.
+        *   `ValueError`: If `sample1` or `sample2` contain fewer than 2 elements.
+
 **How to Import and Examples:**
 
 Functions from the statistics module can be imported as follows:
@@ -133,7 +147,8 @@ from app.libs.pymath.statistics import (
     mean, median, mode, std_dev,
     pearson_correlation, simple_linear_regression,
     multiple_linear_regression, polynomial_regression,
-    binomial_pmf, poisson_pmf, normal_pdf
+    binomial_pmf, poisson_pmf, normal_pdf,
+    two_sample_ttest_statistic
 )
 from typing import List, Union, Tuple # For type hints if needed in calling code
 
@@ -211,6 +226,23 @@ try:
         print(f"Normal PDF N(0,1) at x=0: {density_normal:.5f}") # Expected: 0.39894
     except (ValueError, TypeError) as e_normal:
         print(f"Normal PDF Error: {e_normal}")
+
+    # Example for Two-Sample T-Test Statistic
+    s1_ttest = [17, 20, 22, 18, 19]
+    s2_ttest = [10, 12, 15, 11, 13, 14, 12]
+    print(f"\nTwo-Sample T-Test Data:")
+    print(f"Sample 1: {s1_ttest}")
+    print(f"Sample 2: {s2_ttest}")
+    try:
+        # Student's t-test (assuming equal variances)
+        t_stat_students, df_students = two_sample_ttest_statistic(s1_ttest, s2_ttest, equal_variances=True)
+        print(f"Student's t-test: t-statistic = {t_stat_students:.3f}, df = {df_students:.0f}")
+
+        # Welch's t-test (not assuming equal variances)
+        t_stat_welch, df_welch = two_sample_ttest_statistic(s1_ttest, s2_ttest, equal_variances=False)
+        print(f"Welch's t-test: t-statistic = {t_stat_welch:.3f}, df = {df_welch:.3f}")
+    except (ValueError, TypeError) as e_ttest:
+        print(f"T-test Error: {e_ttest}")
 
 except ValueError as e:
     print(f"Calculation Error: {e}")
