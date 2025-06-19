@@ -1091,3 +1091,48 @@ class ModerationLog(db.Model):
 
     def __repr__(self):
         return f'<ModerationLog {self.id} Action: {self.action_taken}>'
+
+
+class Quest(db.Model):
+    __tablename__ = 'quest'
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(150), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    type = db.Column(db.String(50), nullable=False, index=True) # E.g., 'daily', 'weekly', 'achievement'
+    criteria_type = db.Column(db.String(50), nullable=False, index=True) # Links to ActivityLog.activity_type or custom
+    criteria_target_count = db.Column(db.Integer, nullable=False, default=1)
+    reward_points = db.Column(db.Integer, default=0)
+    reward_badge_id = db.Column(db.Integer, db.ForeignKey('badge.id'), nullable=True)
+    reward_virtual_good_id = db.Column(db.Integer, db.ForeignKey('virtual_good.id'), nullable=True)
+    is_active = db.Column(db.Boolean, default=True, nullable=False, index=True)
+    start_date = db.Column(db.DateTime, nullable=True) # Optional: for timed quests
+    end_date = db.Column(db.DateTime, nullable=True)   # Optional: for timed quests
+    repeatable_after_hours = db.Column(db.Integer, nullable=True) # Hours after completion before it can be started again
+
+    # Relationships
+    reward_badge = db.relationship('Badge', foreign_keys=[reward_badge_id])
+    reward_virtual_good = db.relationship('VirtualGood', foreign_keys=[reward_virtual_good_id])
+
+    def __repr__(self):
+        return f'<Quest {self.id}: {self.title}>'
+
+class UserQuestProgress(db.Model):
+    __tablename__ = 'user_quest_progress'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    quest_id = db.Column(db.Integer, db.ForeignKey('quest.id'), nullable=False, index=True)
+    current_count = db.Column(db.Integer, default=0, nullable=False)
+    status = db.Column(db.String(50), default='in_progress', nullable=False, index=True) # 'in_progress', 'completed', 'claimed'
+    last_progress_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow(), onupdate=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+    completed_at = db.Column(db.DateTime, nullable=True)
+    last_completed_instance_at = db.Column(db.DateTime, nullable=True) # For repeatable quests
+
+    # Relationships
+    user = db.relationship('User', backref=db.backref('quest_progress', lazy='dynamic'))
+    quest = db.relationship('Quest', backref=db.backref('user_progress_entries', lazy='dynamic'))
+
+    # Unique constraint: a user should only have one progress entry for a specific quest (unless we allow multiple instances for some reason)
+    __table_args__ = (db.UniqueConstraint('user_id', 'quest_id', name='_user_quest_uc'),)
+
+    def __repr__(self):
+        return f'<UserQuestProgress {self.id} UserID:{self.user_id} QuestID:{self.quest_id} Status:{self.status}>'
