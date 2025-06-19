@@ -1,9 +1,10 @@
 from typing import TYPE_CHECKING
 from app import db
 # User is now only imported for type hinting, VirtualGood and UserVirtualGood are used at runtime
-from app.core.models import VirtualGood, UserVirtualGood
+from app.core.models import VirtualGood, UserVirtualGood, UserPoints, ActivityLog # Added UserPoints, ActivityLog
 from sqlalchemy.exc import SQLAlchemyError
 from flask import current_app
+# from app.utils.helpers import award_points # We will deduct manually for now
 # datetime might still be needed if other functions use it, but timezone was for the local helper.
 # For now, let's assume it's not needed by other functions in this file. If it is, it can be re-added.
 # from datetime import datetime
@@ -36,13 +37,36 @@ def process_virtual_good_purchase(user: 'User', virtual_good: VirtualGood) -> di
             "user_virtual_good": None
         }
 
-    # Placeholder for payment/points deduction logic.
-    # This function assumes that payment/points have already been successfully processed
-    # or are handled by the calling route before this function is invoked.
-    # For example:
-    # if not user.can_afford(virtual_good.price, virtual_good.currency):
-    #     return {"success": False, "status_key": "insufficient_funds", "message": "Insufficient funds."}
-    # user.deduct_funds(virtual_good.price, virtual_good.currency)
+    message_purchase_type = "" # Initialize to empty string
+
+    # Points deduction logic
+    if virtual_good.point_price is not None and virtual_good.point_price > 0:
+        user_points = UserPoints.query.filter_by(user_id=user.id).first()
+
+        current_points = user_points.points if user_points else 0
+        if not user_points or current_points < virtual_good.point_price:
+            return {
+                "success": False,
+                "status_key": "insufficient_points",
+                "message": f"You do not have enough points to purchase '{virtual_good.name}'. You need {virtual_good.point_price} points, but you have {current_points}.",
+                "user_virtual_good": None
+            }
+
+        # Deduct points
+        user_points.points -= virtual_good.point_price
+
+        # Create activity log for point deduction
+        point_deduction_log = ActivityLog(
+            user_id=user.id,
+            activity_type='purchase_with_points',
+            description=f'Purchased {virtual_good.name} for {virtual_good.point_price} points.',
+            points_earned=-virtual_good.point_price, # Log as negative points earned
+            related_id=virtual_good.id,
+            related_item_type='virtual_good_purchase'
+        )
+        db.session.add(point_deduction_log)
+        message_purchase_type = " with points" # Update for success message
+    # Else, it's a regular purchase (not handled here) or free
 
     existing_uvg = UserVirtualGood.query.filter_by(
         user_id=user.id,
@@ -86,7 +110,7 @@ def process_virtual_good_purchase(user: 'User', virtual_good: VirtualGood) -> di
         return {
             "success": True,
             "status_key": "purchase_successful",
-            "message": f"'{virtual_good.name}' acquired successfully!",
+            "message": f"'{virtual_good.name}' acquired successfully{message_purchase_type}!",
             "user_virtual_good": new_user_vg
         }
     except SQLAlchemyError as e:

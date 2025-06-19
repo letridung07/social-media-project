@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% from "_macros.html" import render_field, render_submit_field, render_textarea_field, render_select_field, render_checkbox_field, render_file_field, render_multiple_file_field, render_hidden_field %}
+
+{% block title %}{{ title or _l("Your Quests") }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>{{ _l("Quests Dashboard") }}</h2>
+    <p>{{ _l("Track your progress and claim rewards!") }}</p>
+
+    <!-- Nav tabs -->
+    <ul class="nav nav-tabs mb-3" id="questsTab" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="available-tab" data-bs-toggle="tab" data-bs-target="#available" type="button" role="tab" aria-controls="available" aria-selected="true">{{ _l("Available") }} ({{ available_quests|length }})</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="in-progress-tab" data-bs-toggle="tab" data-bs-target="#in-progress" type="button" role="tab" aria-controls="in-progress" aria-selected="false">{{ _l("In Progress") }} ({{ in_progress_quests|length }})</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="completed-tab" data-bs-toggle="tab" data-bs-target="#completed" type="button" role="tab" aria-controls="completed" aria-selected="false">{{ _l("Completed") }} ({{ completed_quests|length }})</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="claimed-tab" data-bs-toggle="tab" data-bs-target="#claimed" type="button" role="tab" aria-controls="claimed" aria-selected="false">{{ _l("Claimed") }} ({{ claimed_quests|length }})</button>
+        </li>
+    </ul>
+
+    <!-- Tab panes -->
+    <div class="tab-content" id="questsTabContent">
+        <!-- Available Quests -->
+        <div class="tab-pane fade show active" id="available" role="tabpanel" aria-labelledby="available-tab">
+            <h4>{{ _l("Available Quests") }}</h4>
+            {% if available_quests %}
+                <div class="row">
+                    {% for item in available_quests %}
+                        {% set quest = item.quest %}
+                        <div class="col-md-6 col-lg-4 mb-3">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h5 class="card-title">{{ quest.title }}</h5>
+                                    <p class="card-text"><small class="text-muted">{{ quest.type.capitalize() }} Quest</small></p>
+                                    <p class="card-text">{{ quest.description }}</p>
+                                    <p class="card-text"><strong>{{ _l("Goal:") }}</strong> {{ quest.criteria_target_count }} {{ quest.criteria_type.replace('_', ' ')|title }}</p>
+                                    <div><strong>{{ _l("Rewards:") }}</strong>
+                                        <ul class="list-unstyled">
+                                            {% if quest.reward_points > 0 %}<li>{{ quest.reward_points }} {{ _l("Points") }}</li>{% endif %}
+                                            {% if quest.reward_badge %}<li><span class="badge bg-secondary">{{ quest.reward_badge.name }}</span> {{ _l("Badge") }}</li>{% endif %}
+                                            {% if quest.reward_virtual_good %}<li>{{ quest.reward_virtual_good.name }} ({{ quest.reward_virtual_good.type.replace('_', ' ')|title }})</li>{% endif %}
+                                        </ul>
+                                    </div>
+                                    {% if quest.start_date %}
+                                        <p class="card-text"><small class="text-muted">{{ _l("Starts:") }} {{ quest.start_date.strftime('%Y-%m-%d %H:%M UTC') }}</small></p>
+                                    {% endif %}
+                                    {% if quest.end_date %}
+                                        <p class="card-text"><small class="text-muted">{{ _l("Ends:") }} {{ quest.end_date.strftime('%Y-%m-%d %H:%M UTC') }}</small></p>
+                                    {% endif %}
+                                     <p class="text-muted"><small>{{ _l("This quest will appear in 'In Progress' once you make progress.") }}</small></p>
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p>{{ _l("No new quests available at the moment. Check back later!") }}</p>
+            {% endif %}
+        </div>
+
+        <!-- In Progress Quests -->
+        <div class="tab-pane fade" id="in-progress" role="tabpanel" aria-labelledby="in-progress-tab">
+            <h4>{{ _l("In Progress Quests") }}</h4>
+            {% if in_progress_quests %}
+                <div class="row">
+                    {% for item in in_progress_quests %}
+                        {% set quest = item.quest %}
+                        {% set progress = item.progress %}
+                        <div class="col-md-6 col-lg-4 mb-3">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h5 class="card-title">{{ quest.title }}</h5>
+                                    <p class="card-text"><small class="text-muted">{{ quest.type.capitalize() }} Quest</small></p>
+                                    <p class="card-text">{{ quest.description }}</p>
+                                    <p class="card-text">
+                                        <strong>{{ _l("Progress:") }}</strong> {{ progress.current_count }} / {{ quest.criteria_target_count }} {{ quest.criteria_type.replace('_', ' ')|title }}
+                                    </p>
+                                    <div class="progress mb-2">
+                                        <div class="progress-bar" role="progressbar" style="width: {{ (progress.current_count / quest.criteria_target_count) * 100 }}%;" aria-valuenow="{{ progress.current_count }}" aria-valuemin="0" aria-valuemax="{{ quest.criteria_target_count }}"></div>
+                                    </div>
+                                    <div><strong>{{ _l("Rewards:") }}</strong>
+                                        <ul class="list-unstyled">
+                                            {% if quest.reward_points > 0 %}<li>{{ quest.reward_points }} {{ _l("Points") }}</li>{% endif %}
+                                            {% if quest.reward_badge %}<li><span class="badge bg-secondary">{{ quest.reward_badge.name }}</span> {{ _l("Badge") }}</li>{% endif %}
+                                            {% if quest.reward_virtual_good %}<li>{{ quest.reward_virtual_good.name }} ({{ quest.reward_virtual_good.type.replace('_', ' ')|title }})</li>{% endif %}
+                                        </ul>
+                                    </div>
+                                     <p class="card-text"><small class="text-muted">{{ _l("Last progress:") }} {{ progress.last_progress_at.strftime('%Y-%m-%d %H:%M UTC') }}</small></p>
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p>{{ _l("You have no quests currently in progress. Start one from the 'Available' tab!") }}</p>
+            {% endif %}
+        </div>
+
+        <!-- Completed (Ready to Claim) Quests -->
+        <div class="tab-pane fade" id="completed" role="tabpanel" aria-labelledby="completed-tab">
+            <h4>{{ _l("Completed Quests (Ready to Claim)") }}</h4>
+            {% if completed_quests %}
+                <div class="row">
+                    {% for item in completed_quests %}
+                        {% set quest = item.quest %}
+                        {% set progress = item.progress %}
+                        <div class="col-md-6 col-lg-4 mb-3">
+                            <div class="card border-success">
+                                <div class="card-header bg-success text-white">{{ _l("Ready to Claim!") }}</div>
+                                <div class="card-body">
+                                    <h5 class="card-title">{{ quest.title }}</h5>
+                                    <p class="card-text"><small class="text-muted">{{ quest.type.capitalize() }} Quest</small></p>
+                                    <p class="card-text">{{ quest.description }}</p>
+                                    <p class="card-text"><strong>{{ _l("Status:") }}</strong> {{ _l("Completed!") }}</p>
+                                    <div><strong>{{ _l("Rewards:") }}</strong>
+                                        <ul class="list-unstyled">
+                                            {% if quest.reward_points > 0 %}<li>{{ quest.reward_points }} {{ _l("Points") }}</li>{% endif %}
+                                            {% if quest.reward_badge %}<li><span class="badge bg-secondary">{{ quest.reward_badge.name }}</span> {{ _l("Badge") }}</li>{% endif %}
+                                            {% if quest.reward_virtual_good %}<li>{{ quest.reward_virtual_good.name }} ({{ quest.reward_virtual_good.type.replace('_', ' ')|title }})</li>{% endif %}
+                                        </ul>
+                                    </div>
+                                    <form action="{{ url_for('main.claim_quest_reward', user_quest_progress_id=progress.id) }}" method="POST" class="mt-2">
+                                        {{ csrf_token_field() if csrf_token_field else '' }}
+                                        <button type="submit" class="btn btn-success">{{ _l("Claim Reward") }}</button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p>{{ _l("No quests are currently completed and ready to claim.") }}</p>
+            {% endif %}
+        </div>
+
+        <!-- Claimed Quests -->
+        <div class="tab-pane fade" id="claimed" role="tabpanel" aria-labelledby="claimed-tab">
+            <h4>{{ _l("Claimed Quests") }}</h4>
+            {% if claimed_quests %}
+                <div class="row">
+                    {% for item in claimed_quests %}
+                        {% set quest = item.quest %}
+                        {% set progress = item.progress %}
+                        <div class="col-md-6 col-lg-4 mb-3">
+                            <div class="card border-info">
+                                 <div class="card-header bg-info text-white">{{ _l("Rewards Claimed") }}</div>
+                                <div class="card-body">
+                                    <h5 class="card-title">{{ quest.title }}</h5>
+                                     <p class="card-text"><small class="text-muted">{{ quest.type.capitalize() }} Quest</small></p>
+                                    <p class="card-text">{{ quest.description }}</p>
+                                    <div><strong>{{ _l("Rewards Claimed On:") }}</strong> {{ progress.completed_at.strftime('%Y-%m-%d %H:%M UTC') if progress.completed_at else 'N/A' }}</div>
+                                    {% if quest.repeatable_after_hours and progress.last_completed_instance_at %}
+                                        {% set next_available_time = progress.last_completed_instance_at + timedelta(hours=quest.repeatable_after_hours) %}
+                                        <p class="card-text mt-2">
+                                            <small class="text-muted">
+                                                {% if now < next_available_time %}
+                                                    {{ _l("Repeatable after:") }} {{ next_available_time.strftime('%Y-%m-%d %H:%M UTC') }}
+                                                {% else %}
+                                                    {{ _l("This quest can be started again! Progress on '") }}{{ quest.criteria_type.replace('_', ' ')|title }}{{ _l("' activities to begin.") }}
+                                                {% endif %}
+                                            </small>
+                                        </p>
+                                    {% elif quest.repeatable_after_hours %}
+                                         <p class="card-text mt-2"><small class="text-muted">{{ _l("This quest is repeatable.") }}</small></p>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p>{{ _l("You have not claimed any quest rewards yet.") }}</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{# Add to your base.html or ensure Bootstrap JS is loaded for tab functionality #}
+{# Example:
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+#}

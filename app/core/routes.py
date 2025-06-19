@@ -37,6 +37,11 @@ from app.utils.helpers import get_recommendations
 # Imports for pymath statistics
 from app.libs.pymath.statistics import mean, median, mode, std_dev, pearson_correlation, simple_linear_regression, polynomial_regression
 
+# Quest system import
+from app.utils.quest_utils import update_quest_progress # Added for quest progress updates
+from datetime import timedelta # Already have datetime, timezone. Ensure timedelta is there.
+
+
 # Ensure these specific imports are present for set_theme_preference, though some might be redundant if already imported broadly.
 from flask import request, jsonify, current_app # request, jsonify, current_app
 from flask_login import current_user, login_required # current_user, login_required
@@ -450,6 +455,8 @@ def login():
                 if not daily_login_exists:
                     # Gamification: Award points for daily login
                     award_points(user, 'daily_login', 5)
+                    # Update quest progress for daily login
+                    update_quest_progress(user, 'daily_login')
                     # Potentially commit here if it's a standalone action,
                     # or let it be committed with other session changes if any.
                     # For daily login, committing immediately might be okay.
@@ -708,6 +715,7 @@ def edit_profile():
 
             if has_bio and has_custom_picture:
                 award_points(current_user, 'complete_profile', 25)
+                update_quest_progress(current_user, 'complete_profile')
                 # The main commit below will save this.
 
         db.session.commit()
@@ -1144,7 +1152,13 @@ def create_post():
             # Gamification: Award points for creating a post (more for media posts)
             points_for_post = 15 if media_items_to_add else 10 # media_items_to_add is from original code
             award_points(current_user, 'create_post', points_for_post, related_item=post)
-            # Note: award_points only adds to session, commit is handled below with other post data.
+
+            # Quest progress updates for post creation
+            update_quest_progress(current_user, 'create_post', related_item=post)
+            if media_items_to_add: # Check if there was media
+                update_quest_progress(current_user, 'create_post_with_media', related_item=post)
+            update_quest_progress(current_user, 'general_engagement_weekly', related_item=post)
+            # Note: award_points & update_quest_progress add to session. Commit is handled below or with notifications.
 
             if mentioned_users_in_post: # mentioned_users_in_post is from original code
                 for tagged_user in mentioned_users_in_post:
@@ -1464,8 +1478,12 @@ def add_comment(post_id):
             if post.author.id != current_user.id:
                 award_points(post.author, 'receive_comment', 3, related_item=comment)
 
+            # Quest progress updates for comment creation
+            update_quest_progress(current_user, 'create_comment', related_item=comment)
+            update_quest_progress(current_user, 'general_engagement_weekly', related_item=comment)
+
         try:
-            db.session.commit() # Commit comment, points, activity logs, and moderation log
+            db.session.commit() # Commit comment, points, activity logs, quest progress, and moderation log
         except Exception as e_comment_commit:
             db.session.rollback()
             current_app.logger.error(f"Error committing comment: {e_comment_commit}")
@@ -3963,6 +3981,14 @@ def cancel_user_subscription(subscription_id):
 # -------------------- Stripe Customer Portal Session Route --------------------
 
 from app.utils.gamification_utils import get_leaderboard # Add this import
+# For Quest Claim Route
+from app.core.models import Quest, UserQuestProgress, UserPoints, ActivityLog, UserVirtualGood, Badge # Notification is already imported above
+# from app.utils.helpers import award_points # Using manual point logic for claim
+# from app import socketio # socketio is already imported from app
+# from datetime import datetime, timezone, timedelta # Already imported
+# from flask_login import login_required, current_user # Already imported
+# from flask import flash, redirect, url_for # Already imported
+
 
 @main.route('/stripe/create-customer-portal-session', methods=['POST'])
 @login_required
@@ -4406,6 +4432,214 @@ def leaderboard():
                            title=f"{time_period.capitalize()} Leaderboard",
                            leaderboard_data=leaderboard_data,
                            current_period=time_period)
+
+
+# -------------------- User Quests Page --------------------
+@main.route('/quests')
+@login_required
+def view_quests():
+    now = datetime.now(timezone.utc)
+    user_progress_entries = UserQuestProgress.query.filter_by(user_id=current_user.id).options(db.joinedload(UserQuestProgress.quest)).all()
+    user_progress_map = {up.quest_id: up for up in user_progress_entries}
+
+    all_active_quests = Quest.query.filter_by(is_active=True).order_by(Quest.type, Quest.title).all()
+
+    available_quests = []
+    in_progress_quests = []
+    completed_quests = [] # Ready to claim
+    claimed_quests = []   # Already claimed
+
+    for quest in all_active_quests:
+        # Check start/end dates
+        if quest.start_date and now < quest.start_date:
+            continue
+        if quest.end_date and now > quest.end_date:
+            continue
+
+        progress = user_progress_map.get(quest.id)
+
+        if progress:
+            if progress.status == 'in_progress':
+                in_progress_quests.append({'quest': quest, 'progress': progress})
+            elif progress.status == 'completed':
+                completed_quests.append({'quest': quest, 'progress': progress})
+            elif progress.status == 'claimed':
+                claimed_quests.append({'quest': quest, 'progress': progress})
+                # Check if a repeatable quest in 'claimed' state can become available again
+                if quest.repeatable_after_hours is not None and progress.last_completed_instance_at:
+                    if now >= progress.last_completed_instance_at + timedelta(hours=quest.repeatable_after_hours):
+                        # This quest is available again, but we list it under "Claimed" and template can indicate it's repeatable.
+                        # Or, we could add a fresh (quest, None) to available_quests if we want to show it as a truly new start.
+                        # For simplicity, template will handle display nuances for claimed-but-repeatable.
+                        pass
+
+            # Special handling for repeatable quests that are 'completed' but not yet 'claimed'
+            # If cooldown has passed, they are effectively available again *after claiming the current completion*.
+            # This logic is mostly handled by `update_quest_progress` when new activity comes in.
+            # The current view just shows its 'completed' state. If it were 'claimed' and cooldown passed,
+            # `update_quest_progress` would reset it to 'in_progress' on next relevant action.
+
+        else: # No progress record for this quest
+            # This is a truly available quest if no progress exists
+            available_quests.append({'quest': quest, 'progress': None})
+
+    return render_template('quests.html',
+                           title='Your Quests',
+                           available_quests=available_quests,
+                           in_progress_quests=in_progress_quests,
+                           completed_quests=completed_quests,
+                           claimed_quests=claimed_quests)
+
+# -------------------- Quest Claim Route --------------------
+@main.route('/quests/claim/<int:user_quest_progress_id>', methods=['POST'])
+@login_required
+def claim_quest_reward(user_quest_progress_id):
+    progress = UserQuestProgress.query.get_or_404(user_quest_progress_id)
+
+    if progress.user_id != current_user.id:
+        flash('You are not authorized to claim this quest reward.', 'danger')
+        return redirect(url_for('main.index')) # Or a dedicated quests page
+
+    if progress.status != 'completed':
+        flash('Quest not yet completed or reward already claimed.', 'warning')
+        return redirect(url_for('main.index')) # Or quests page
+
+    quest = progress.quest
+    rewards_awarded_messages = []
+
+    try:
+        # Award Points
+        if quest.reward_points > 0:
+            user_points = UserPoints.query.filter_by(user_id=current_user.id).first()
+            if not user_points:
+                user_points = UserPoints(user_id=current_user.id, points=0)
+                db.session.add(user_points)
+
+            user_points.points += quest.reward_points
+
+            points_log = ActivityLog(
+                user_id=current_user.id,
+                activity_type='quest_reward_points',
+                description=f'Claimed {quest.reward_points} points from quest: {quest.title}',
+                points_earned=quest.reward_points,
+                related_id=quest.id,
+                related_item_type='quest'
+            )
+            db.session.add(points_log)
+            rewards_awarded_messages.append(f"{quest.reward_points} points")
+
+        # Award Badge
+        if quest.reward_badge_id:
+            badge = Badge.query.get(quest.reward_badge_id)
+            if badge and badge not in current_user.badges:
+                current_user.badges.append(badge)
+                badge_log = ActivityLog(
+                    user_id=current_user.id,
+                    activity_type='quest_reward_badge',
+                    description=f'Claimed badge "{badge.name}" from quest: {quest.title}',
+                    related_id=badge.id,
+                    related_item_type='badge'
+                )
+                db.session.add(badge_log)
+
+                badge_notification = Notification(
+                    recipient_id=current_user.id,
+                    actor_id=current_user.id, # System acting on behalf of user for quest claim
+                    type='new_badge', # Re-use existing new_badge type
+                    # related_id=badge.id # If notification model supports this
+                )
+                db.session.add(badge_notification)
+                socketio.emit('new_notification', {
+                    'type': 'new_badge',
+                    'message': f"You earned the '{badge.name}' badge from completing a quest!",
+                    'badge_name': badge.name,
+                    'badge_description': badge.description,
+                    'badge_icon_url': badge.icon_url
+                }, room=str(current_user.id))
+                rewards_awarded_messages.append(f"badge: {badge.name}")
+            elif badge and badge in current_user.badges:
+                rewards_awarded_messages.append(f"badge (already owned): {badge.name}")
+
+
+        # Award Virtual Good
+        if quest.reward_virtual_good_id:
+            virtual_good = VirtualGood.query.get(quest.reward_virtual_good_id)
+            if virtual_good:
+                existing_uvg = UserVirtualGood.query.filter_by(
+                    user_id=current_user.id,
+                    virtual_good_id=virtual_good.id
+                ).first()
+
+                # Assuming titles and other unique items are not stackable
+                can_award_good = False
+                if virtual_good.type == 'title': # Titles are typically unique
+                    if not existing_uvg:
+                        can_award_good = True
+                else: # Other goods might be stackable or re-awardable, this part could be expanded
+                    if not existing_uvg: # Simple case: if not owned, award
+                        can_award_good = True
+                    # Add logic for stackable items here if needed (e.g., existing_uvg.quantity += 1)
+
+                if can_award_good:
+                    new_uvg = UserVirtualGood(
+                        user_id=current_user.id,
+                        virtual_good_id=virtual_good.id,
+                        quantity=1 # Default for new acquisition
+                    )
+                    db.session.add(new_uvg)
+
+                    good_log = ActivityLog(
+                        user_id=current_user.id,
+                        activity_type='quest_reward_virtual_good',
+                        description=f'Claimed item "{virtual_good.name}" from quest: {quest.title}',
+                        related_id=virtual_good.id,
+                        related_item_type='virtual_good'
+                    )
+                    db.session.add(good_log)
+
+                    good_notification = Notification(
+                        recipient_id=current_user.id,
+                        actor_id=current_user.id,
+                        type='new_virtual_good', # Define this type if needed
+                         # related_id=virtual_good.id # If notification model supports this
+                    )
+                    db.session.add(good_notification)
+                    socketio.emit('new_notification', {
+                        'type': 'new_virtual_good',
+                        'message': f"You received item '{virtual_good.name}' from completing a quest!",
+                        'item_name': virtual_good.name,
+                        'item_description': virtual_good.description,
+                        'item_image_url': virtual_good.image_url
+                    }, room=str(current_user.id))
+                    rewards_awarded_messages.append(f"item: {virtual_good.name}")
+                elif existing_uvg:
+                     rewards_awarded_messages.append(f"item (already owned): {virtual_good.name}")
+
+
+        # Update Quest Progress Status
+        progress.status = 'claimed'
+        if quest.repeatable_after_hours is not None:
+            # This marks the point from which cooldown begins for this instance.
+            # update_quest_progress will check this when new progress is made on the same criteria_type.
+            progress.last_completed_instance_at = datetime.now(timezone.utc)
+
+        db.session.commit()
+
+        if rewards_awarded_messages:
+            flash(f"Successfully claimed rewards for '{quest.title}': {', '.join(rewards_awarded_messages)}!", 'success')
+        else:
+            flash(f"Rewards for '{quest.title}' claimed (no new items/points awarded this time).", 'info')
+
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        current_app.logger.error(f"Database error claiming quest reward for progress {user_quest_progress_id}: {e}")
+        flash('A database error occurred while claiming your reward. Please try again.', 'danger')
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Unexpected error claiming quest reward for progress {user_quest_progress_id}: {e}")
+        flash('An unexpected error occurred. Please try again.', 'danger')
+
+    return redirect(url_for('main.index')) # TODO: Redirect to a proper quests page, e.g., url_for('main.list_user_quests')
 
 
 # -------------------- Badge Catalog Route --------------------

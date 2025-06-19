@@ -51,18 +51,18 @@ INITIAL_BADGES = [
         'icon_url': 'static/badges/veteran.png', # Placeholder icon
         'criteria_key': 'level_10_reached'
     },
-    # { # Placeholder for leaderboard badge - implementation note below
-    #     'name': 'Weekly Contender',
-    #     'description': 'Made it to the Top 10 on the weekly leaderboard!',
-    #     'icon_url': 'static/badges/weekly_contender.png', # Placeholder icon
-    #     'criteria_key': 'weekly_top_10'
-    # },
-    # { # Placeholder for leaderboard badge - implementation note below
-    #     'name': 'Monthly Champion',
-    #     'description': 'Secured a Top 3 spot on the monthly leaderboard!',
-    #     'icon_url': 'static/badges/monthly_champion.png', # Placeholder icon
-    #     'criteria_key': 'monthly_top_3'
-    # }
+    {
+        'name': 'Weekly Contender',
+        'description': 'Made it to the Top 10 on the weekly leaderboard!',
+        'icon_url': 'static/badges/weekly_contender.png',
+        'criteria_key': 'weekly_top_10'
+    },
+    {
+        'name': 'Monthly Champion',
+        'description': 'Secured a Top 3 spot on the monthly leaderboard!',
+        'icon_url': 'static/badges/monthly_champion.png',
+        'criteria_key': 'monthly_top_3'
+    }
 ]
 
 def seed_badges():
@@ -246,20 +246,14 @@ def check_and_award_badges(user):
         elif badge_obj.criteria_key == 'level_10_reached':
             if user_points_obj and user_points_obj.level >= 10:
                 awarded = True
-        # elif badge_obj.criteria_key == 'weekly_top_10':
-        #     # NOTE: Checking leaderboard badges here can be inefficient.
-        #     # This would ideally be handled by a separate, less frequent task.
-        #     # For demonstration, a simplified check (if implemented):
-        #     # weekly_lb = get_leaderboard(time_period='weekly', limit=10)
-        #     # if any(entry['user_id'] == user.id for entry in weekly_lb):
-        #     #     awarded = True
-        #     pass # Not implementing the check here due to complexity/performance
-        # elif badge_obj.criteria_key == 'monthly_top_3':
-        #     # Similar note as above for monthly leaderboard badges.
-        #     # monthly_lb = get_leaderboard(time_period='monthly', limit=3)
-        #     # if any(entry['user_id'] == user.id for entry in monthly_lb):
-        #     #     awarded = True
-        #     pass # Not implementing the check here
+        elif badge_obj.criteria_key == 'weekly_top_10':
+            weekly_lb = get_leaderboard(time_period='weekly', limit=10)
+            if any(entry['user_id'] == user.id for entry in weekly_lb):
+                awarded = True
+        elif badge_obj.criteria_key == 'monthly_top_3':
+            monthly_lb = get_leaderboard(time_period='monthly', limit=3)
+            if any(entry['user_id'] == user.id for entry in monthly_lb):
+                awarded = True
 
         if awarded:
             user.badges.append(badge_obj) # Add badge to user's collection
