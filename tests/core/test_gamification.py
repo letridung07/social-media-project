@@ -855,6 +855,121 @@ class TestLeaderboards:
         assert leaderboard_limit_1[0]['user_id'] == other_user.id # 150 points
 
 
+# --- Tests for Leaderboard Badges ---
+class TestLeaderboardBadges:
+
+    @patch('app.utils.gamification_utils.socketio.emit')
+    @patch('app.utils.gamification_utils.get_leaderboard')
+    def test_award_weekly_top_10_badge(self, mock_get_leaderboard, mock_socketio_emit, init_database, new_user):
+        seed_badges()  # Ensure badges, including 'Weekly Contender', are in DB
+
+        # Mock get_leaderboard to include the user in the weekly top 10
+        mock_get_leaderboard.return_value = [
+            {'user_id': new_user.id, 'username': new_user.username, 'score': 100, 'level': 1, 'rank': 1, 'profile_picture_url': ''},
+            # ... add more users if needed for a full list of 10
+        ]
+
+        check_and_award_badges(new_user)
+        db.session.commit()
+
+        weekly_contender_badge = Badge.query.filter_by(criteria_key='weekly_top_10').first()
+        assert weekly_contender_badge is not None
+        assert weekly_contender_badge in new_user.badges
+
+        # Verify ActivityLog
+        activity_log = ActivityLog.query.filter_by(user_id=new_user.id, activity_type='earn_badge', related_id=weekly_contender_badge.id).first()
+        assert activity_log is not None
+
+        # Verify Notification
+        notification = Notification.query.filter_by(recipient_id=new_user.id, type='new_badge').order_by(Notification.timestamp.desc()).first()
+        assert notification is not None
+
+        # Verify SocketIO emit (basic check, details depend on exact emit structure for badges)
+        # Check if any call to emit was for the 'Weekly Contender' badge
+        weekly_badge_emitted = False
+        for call_args in mock_socketio_emit.call_args_list:
+            args, kwargs_emit = call_args
+            if args[0] == 'new_notification' and args[1].get('type') == 'new_badge' and args[1].get('badge_name') == 'Weekly Contender':
+                weekly_badge_emitted = True
+                break
+        assert weekly_badge_emitted
+
+        mock_get_leaderboard.assert_called_once_with(time_period='weekly', limit=10)
+
+    @patch('app.utils.gamification_utils.socketio.emit')
+    @patch('app.utils.gamification_utils.get_leaderboard')
+    def test_not_award_weekly_top_10_if_not_in_list(self, mock_get_leaderboard, mock_socketio_emit, init_database, new_user, other_user):
+        seed_badges()
+
+        # Mock get_leaderboard to NOT include the user in the weekly top 10
+        mock_get_leaderboard.return_value = [
+            {'user_id': other_user.id, 'username': other_user.username, 'score': 120, 'level': 2, 'rank': 1, 'profile_picture_url': ''},
+            # ... up to 10 users, none of them new_user
+        ]
+
+        check_and_award_badges(new_user)
+        db.session.commit()
+
+        weekly_contender_badge = Badge.query.filter_by(criteria_key='weekly_top_10').first()
+        assert weekly_contender_badge is not None
+        assert weekly_contender_badge not in new_user.badges
+
+        # Ensure no socket event for this badge for this user
+        for call_args in mock_socketio_emit.call_args_list:
+            args, kwargs_emit = call_args
+            if args[0] == 'new_notification' and args[1].get('type') == 'new_badge':
+                assert args[1].get('badge_name') != 'Weekly Contender'
+
+
+    @patch('app.utils.gamification_utils.socketio.emit')
+    @patch('app.utils.gamification_utils.get_leaderboard')
+    def test_award_monthly_top_3_badge(self, mock_get_leaderboard, mock_socketio_emit, init_database, new_user):
+        seed_badges()
+
+        mock_get_leaderboard.return_value = [
+            {'user_id': new_user.id, 'username': new_user.username, 'score': 500, 'level': 3, 'rank': 1, 'profile_picture_url': ''},
+            # ... other users if needed for top 3
+        ]
+
+        check_and_award_badges(new_user)
+        db.session.commit()
+
+        monthly_champion_badge = Badge.query.filter_by(criteria_key='monthly_top_3').first()
+        assert monthly_champion_badge is not None
+        assert monthly_champion_badge in new_user.badges
+
+        monthly_badge_emitted = False
+        for call_args in mock_socketio_emit.call_args_list:
+            args, kwargs_emit = call_args
+            if args[0] == 'new_notification' and args[1].get('type') == 'new_badge' and args[1].get('badge_name') == 'Monthly Champion':
+                monthly_badge_emitted = True
+                break
+        assert monthly_badge_emitted
+
+        mock_get_leaderboard.assert_called_once_with(time_period='monthly', limit=3)
+
+    @patch('app.utils.gamification_utils.socketio.emit')
+    @patch('app.utils.gamification_utils.get_leaderboard')
+    def test_not_award_monthly_top_3_if_not_in_list(self, mock_get_leaderboard, mock_socketio_emit, init_database, new_user, other_user):
+        seed_badges()
+
+        mock_get_leaderboard.return_value = [
+            {'user_id': other_user.id, 'username': other_user.username, 'score': 600, 'level': 4, 'rank': 1, 'profile_picture_url': ''},
+        ] # new_user is not in this list
+
+        check_and_award_badges(new_user)
+        db.session.commit()
+
+        monthly_champion_badge = Badge.query.filter_by(criteria_key='monthly_top_3').first()
+        assert monthly_champion_badge is not None
+        assert monthly_champion_badge not in new_user.badges
+
+        for call_args in mock_socketio_emit.call_args_list:
+            args, kwargs_emit = call_args
+            if args[0] == 'new_notification' and args[1].get('type') == 'new_badge':
+                assert args[1].get('badge_name') != 'Monthly Champion'
+
+
 # --- Basic UI Route Tests ---
 class TestUIRoutesGamification:
 

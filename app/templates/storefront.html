@@ -23,12 +23,20 @@
                     <div class="card-body">
                         <h5 class="card-title">{{ good.name }}</h5>
                         <p class="card-text">{{ good.description if good.description else 'No description available.' }}</p>
-                        <p class="card-text"><strong>Price:</strong> {{ "%.2f"|format(good.price) }} {{ good.currency }}</p>
+                        {% if good.point_price is not none and good.point_price > 0 %}
+                            <p class="card-text"><strong>Price:</strong> {{ good.point_price }} Points</p>
+                        {% else %}
+                            <p class="card-text"><strong>Price:</strong> {{ "%.2f"|format(good.price) }} {{ good.currency }}</p>
+                        {% endif %}
                         <p class="card-text"><small class="text-muted">Type: {{ good.type }}</small></p>
 
                         <form action="{{ url_for('main.purchase_virtual_good', good_id=good.id) }}" method="POST">
                             {{ csrf_token_field() if csrf_token_field else '' }} {# Add CSRF token if available globally #}
-                            <button type="submit" class="btn btn-primary">Purchase</button>
+                            {% if good.point_price is not none and good.point_price > 0 %}
+                                <button type="submit" class="btn btn-primary">Buy for {{ good.point_price }} Points</button>
+                            {% else %}
+                                <button type="submit" class="btn btn-primary">Purchase</button>
+                            {% endif %}
                         </form>
                     </div>
                 </div>

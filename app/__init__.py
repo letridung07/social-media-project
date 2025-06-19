@@ -15,7 +15,7 @@ from config import Config
 # from app.scheduler import init_scheduler
 
 db = SQLAlchemy()
-babel = Babel() # Standard global instance
+# babel = Babel() # Standard global instance - Will be initialized in create_app
 cache = Cache()
 csrf = CSRFProtect()
 login_manager = LoginManager()
@@ -40,27 +40,7 @@ def create_app(config_class=Config):
     if 'LANGUAGES' not in app.config:
         app.config['LANGUAGES'] = {'en': 'English', 'es': 'Español'}
 
-    db.init_app(app)
-    babel.init_app(app) # Initialize the global instance
-    csrf.init_app(app)
-    login_manager.init_app(app)
-    socketio.init_app(app)
-    mail.init_app(app)
-    migrate.init_app(app, db)
-    cache.init_app(app, config={'CACHE_TYPE': 'SimpleCache'})
-    limiter.init_app(app)
-    # bootstrap.init_app(app)
-
-    from app.core.routes import main as main_blueprint
-    app.register_blueprint(main_blueprint)
-
-    from app.admin.routes import admin_bp
-    app.register_blueprint(admin_bp)
-
-    from app.api.routes import api_bp
-    app.register_blueprint(api_bp, url_prefix='/api/v1')
-
-    @babel.localeselector # Standard decorator with correct name
+    # Define get_locale before babel is initialized
     def get_locale():
         from app.core.models import User
         # Logic for get_locale, e.g.:
@@ -80,6 +60,28 @@ def create_app(config_class=Config):
             else:
                 default_lang = list(app.config['LANGUAGES'].keys())[0]
         return default_lang
+
+    db.init_app(app)
+    babel = Babel(app, locale_selector=get_locale) # Pass selector here
+    csrf.init_app(app)
+    login_manager.init_app(app)
+    socketio.init_app(app)
+    mail.init_app(app)
+    migrate.init_app(app, db)
+    cache.init_app(app, config={'CACHE_TYPE': 'SimpleCache'})
+    limiter.init_app(app)
+    # bootstrap.init_app(app)
+
+    from app.core.routes import main as main_blueprint
+    app.register_blueprint(main_blueprint)
+
+    from app.admin.routes import admin_bp
+    app.register_blueprint(admin_bp)
+
+    from app.api.routes import api_bp
+    app.register_blueprint(api_bp, url_prefix='/api/v1')
+
+    # get_locale is now defined above and passed to Babel constructor
 
     from app.utils.helpers import inject_unread_notification_count, inject_search_form, linkify_mentions
     @app.context_processor

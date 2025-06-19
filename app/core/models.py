@@ -865,6 +865,7 @@ class VirtualGood(db.Model):
     image_url = db.Column(db.String(255), nullable=True)
     title_text = db.Column(db.String(255), nullable=True)  # Actual title/flair text
     title_icon_url = db.Column(db.String(2048), nullable=True)  # Optional icon URL for flair
+    point_price = db.Column(db.Integer, nullable=True)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
     updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow(), onupdate=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
