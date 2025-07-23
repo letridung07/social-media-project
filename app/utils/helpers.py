@@ -298,10 +298,15 @@ def process_hashtags(post_body, post_object):
         if not hashtag:
             hashtag = Hashtag(tag_text=normalized_tag)
             db.session.add(hashtag)
+            db.session.flush() # Flush to get hashtag.id
             # No commit here yet, will be committed with the post
 
         if hashtag not in post_object.hashtags: # Ensure not to add duplicates
              post_object.hashtags.append(hashtag)
+
+        # Track usage
+        usage = HashtagUsage(hashtag_id=hashtag.id)
+        db.session.add(usage)
 
 
 def process_mentions(text_content: str, owner_object, actor_user: User) -> list[User]:

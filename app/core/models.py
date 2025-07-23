@@ -497,6 +497,19 @@ class Hashtag(db.Model):
     def __repr__(self):
         return f'<Hashtag {self.tag_text}>'
 
+
+class HashtagUsage(db.Model):
+    __tablename__ = 'hashtag_usage'
+    id = db.Column(db.Integer, primary_key=True)
+    hashtag_id = db.Column(db.Integer, db.ForeignKey('hashtag.id'), nullable=False, index=True)
+    usage_count = db.Column(db.Integer, default=1, nullable=False)
+    timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+
+    hashtag = db.relationship('Hashtag', backref=db.backref('usage_history', lazy='dynamic'))
+
+    def __repr__(self):
+        return f'<HashtagUsage {self.hashtag.tag_text} at {self.timestamp}>'
+
 class Notification(db.Model):
     __tablename__ = 'notifications'
     id = db.Column(db.Integer, primary_key=True)
