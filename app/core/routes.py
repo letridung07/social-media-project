@@ -5,6 +5,7 @@ import os
 import re # For hashtag parsing
 from datetime import datetime, timezone
 from flask import Blueprint, render_template, redirect, url_for, flash, request, abort, current_app, jsonify, make_response, session
+from bootstrap_flask import Bootstrap
 from flask_login import login_user, current_user, logout_user, login_required
 from sqlalchemy import or_, func, and_
 from flask_babel import lazy_gettext as _l, gettext
@@ -13,8 +14,8 @@ import csv # For CSV export
 from sqlalchemy.orm import joinedload # Import joinedload
 from werkzeug.utils import secure_filename
 from app import db, socketio, cache # Import cache
-from app.core.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm, FriendListForm, AddUserToFriendListForm, PRIVACY_CHOICES, ArticleForm, AudioPostForm, SubscriptionPlanForm, TOTPSetupForm, Verify2FAForm, Disable2FAForm, ConfirmPasswordAndTOTPForm # Added Disable2FAForm, ConfirmPasswordAndTOTPForm
-from app.core.models import User, Post, MediaItem, Reaction, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus, Mention, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE, FriendList, Article, AudioPost, SubscriptionPlan, UserSubscription, Bookmark, UserPoints, ActivityLog # Added UserPoints, ActivityLog for points system
+from app.core.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm, FriendListForm, AddUserToFriendListForm, PRIVACY_CHOICES, ArticleForm, AudioPostForm, SubscriptionPlanForm, TOTPSetupForm, Verify2FAForm, Disable2FAForm, ConfirmPasswordAndTOTPForm, DiscussionThreadForm, ThreadReplyForm # Added Disable2FAForm, ConfirmPasswordAndTOTPForm
+from app.core.models import User, Post, MediaItem, Reaction, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus, Mention, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE, FriendList, Article, AudioPost, SubscriptionPlan, UserSubscription, Bookmark, UserPoints, ActivityLog, DiscussionThread, ThreadReply # Added UserPoints, ActivityLog for points system
 from app.utils.helpers import save_picture, save_group_image, save_story_media, process_mentions, get_historical_engagement, get_top_performing_hashtags, get_top_performing_groups, save_media_file, slugify, save_audio_file, get_audio_duration, process_hashtags, award_points, get_current_utc # Added get_current_utc
 from app.services.purchase_service import process_virtual_good_purchase # Import the new service function
 from app.services.moderation_service import get_moderation_service # Import moderation service
@@ -50,6 +51,7 @@ from app import db # db
 import time # For rate limiting
 
 main = Blueprint('main', __name__)
+bootstrap = Bootstrap()
 
 # Constants for login rate limiting
 MAX_FAILED_LOGIN_ATTEMPTS = 5
@@ -395,8 +397,7 @@ def trending_hashtags():
 def register():
     form = RegistrationForm()
     if form.validate_on_submit():
-        user = User(username=form.username.data, email=form.email.data)
-        user.set_password(form.password.data)
+        user = form.create_user()
         db.session.add(user)
         db.session.commit()
         flash(_l('Congratulations, you are now a registered user!'), 'success')
@@ -453,6 +454,9 @@ def login():
                     ActivityLog.timestamp < end_of_day_utc
                 ).first()
 
+                if not user.points:
+                    user.points = UserPoints()
+                    db.session.commit()
                 if not daily_login_exists:
                     # Gamification: Award points for daily login
                     award_points(user, 'daily_login', 5)
@@ -2288,47 +2292,6 @@ def create_group():
 @cache.cached(timeout=300, make_cache_key=make_user_specific_cache_key)
 def view_group(group_id):
     group = Group.query.get_or_404(group_id)
-
-    feed_items = []
-
-    # 1. Query for direct posts to the group - only published and not hidden ones
-    direct_posts = Post.query.filter_by(
-        group_id=group_id,
-        is_published=True,
-        is_hidden_by_moderation=False # New condition
-    ).order_by(Post.timestamp.desc()).all()
-    for post in direct_posts:
-        feed_items.append({
-            'type': 'post',
-            'item': post,
-            'timestamp': post.timestamp,
-            'sharer': None
-        })
-
-    # 2. Query for shared posts to the group
-    shared_posts_query = Share.query.filter_by(group_id=group_id)\
-        .options(
-            joinedload(Share.original_post).joinedload(Post.author),
-            joinedload(Share.user)
-        )\
-        .order_by(Share.timestamp.desc())\
-        .all()
-
-    for share_item in shared_posts_query:
-        # Only include if the original post is published and not hidden
-        if share_item.original_post and \
-           share_item.original_post.is_published and \
-           not share_item.original_post.is_hidden_by_moderation: # New condition
-            feed_items.append({
-                'type': 'share',
-                'item': share_item.original_post, # This is the Post object
-                'timestamp': share_item.timestamp,
-                'sharer': share_item.user
-            })
-
-    # 3. Sort the unified list by timestamp (descending)
-    feed_items.sort(key=lambda x: x['timestamp'], reverse=True)
-
     is_member = False
     is_admin = False
     if current_user.is_authenticated:
@@ -2337,9 +2300,9 @@ def view_group(group_id):
             is_member = True
             if membership.role == 'admin':
                 is_admin = True
-
-    comment_form = CommentForm() # Added for posts within group view
-    return render_template('group.html', title=group.name, group=group, feed_items=feed_items, is_member=is_member, is_admin=is_admin, comment_form=comment_form)
+    # Pass models to the template
+    from app.core import models
+    return render_template('group.html', title=group.name, group=group, is_member=is_member, is_admin=is_admin, models=models)
 
 @main.route('/group/<int:group_id>/join', methods=['POST'])
 @login_required
@@ -2886,6 +2849,70 @@ def delete_group(group_id):
 
     flash(f'Group "{group.name}" has been deleted successfully.', 'success')
     return redirect(url_for('main.index')) # Or a future groups listing page
+
+
+# -------------------- Discussion Thread Routes --------------------
+
+@main.route('/group/<int:group_id>/thread/create', methods=['GET', 'POST'])
+@login_required
+def create_thread(group_id):
+    group = Group.query.get_or_404(group_id)
+    membership = GroupMembership.query.filter_by(user_id=current_user.id, group_id=group.id).first()
+    if not membership:
+        flash('You must be a member of the group to create a thread.', 'danger')
+        return redirect(url_for('main.view_group', group_id=group.id))
+
+    form = DiscussionThreadForm()
+    if form.validate_on_submit():
+        thread = DiscussionThread(
+            title=form.title.data,
+            content=form.content.data,
+            author=current_user,
+            group=group
+        )
+        db.session.add(thread)
+        db.session.commit()
+        flash('Thread created successfully!', 'success')
+        return redirect(url_for('main.view_thread', group_id=group.id, thread_id=thread.id))
+    return render_template('create_thread.html', title='Create New Thread', form=form, group=group)
+
+
+@main.route('/group/<int:group_id>/thread/<int:thread_id>')
+def view_thread(group_id, thread_id):
+    thread = DiscussionThread.query.get_or_404(thread_id)
+    if thread.group_id != group_id:
+        abort(404)
+    reply_form = ThreadReplyForm()
+    from app.core import models
+    return render_template('view_thread.html', title=thread.title, thread=thread, reply_form=reply_form, models=models)
+
+
+@main.route('/group/<int:group_id>/thread/<int:thread_id>/reply', methods=['POST'])
+@login_required
+def post_reply(group_id, thread_id):
+    thread = DiscussionThread.query.get_or_404(thread_id)
+    if thread.group_id != group_id:
+        abort(404)
+
+    membership = GroupMembership.query.filter_by(user_id=current_user.id, group_id=group_id).first()
+    if not membership:
+        flash('You must be a member of the group to reply.', 'danger')
+        return redirect(url_for('main.view_thread', group_id=group_id, thread_id=thread_id))
+
+    form = ThreadReplyForm()
+    if form.validate_on_submit():
+        reply = ThreadReply(
+            content=form.content.data,
+            author=current_user,
+            thread=thread
+        )
+        db.session.add(reply)
+        db.session.commit()
+        flash('Your reply has been posted.', 'success')
+    else:
+        flash('Error posting reply.', 'danger')
+
+    return redirect(url_for('main.view_thread', group_id=group_id, thread_id=thread_id))
 
 
 @main.route('/post/<int:post_id>/share', methods=['POST'])

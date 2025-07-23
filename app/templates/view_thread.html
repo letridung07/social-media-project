@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% import "bootstrap/wtf.html" as wtf %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block app_content %}
+<div class="container mt-4">
+    <div class="card">
+        <div class="card-header">
+            <h3>{{ thread.title }}</h3>
+            <small>By <a href="{{ url_for('main.profile', username=thread.author.username) }}">{{ thread.author.username }}</a> on {{ thread.timestamp.strftime('%Y-%m-%d %H:%M') }}</small>
+        </div>
+        <div class="card-body">
+            <p class="card-text">{{ thread.content }}</p>
+        </div>
+    </div>
+
+    <hr>
+
+    <h4>Replies</h4>
+    {% for reply in thread.replies.order_by(models.ThreadReply.timestamp.asc()).all() %}
+        <div class="card mt-3">
+            <div class="card-body">
+                <p class="card-text">{{ reply.content }}</p>
+                <small class="text-muted">By <a href="{{ url_for('main.profile', username=reply.author.username) }}">{{ reply.author.username }}</a> on {{ reply.timestamp.strftime('%Y-%m-%d %H:%M') }}</small>
+            </div>
+        </div>
+    {% endfor %}
+
+    <hr>
+
+    {% if current_user.is_authenticated %}
+        <div class="mt-4">
+            <h4>Post a Reply</h4>
+            {{ wtf.quick_form(reply_form, action=url_for('main.post_reply', group_id=thread.group_id, thread_id=thread.id)) }}
+        </div>
+    {% else %}
+        <p><a href="{{ url_for('main.login') }}">Login</a> to post a reply.</p>
+    {% endif %}
+</div>
+{% endblock %}

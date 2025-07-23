@@ -636,6 +636,37 @@ class GroupMembership(db.Model):
     def __repr__(self):
         return f'<GroupMembership User {self.user_id} in Group {self.group_id} as {self.role}>'
 
+
+class DiscussionThread(db.Model):
+    __tablename__ = 'discussion_thread'
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(150), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    group_id = db.Column(db.Integer, db.ForeignKey('group.id'), nullable=False, index=True)
+
+    author = db.relationship('User', backref=db.backref('discussion_threads', lazy='dynamic'))
+    group = db.relationship('Group', backref=db.backref('discussion_threads', lazy='dynamic'))
+    replies = db.relationship('ThreadReply', backref='thread', lazy='dynamic', cascade='all, delete-orphan')
+
+    def __repr__(self):
+        return f'<DiscussionThread {self.title}>'
+
+
+class ThreadReply(db.Model):
+    __tablename__ = 'thread_reply'
+    id = db.Column(db.Integer, primary_key=True)
+    content = db.Column(db.Text, nullable=False)
+    timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    thread_id = db.Column(db.Integer, db.ForeignKey('discussion_thread.id'), nullable=False, index=True)
+
+    author = db.relationship('User', backref=db.backref('thread_replies', lazy='dynamic'))
+
+    def __repr__(self):
+        return f'<ThreadReply {self.id}>'
+
 class Story(db.Model):
     __tablename__ = 'story'
     id = db.Column(db.Integer, primary_key=True)

@@ -45,25 +45,32 @@
 
     <div class="row mt-4">
         <div class="col-md-12">
-            <h3>Group Posts</h3>
+            <h3>Discussion Threads</h3>
             {% if current_user.is_authenticated and is_member %}
                 <div class="mb-3">
-                    <a href="{{ url_for('main.create_post', group_id=group.id) }}" class="btn btn-primary me-2">Create Post in this Group</a>
-                    <a href="{{ url_for('main.create_poll', group_id=group.id) }}" class="btn btn-info">Create Poll in this Group</a>
+                    <a href="{{ url_for('main.create_thread', group_id=group.id) }}" class="btn btn-primary">Create New Thread</a>
                 </div>
             {% elif not current_user.is_authenticated %}
-                 <p><a href="{{ url_for('main.login') }}">Login</a> to post in this group.</p>
+                <p><a href="{{ url_for('main.login') }}">Login</a> to create a thread in this group.</p>
             {% elif not is_member %}
-                <p>Join this group to create a post.</p>
+                <p>Join this group to create a thread.</p>
             {% endif %}
 
-            {% if feed_items %}
-                {% for item_wrapper in feed_items %}
-                    {# item_wrapper is now directly from the feed_items list, already formatted #}
-                    {% include '_post.html' %}
-                {% endfor %}
+            {% if group.discussion_threads.all() %}
+                <div class="list-group">
+                    {% for thread in group.discussion_threads.order_by(models.DiscussionThread.timestamp.desc()).all() %}
+                        <a href="{{ url_for('main.view_thread', group_id=group.id, thread_id=thread.id) }}" class="list-group-item list-group-item-action">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h5 class="mb-1">{{ thread.title }}</h5>
+                                <small>{{ thread.timestamp.strftime('%Y-%m-%d') }}</small>
+                            </div>
+                            <p class="mb-1">{{ thread.content|truncate(150) }}</p>
+                            <small>By {{ thread.author.username }}</small>
+                        </a>
+                    {% endfor %}
+                </div>
             {% else %}
-                <p>No posts in this group yet.</p>
+                <p>No discussion threads in this group yet.</p>
             {% endif %}
         </div>
     </div>
