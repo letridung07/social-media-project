@@ -378,16 +378,17 @@ def hashtag_feed(tag_text):
     return render_template('hashtag_feed.html', title=title, hashtag=hashtag, posts=posts, query=normalized_tag_text) # pass normalized
 
 
-import random
+from app.services.trending_service import calculate_trending_scores
 
 @main.route('/trending_hashtags')
 def trending_hashtags():
-    all_hashtags = Hashtag.query.all()
-    if len(all_hashtags) > 10:
-        trending = random.sample(all_hashtags, 10)
-    else:
-        trending = all_hashtags
-    return render_template('trending_hashtags.html', title=_l("Trending Hashtags"), hashtags=trending)
+    trending_hashtags_with_scores = calculate_trending_scores()
+    trending_hashtags = []
+    for tag_text, score in trending_hashtags_with_scores:
+        hashtag = Hashtag.query.filter_by(tag_text=tag_text).first()
+        if hashtag:
+            trending_hashtags.append(hashtag)
+    return render_template('trending_hashtags.html', title=_l("Trending Hashtags"), hashtags=trending_hashtags)
 
 
 @main.route('/register', methods=['GET', 'POST'])
