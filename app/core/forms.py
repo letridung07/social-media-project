@@ -26,6 +26,8 @@ DEFAULT_CONTENT_PRIVACY_CHOICES = [
     (PRIVACY_PRIVATE, _l('Private'))
 ]
 
+from app.core.models import User, UserPoints, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE
+
 class RegistrationForm(FlaskForm):
     username = StringField(_l('Username'), validators=[DataRequired(), Length(min=2, max=20)])
     email = StringField(_l('Email'), validators=[DataRequired(), Email()])
@@ -42,6 +44,12 @@ class RegistrationForm(FlaskForm):
         user = User.query.filter_by(email=email.data).first()
         if user:
             raise ValidationError(_l('That email is already in use. Please choose a different one.'))
+
+    def create_user(self):
+        user = User(username=self.username.data, email=self.email.data)
+        user.set_password(self.password.data)
+        user.points = UserPoints()
+        return user
 
 class LoginForm(FlaskForm):
     email = StringField(_l('Email'), validators=[DataRequired(), Email()])
@@ -275,3 +283,14 @@ class ConfirmPasswordAndTOTPForm(FlaskForm): # For actions like viewing/regenera
     password = PasswordField(_l('Current Password'), validators=[DataRequired()])
     totp_code = StringField(_l('Authenticator Code'), validators=[DataRequired(), Length(min=6, max=6)])
     submit = SubmitField(_l('Confirm Identity'))
+
+
+class DiscussionThreadForm(FlaskForm):
+    title = StringField(_l('Title'), validators=[DataRequired(), Length(min=3, max=150)])
+    content = TextAreaField(_l('Content'), validators=[DataRequired()])
+    submit = SubmitField(_l('Create Thread'))
+
+
+class ThreadReplyForm(FlaskForm):
+    content = TextAreaField(_l('Your Reply'), validators=[DataRequired()])
+    submit = SubmitField(_l('Post Reply'))
