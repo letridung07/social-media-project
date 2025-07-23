@@ -719,6 +719,20 @@ event_attendees = db.Table('event_attendees',
 
 import uuid # For generating unique calendar UIDs
 
+class WhiteboardSession(db.Model):
+    __tablename__ = 'whiteboard_session'
+    id = db.Column(db.Integer, primary_key=True)
+    unique_id = db.Column(db.String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    content = db.Column(db.Text, nullable=True)  # Store whiteboard content as JSON string
+    creator_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+
+    creator = db.relationship('User', backref='created_whiteboard_sessions')
+
+    def __repr__(self):
+        return f'<WhiteboardSession {self.unique_id}>'
+
+
 class Event(db.Model):
     __tablename__ = 'event'
     id = db.Column(db.Integer, primary_key=True)
