@@ -533,6 +533,25 @@ def set_language(lang_code):
     return redirect(url_for('main.index'))
 
 
+@main.route('/whiteboard', methods=['GET', 'POST'])
+@login_required
+def whiteboard():
+    if request.method == 'POST':
+        new_session = WhiteboardSession(creator_id=current_user.id)
+        db.session.add(new_session)
+        db.session.commit()
+        return redirect(url_for('main.whiteboard_session', session_id=new_session.unique_id))
+    sessions = WhiteboardSession.query.order_by(WhiteboardSession.created_at.desc()).all()
+    return render_template('whiteboard.html', sessions=sessions)
+
+
+@main.route('/whiteboard/<session_id>')
+@login_required
+def whiteboard_session(session_id):
+    session = WhiteboardSession.query.filter_by(unique_id=session_id).first_or_404()
+    return render_template('whiteboard_session.html', session=session)
+
+
 @main.route('/forgot_password', methods=['GET', 'POST'])
 def forgot_password():
     if current_user.is_authenticated:

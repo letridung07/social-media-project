@@ -2,10 +2,49 @@ from flask_socketio import join_room, leave_room, emit
 from flask_login import current_user
 from flask import request, current_app # Import current_app
 from app import socketio, db # Assuming socketio and db are initialized in app/__init__.py
-from app.core.models import Conversation, ChatMessage, User, Notification, MessageReadStatus, LiveStream, StreamChatMessage # Import LiveStream and StreamChatMessage
+from app.core.models import Conversation, ChatMessage, User, Notification, MessageReadStatus, LiveStream, StreamChatMessage, WhiteboardSession
 from datetime import datetime, timezone
 
 poll_room_viewers = {}
+
+
+@socketio.on('join_whiteboard')
+def handle_join_whiteboard(data):
+    session_id = data.get('session_id')
+    whiteboard_room = f'whiteboard_{session_id}'
+    join_room(whiteboard_room)
+    # Load and emit drawing history to the new user
+    session = WhiteboardSession.query.filter_by(unique_id=session_id).first()
+    if session and session.content:
+        emit('load_drawing', {'content': session.content}, room=request.sid)
+
+@socketio.on('leave_whiteboard')
+def handle_leave_whiteboard(data):
+    session_id = data.get('session_id')
+    whiteboard_room = f'whiteboard_{session_id}'
+    leave_room(whiteboard_room)
+
+@socketio.on('draw')
+def handle_draw(data):
+    session_id = data.get('session_id')
+    whiteboard_room = f'whiteboard_{session_id}'
+    emit('draw', data, room=whiteboard_room, include_self=False)
+    # Save the drawing to the database
+    session = WhiteboardSession.query.filter_by(unique_id=session_id).first()
+    if session:
+        session.content = data.get('content')
+        db.session.commit()
+
+@socketio.on('clear_whiteboard')
+def handle_clear_whiteboard(data):
+    session_id = data.get('session_id')
+    whiteboard_room = f'whiteboard_{session_id}'
+    emit('clear_whiteboard', room=whiteboard_room)
+    # Clear the drawing from the database
+    session = WhiteboardSession.query.filter_by(unique_id=session_id).first()
+    if session:
+        session.content = None
+        db.session.commit()
 
 @socketio.on('connect')
 def handle_connect():

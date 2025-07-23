@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <h1 class="my-4">Collaborative Whiteboards</h1>
+    <div class="row">
+        <div class="col-md-8">
+            <h2>Active Sessions</h2>
+            <ul class="list-group">
+                {% for session in sessions %}
+                <li class="list-group-item">
+                    <a href="{{ url_for('main.whiteboard_session', session_id=session.unique_id) }}">
+                        Session {{ session.unique_id }}
+                    </a>
+                    <span class="text-muted">created by {{ session.creator.username }} on {{ session.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                </li>
+                {% else %}
+                <li class="list-group-item">No active whiteboard sessions.</li>
+                {% endfor %}
+            </ul>
+        </div>
+        <div class="col-md-4">
+            <h2>Create New Session</h2>
+            <form method="POST" action="{{ url_for('main.whiteboard') }}">
+                {{ csrf_token() }}
+                <button type="submit" class="btn btn-primary">Create New Whiteboard</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
