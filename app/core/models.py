@@ -214,6 +214,10 @@ class User(db.Model, UserMixin):
     active_title_id = db.Column(db.Integer, db.ForeignKey('user_virtual_good.id'), nullable=True)
     active_title = db.relationship('UserVirtualGood', foreign_keys=[active_title_id], backref=db.backref('active_title_for_user', uselist=False), uselist=False)
 
+    # Tips
+    tips_given = db.relationship('Tip', foreign_keys='Tip.tipper_id', backref='tipper', lazy='dynamic', cascade='all, delete-orphan')
+    tips_received = db.relationship('Tip', foreign_keys='Tip.recipient_id', backref='recipient', lazy='dynamic', cascade='all, delete-orphan')
+
     def __repr__(self):
         return f'<User {self.username}>'
 
@@ -841,6 +845,22 @@ class Share(db.Model):
 
     def __repr__(self):
         return f'<Share user_id={self.user_id} post_id={self.post_id} group_id={self.group_id}>'
+
+
+class Tip(db.Model):
+    __tablename__ = 'tip'
+    id = db.Column(db.Integer, primary_key=True)
+    tipper_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    recipient_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    amount = db.Column(db.Integer, nullable=False)  # Store amount in smallest currency unit (e.g., cents)
+    currency = db.Column(db.String(10), nullable=False)
+    status = db.Column(db.String(30), nullable=False, default='pending', index=True) # e.g., pending, succeeded, failed
+    message = db.Column(db.Text, nullable=True)
+    stripe_payment_intent_id = db.Column(db.String(255), unique=True, nullable=False, index=True)
+    timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+
+    def __repr__(self):
+        return f'<Tip {self.id} from {self.tipper_id} to {self.recipient_id} for {self.amount} {self.currency}>'
 
 
 class LiveStream(db.Model):
