@@ -15,7 +15,7 @@ from sqlalchemy.orm import joinedload # Import joinedload
 from werkzeug.utils import secure_filename
 from app import db, socketio, cache # Import cache
 from app.core.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm, FriendListForm, AddUserToFriendListForm, PRIVACY_CHOICES, ArticleForm, AudioPostForm, SubscriptionPlanForm, TOTPSetupForm, Verify2FAForm, Disable2FAForm, ConfirmPasswordAndTOTPForm, DiscussionThreadForm, ThreadReplyForm # Added Disable2FAForm, ConfirmPasswordAndTOTPForm
-from app.core.models import User, Post, MediaItem, Reaction, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus, Mention, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE, FriendList, Article, AudioPost, SubscriptionPlan, UserSubscription, Bookmark, UserPoints, ActivityLog, DiscussionThread, ThreadReply # Added UserPoints, ActivityLog for points system
+from app.core.models import User, Post, MediaItem, Reaction, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus, Mention, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE, FriendList, Article, AudioPost, SubscriptionPlan, UserSubscription, Bookmark, UserPoints, ActivityLog, DiscussionThread, ThreadReply, Tip # Added Tip
 from app.utils.helpers import save_picture, save_group_image, save_story_media, process_mentions, get_historical_engagement, get_top_performing_hashtags, get_top_performing_groups, save_media_file, slugify, save_audio_file, get_audio_duration, process_hashtags, award_points, get_current_utc # Added get_current_utc
 from app.services.purchase_service import process_virtual_good_purchase # Import the new service function
 from app.services.moderation_service import get_moderation_service # Import moderation service
@@ -4192,7 +4192,48 @@ def stripe_webhook():
     # stripe.api_key = current_app.config.get('STRIPE_SECRET_KEY')
 
     # Handle the event
-    if event['type'] == 'checkout.session.completed':
+    if event['type'] == 'payment_intent.succeeded':
+        intent = event['data']['object']
+        current_app.logger.info(f"Processing payment_intent.succeeded: {intent.get('id')}")
+
+        # Check if this payment intent was for a tip
+        if intent.get('metadata', {}).get('type') == 'tip':
+            stripe_payment_intent_id = intent.get('id')
+            tip = Tip.query.filter_by(stripe_payment_intent_id=stripe_payment_intent_id).first()
+
+            if tip and tip.status == 'pending':
+                tip.status = 'succeeded'
+
+                # Award points
+                # Tipper gets points for sending a tip
+                award_points(tip.tipper, 'send_tip', 5, related_item=tip)
+                # Recipient gets points for receiving a tip
+                award_points(tip.recipient, 'receive_tip', 10, related_item=tip)
+
+                # Send notification
+                notification = Notification(
+                    recipient_id=tip.recipient_id,
+                    actor_id=tip.tipper_id,
+                    type='new_tip',
+                    # We might want a related_tip_id in the Notification model
+                )
+                db.session.add(notification)
+                db.session.commit()
+
+                # Emit real-time notification
+                socketio.emit('new_notification', {
+                    'message': f'{tip.tipper.username} sent you a tip of ${tip.amount / 100:.2f}!',
+                    'type': 'new_tip',
+                    'actor_username': tip.tipper.username,
+                }, room=str(tip.recipient_id))
+
+                current_app.logger.info(f"Successfully processed tip ID {tip.id} for payment intent {stripe_payment_intent_id}.")
+            elif tip:
+                current_app.logger.warning(f"Received payment_intent.succeeded for tip ID {tip.id} which was not in 'pending' state (state: {tip.status}).")
+            else:
+                current_app.logger.warning(f"Received payment_intent.succeeded for payment intent {stripe_payment_intent_id}, but no corresponding tip found in the database.")
+
+    elif event['type'] == 'checkout.session.completed':
         session = event['data']['object']
         current_app.logger.info(f"Processing checkout.session.completed: {session.get('id')}")
         stripe_subscription_id = session.get('subscription')

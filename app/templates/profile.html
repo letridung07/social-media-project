@@ -37,6 +37,7 @@
                                 <input type="submit" value="{{ _('Follow') }}" class="btn btn-primary btn-sm mb-2">
                             </form>
                         {% endif %}
+                        <button type="button" class="btn btn-success btn-sm mb-2" id="tip-button" data-recipient-id="{{ user.id }}" data-recipient-name="{{ user.username }}">{{ _('Tip') }}</button>
                     {% endif %}
 
                     {# Display Equipped Virtual Goods #}
@@ -191,4 +192,45 @@
             {% endif %}
         </div>
     </div>
+
+    <!-- Tip Modal -->
+    <div class="modal fade" id="tipModal" tabindex="-1" role="dialog" aria-labelledby="tipModalLabel" aria-hidden="true">
+      <div class="modal-dialog" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="tipModalLabel">Send a Tip to {{ user.username }}</h5>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </div>
+          <div class="modal-body">
+            <form id="tip-form">
+              <div class="form-group">
+                <label for="tip-amount">Amount (in USD)</label>
+                <input type="number" class="form-control" id="tip-amount" placeholder="5.00" min="1" step="0.01" required>
+              </div>
+              <div class="form-group">
+                <label for="tip-message">Optional Message</label>
+                <textarea class="form-control" id="tip-message" rows="3"></textarea>
+              </div>
+              <!-- Stripe Card Element will be inserted here -->
+              <div id="card-element" class="form-control"></div>
+              <!-- Used to display form errors -->
+              <div id="card-errors" role="alert" class="text-danger mt-2"></div>
+              <button type="submit" class="btn btn-primary mt-3">Submit Tip</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+{% endblock %}
+
+{% block scripts %}
+    {{ super() }}
+    <script src="https://js.stripe.com/v3/"></script>
+    <script>
+        // Pass config values to JS
+        const STRIPE_PUBLISHABLE_KEY = "{{ config.STRIPE_PUBLISHABLE_KEY }}";
+    </script>
+    <script src="{{ url_for('static', filename='js/tipping.js') }}"></script>
 {% endblock %}

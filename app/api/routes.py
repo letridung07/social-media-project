@@ -745,8 +745,82 @@ import logging # For setting log level if needed
 from datetime import datetime, timezone # Added for Reaction timestamp update
 import secrets # For generating stream_key
 from app.services.media_service import MediaServerService # Import the new service
+from flask_login import login_required, current_user # For user session auth
+from app.core.models import Tip, User # Import Tip and User models
+import stripe # Import stripe
 
 # Standardized JSON Error Handling for API Blueprint
+@api_bp.route('/tip/create-payment-intent', methods=['POST'])
+@login_required
+def create_payment_intent():
+    """
+    Create a Stripe PaymentIntent for a tip.
+    Requires user to be logged in via session.
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify(error="InvalidRequest", message="No input data provided or not valid JSON."), 400
+
+    try:
+        amount = int(data.get('amount'))
+        recipient_id = int(data.get('recipient_id'))
+        message = data.get('message', '') # Optional message
+    except (ValueError, TypeError):
+        return jsonify(error="ValidationError", message="Invalid amount or recipient_id."), 400
+
+    # --- Validation ---
+    # Validate amount (e.g., must be between $1.00 and $500.00)
+    # Stripe requires amount in cents, so we expect cents from the client.
+    if not 100 <= amount <= 50000:
+        return jsonify(error="ValidationError", message="Amount must be between $1.00 and $500.00."), 400
+
+    recipient = User.query.get(recipient_id)
+    if not recipient:
+        return jsonify(error="ValidationError", message="Recipient not found."), 404
+
+    if recipient.id == current_user.id:
+        return jsonify(error="ValidationError", message="You cannot tip yourself."), 400
+
+    try:
+        stripe.api_key = current_app.config['STRIPE_SECRET_KEY']
+
+        # Create a PaymentIntent with the order amount and currency
+        intent = stripe.PaymentIntent.create(
+            amount=amount,
+            currency='usd', # Or make this dynamic
+            automatic_payment_methods={
+                'enabled': True,
+            },
+            metadata={
+                'tipper_id': current_user.id,
+                'recipient_id': recipient.id,
+                'message': message,
+                'type': 'tip'
+            }
+        )
+
+        # Create a preliminary Tip record in our database
+        new_tip = Tip(
+            tipper_id=current_user.id,
+            recipient_id=recipient.id,
+            amount=amount,
+            currency='usd',
+            status='pending',
+            message=message,
+            stripe_payment_intent_id=intent.id
+        )
+        db.session.add(new_tip)
+        db.session.commit()
+
+        return jsonify({
+            'clientSecret': intent.client_secret
+        })
+
+    except Exception as e:
+        current_app.logger.error(f"Error creating PaymentIntent: {e}", exc_info=True)
+        return jsonify(error="ServerError", message=str(e)), 500
+
+
 @api_bp.errorhandler(HTTPException)
 def handle_http_exception_api(e):
     """Return JSON instead of HTML for HTTP errors within the API blueprint."""
