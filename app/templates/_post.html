@@ -50,6 +50,18 @@
         </div>
     </div>
     <div class="card-body">
+        {% if post.price and post.price > 0 and current_user.id != post.user_id and post.id not in purchased_post_ids %}
+            <div class="locked-content text-center p-4">
+                <i class="fas fa-lock fa-3x text-muted"></i>
+                <h5 class="mt-3">This content is locked</h5>
+                <p>This post is available for purchase.</p>
+                <p><strong>Price: {{ post.price|int }} points</strong></p>
+                <form action="{{ url_for('main.purchase_post', post_id=post.id) }}" method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token else '' }}"/>
+                    <button type="submit" class="btn btn-success">Purchase to View</button>
+                </form>
+            </div>
+        {% else %}
         {# Display media gallery using Bootstrap Carousel #}
         {% if post.media_items and post.media_items.count() > 0 %}
             {% set carousel_id = "carouselPost" ~ post.id %}
@@ -249,6 +261,7 @@
                 </form>
             {% endif %}
         </div>
+        {% endif %}
     </div>
 
     {# New section for comments #}

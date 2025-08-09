@@ -78,6 +78,8 @@ class PostForm(FlaskForm):
         Optional(),
         FileAllowed(['jpg', 'png', 'jpeg', 'gif', 'mp4', 'mov', 'avi', 'mkv'], _l('Images or videos only!'))
     ])
+    price = DecimalField(_l('Price (optional)'), validators=[Optional(), NumberRange(min=0)], places=2)
+    currency = StringField(_l('Currency'), [Optional()], default='USD')
     privacy_level = SelectField(_l('Visibility'), choices=PRIVACY_CHOICES, default=PRIVACY_PUBLIC, validators=[DataRequired()])
     custom_friend_list_id = SelectField(_l('Select Friend List'), choices=[], coerce=int, validators=[Optional()])
     schedule_time = DateTimeField(_l('Schedule For (optional)'), format='%Y-%m-%d %H:%M', validators=[Optional()])
