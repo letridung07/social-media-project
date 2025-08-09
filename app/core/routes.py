@@ -17,7 +17,7 @@ from app import db, socketio, cache # Import cache
 from app.core.forms import RegistrationForm, LoginForm, EditProfileForm, PostForm, CommentForm, ForgotPasswordForm, ResetPasswordForm, GroupCreationForm, StoryForm, PollForm, EventForm, FriendListForm, AddUserToFriendListForm, PRIVACY_CHOICES, ArticleForm, AudioPostForm, SubscriptionPlanForm, TOTPSetupForm, Verify2FAForm, Disable2FAForm, ConfirmPasswordAndTOTPForm, DiscussionThreadForm, ThreadReplyForm # Added Disable2FAForm, ConfirmPasswordAndTOTPForm
 from app.core.models import User, Post, MediaItem, Reaction, Comment, Notification, Conversation, ChatMessage, Hashtag, Group, GroupMembership, Story, Poll, PollOption, PollVote, followers, Event, UserAnalytics, Share, MessageReadStatus, Mention, PRIVACY_PUBLIC, PRIVACY_FOLLOWERS, PRIVACY_CUSTOM_LIST, PRIVACY_PRIVATE, FriendList, Article, AudioPost, SubscriptionPlan, UserSubscription, Bookmark, UserPoints, ActivityLog, DiscussionThread, ThreadReply, Tip # Added Tip
 from app.utils.helpers import save_picture, save_group_image, save_story_media, process_mentions, get_historical_engagement, get_top_performing_hashtags, get_top_performing_groups, save_media_file, slugify, save_audio_file, get_audio_duration, process_hashtags, award_points, get_current_utc # Added get_current_utc
-from app.services.purchase_service import process_virtual_good_purchase # Import the new service function
+from app.services.purchase_service import process_virtual_good_purchase, process_post_purchase # Import the new service function
 from app.services.moderation_service import get_moderation_service # Import moderation service
 from app.core.models import ModerationLog # Import ModerationLog
 from app.utils.email import send_password_reset_email # Import email utility
@@ -80,6 +80,7 @@ def index():
     posts_pagination = None # Initialize to None
 
     if current_user.is_authenticated:
+        purchased_post_ids = {p.post_id for p in current_user.post_purchases}
         followed_user_ids = [user.id for user in current_user.followed]
 
         # Condition for posts from others (followed, public, or custom list they are part of)
@@ -137,8 +138,10 @@ def index():
         recommendations = get_recommendations(current_user.id)
         recommended_users = recommendations.get('users', [])[:3]
         recommended_groups = recommendations.get('groups', [])[:3]
+    else:
+        purchased_post_ids = set()
 
-    return render_template('index.html', title=_l('Home'), posts=posts, comment_form=comment_form, pagination=posts_pagination, recommended_users=recommended_users, recommended_groups=recommended_groups)
+    return render_template('index.html', title=_l('Home'), posts=posts, comment_form=comment_form, pagination=posts_pagination, recommended_users=recommended_users, recommended_groups=recommended_groups, purchased_post_ids=purchased_post_ids)
 
 
 from app.core.models import post_hashtags # For hashtag popularity sort
@@ -157,6 +160,9 @@ def search():
         recommendations = get_recommendations(current_user.id)
 
     users_found, posts_found, groups_found, hashtags_found = [], [], [], []
+    purchased_post_ids = set()
+    if current_user.is_authenticated:
+        purchased_post_ids = {p.post_id for p in current_user.post_purchases}
 
     if query_term:
         # Users Search
@@ -268,6 +274,7 @@ def search():
     return render_template('search_results.html',
                            title=final_title,
                            query=query_term,
+                           purchased_post_ids=purchased_post_ids,
                            users=users_found,
                            posts=posts_found,
                            groups=groups_found,
@@ -376,8 +383,11 @@ def hashtag_feed(tag_text):
         if not posts: # Hashtag exists but no posts are associated or published/visible
              title = _l('No published posts found for #%(tag)s', tag=hashtag.tag_text) # Message can be improved
     # else: title remains "No posts found..."
+    purchased_post_ids = set()
+    if current_user.is_authenticated:
+        purchased_post_ids = {p.post_id for p in current_user.post_purchases}
 
-    return render_template('hashtag_feed.html', title=title, hashtag=hashtag, posts=posts, query=normalized_tag_text) # pass normalized
+    return render_template('hashtag_feed.html', title=title, hashtag=hashtag, posts=posts, query=normalized_tag_text, purchased_post_ids=purchased_post_ids) # pass normalized
 
 
 from app.services.trending_service import calculate_trending_scores
@@ -612,6 +622,10 @@ def profile(username):
     profile_is_private = False
     profile_is_limited = False
 
+    purchased_post_ids = set()
+    if current_user.is_authenticated:
+        purchased_post_ids = {p.post_id for p in current_user.post_purchases}
+
     if user.id != getattr(current_user, 'id', None): # Not viewing own profile
         if user.profile_visibility == PRIVACY_PRIVATE:
             flash(_l("%(username)s's profile is private.", username=user.username), "info")
@@ -694,7 +708,8 @@ def profile(username):
                            comment_form=comment_form, profile_is_private=profile_is_private,
                            profile_is_limited=profile_is_limited,
                            equipped_badge=equipped_badge, equipped_frame=equipped_frame,
-                           equipped_items_error=equipped_items_error)
+                           equipped_items_error=equipped_items_error,
+                           purchased_post_ids=purchased_post_ids)
 
 @main.route('/edit_profile', methods=['GET', 'POST'])
 @login_required
@@ -1025,6 +1040,8 @@ def create_post():
         post = Post(
             body=form.body.data, # Body now serves as caption for the album
             author=current_user,
+            price=form.price.data,
+            currency=form.currency.data,
             privacy_level=form.privacy_level.data,
             custom_friend_list_id=form.custom_friend_list_id.data if form.privacy_level.data == PRIVACY_CUSTOM_LIST else None,
             scheduled_for=scheduled_for_value,
@@ -1252,6 +1269,8 @@ def edit_post(post_id):
 
     if form.validate_on_submit():
         post.body = form.body.data # Body is the caption
+        post.price = form.price.data
+        post.currency = form.currency.data
         post.privacy_level = form.privacy_level.data
         if post.privacy_level == PRIVACY_CUSTOM_LIST:
             if form.custom_friend_list_id.data:
@@ -1378,6 +1397,18 @@ def delete_post(post_id):
     db.session.commit()
     flash('Your post and all its media have been deleted!', 'success')
     return redirect(url_for('main.profile', username=current_user.username)) # Or redirect to main.index
+
+
+@main.route('/post/<int:post_id>/purchase', methods=['POST'])
+@login_required
+def purchase_post(post_id):
+    post = Post.query.get_or_404(post_id)
+    result = process_post_purchase(current_user, post)
+    if result['success']:
+        flash(result['message'], 'success')
+    else:
+        flash(result['message'], 'danger')
+    return redirect(request.referrer or url_for('main.index'))
 
 
 @main.route('/follow/<username>', methods=['POST']) # Use POST as it changes state

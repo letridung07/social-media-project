@@ -4,7 +4,7 @@ import os
 import io # For creating mock files
 from flask import current_app, url_for # Added url_for
 from app import create_app, db
-from app.core.models import User, Post, MediaItem, Mention, Comment, Notification, PRIVACY_PUBLIC, PRIVACY_PRIVATE, PRIVACY_FOLLOWERS # Added MediaItem and privacy constants
+from app.core.models import User, Post, MediaItem, Mention, Comment, Notification, PRIVACY_PUBLIC, PRIVACY_PRIVATE, PRIVACY_FOLLOWERS, UserPoints # Added MediaItem and privacy constants
 from app.utils.helpers import process_mentions, linkify_mentions # Added process_mentions and linkify_mentions
 from config import TestingConfig # Using TestingConfig for tests
 from werkzeug.datastructures import FileStorage # For creating mock FileStorage object
@@ -1186,6 +1186,60 @@ class PostModelCase(unittest.TestCase):
         self.assertEqual(response_anon.status_code, 200)
         self.assertIn(public_post_body.encode(), response_anon.data, "Anonymous user should see user1's public post.")
 
+
+    def test_paid_post_purchase_flow(self):
+        # 0. Setup points for users
+        self.user1.points = UserPoints(points=100)
+        self.user2.points = UserPoints(points=10) # Not enough points initially
+        db.session.commit()
+
+        # 1. User1 creates a paid post
+        self._login('john@example.com', 'cat')
+        paid_post_body = "This is a paid post."
+        post_price = 20
+        response = self.client.post('/create_post', data={
+            'body': paid_post_body,
+            'price': post_price,
+            'currency': 'POINTS' # Explicitly set currency for test clarity
+        }, follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        paid_post = Post.query.filter_by(body=paid_post_body).first()
+        self.assertIsNotNone(paid_post)
+        self.assertEqual(paid_post.price, post_price)
+        self._logout()
+
+        # 2. User2 views the post and sees the locked message
+        self._login('susan@example.com', 'dog')
+        response_view_locked = self.client.get(f'/user/{self.user1.username}')
+        self.assertIn(b'This content is locked', response_view_locked.data)
+        self.assertIn(f'Price: {post_price} points'.encode(), response_view_locked.data)
+        self.assertNotIn(paid_post_body.encode(), response_view_locked.data)
+
+        # 3. User2 fails to purchase due to insufficient points
+        response_purchase_fail = self.client.post(f'/post/{paid_post.id}/purchase', follow_redirects=True)
+        self.assertIn(b'You do not have enough points', response_purchase_fail.data)
+        self.assertFalse(self.user2.has_purchased_post(paid_post))
+
+        # 4. Give User2 enough points
+        self.user2.points.points = 50
+        db.session.commit()
+
+        # 5. User2 successfully purchases the post
+        response_purchase_success = self.client.post(f'/post/{paid_post.id}/purchase', follow_redirects=True)
+        self.assertIn(b'Post purchased successfully!', response_purchase_success.data)
+        self.assertTrue(self.user2.has_purchased_post(paid_post))
+
+        # 6. User2 views the post again and sees the content
+        response_view_unlocked = self.client.get(f'/user/{self.user1.username}')
+        self.assertNotIn(b'This content is locked', response_view_unlocked.data)
+        self.assertIn(paid_post_body.encode(), response_view_unlocked.data)
+
+        # 7. Check balances
+        db.session.refresh(self.user1.points)
+        db.session.refresh(self.user2.points)
+        self.assertEqual(self.user1.points.points, 100 + post_price)
+        self.assertEqual(self.user2.points.points, 50 - post_price)
+        self._logout()
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

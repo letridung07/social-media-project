@@ -10,11 +10,11 @@ if project_root not in sys.path:
 # Set FLASK_APP environment variable
 os.environ['FLASK_APP'] = 'run.py'
 
-print("--- Running Migration ---")
+print("--- Running Upgrade ---")
 try:
     # Use sys.executable to ensure we're using the same python interpreter
     result = subprocess.run(
-        [sys.executable, "-m", "flask", "db", "migrate", "-m", "add paid posts feature"],
+        [sys.executable, "-m", "flask", "db", "upgrade"],
         check=True,
         capture_output=True,
         text=True,
@@ -22,9 +22,9 @@ try:
     )
     print("STDOUT:", result.stdout)
     print("STDERR:", result.stderr)
-    print("--- Migration script generated successfully! ---")
+    print("--- Upgrade successful! ---")
 except subprocess.CalledProcessError as e:
-    print("!!! Error during migration generation !!!")
+    print("!!! Error during upgrade !!!")
     print("STDOUT:", e.stdout)
     print("STDERR:", e.stderr)
 except FileNotFoundError:

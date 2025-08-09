@@ -299,6 +299,14 @@ class User(db.Model, UserMixin):
         s = Serializer(current_app.config['SECRET_KEY'], expires_in=expires_sec)
         return s.dumps({'user_id': self.id}).decode('utf-8')
 
+    def has_purchased_post(self, post):
+        if not self.is_authenticated:
+            return False
+        # Avoid error if post object is not committed yet and has no id
+        if not post.id:
+            return False
+        return PostPurchase.query.filter_by(user_id=self.id, post_id=post.id).count() > 0
+
     @staticmethod
     def verify_reset_password_token(token):
         s = Serializer(current_app.config['SECRET_KEY'])
@@ -327,6 +335,10 @@ class Post(db.Model):
     # Use lambda for default to ensure it's called at insertion time
     timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+
+    # Fields for paid content
+    price = db.Column(db.Numeric(10, 2), nullable=True)
+    currency = db.Column(db.String(10), nullable=True)
 
     # Relationship to MediaItem
     media_items = db.relationship('MediaItem', backref='post_parent', lazy='dynamic', cascade='all, delete-orphan')
@@ -1015,6 +1027,24 @@ class UserSubscription(db.Model):
 
     def __repr__(self):
         return f'<UserSubscription User {self.subscriber_id} to Plan {self.plan_id} - Status: {self.status}>'
+
+
+class PostPurchase(db.Model):
+    __tablename__ = 'post_purchase'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    post_id = db.Column(db.Integer, db.ForeignKey('post.id'), nullable=False, index=True)
+    purchase_date = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc) if hasattr(timezone, 'utc') else datetime.utcnow())
+    amount_paid = db.Column(db.Numeric(10, 2), nullable=False)
+    currency_paid = db.Column(db.String(10), nullable=False)
+
+    user = db.relationship('User', backref=db.backref('post_purchases', lazy='dynamic'))
+    post = db.relationship('Post', backref=db.backref('purchases', lazy='dynamic'))
+
+    __table_args__ = (db.UniqueConstraint('user_id', 'post_id', name='_user_post_purchase_uc'),)
+
+    def __repr__(self):
+        return f'<PostPurchase UserID:{self.user_id} PostID:{self.post_id}>'
 
 
 # OAuth Application Model

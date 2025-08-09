@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING
 from app import db
 # User is now only imported for type hinting, VirtualGood and UserVirtualGood are used at runtime
-from app.core.models import VirtualGood, UserVirtualGood, UserPoints, ActivityLog # Added UserPoints, ActivityLog
+from app.core.models import VirtualGood, UserVirtualGood, UserPoints, ActivityLog, Post, PostPurchase # Added UserPoints, ActivityLog
 from sqlalchemy.exc import SQLAlchemyError
 from flask import current_app
 # from app.utils.helpers import award_points # We will deduct manually for now
@@ -11,7 +11,66 @@ from flask import current_app
 from app.utils.helpers import get_current_utc # Import the centralized helper
 
 if TYPE_CHECKING:
-    from app.core.models import User # User for type hinting
+from app.core.models import User # User for type hinting
+
+if TYPE_CHECKING:
+    from app.core.models import Post
+
+def process_post_purchase(user: 'User', post: 'Post') -> dict:
+    """
+    Processes the purchase of a post for a user using points.
+    """
+    if post.price is None or post.price <= 0:
+        return {"success": False, "status_key": "not_for_sale", "message": "This post is not for sale."}
+
+    if user.id == post.user_id:
+        return {"success": False, "status_key": "is_author", "message": "You cannot purchase your own post."}
+
+    if user.has_purchased_post(post):
+        return {"success": False, "status_key": "already_owned", "message": "You have already purchased this post."}
+
+    user_points = UserPoints.query.filter_by(user_id=user.id).first()
+    current_points = user_points.points if user_points else 0
+
+    if current_points < post.price:
+        return {
+            "success": False,
+            "status_key": "insufficient_points",
+            "message": f"You do not have enough points. You need {post.price} points, but you have {current_points}.",
+        }
+
+    try:
+        # Deduct points from buyer
+        user_points.points -= post.price
+
+        # Award points to seller
+        author_points = UserPoints.query.filter_by(user_id=post.user_id).first()
+        if not author_points:
+            author_points = UserPoints(user_id=post.user_id, points=0)
+            db.session.add(author_points)
+        author_points.points += post.price
+
+        # Create purchase record
+        new_purchase = PostPurchase(
+            user_id=user.id,
+            post_id=post.id,
+            amount_paid=post.price,
+            currency_paid='POINTS', # Assuming points currency
+            purchase_date=get_current_utc(),
+        )
+        db.session.add(new_purchase)
+
+        db.session.commit()
+        return {
+            "success": True,
+            "status_key": "purchase_successful",
+            "message": "Post purchased successfully!",
+        }
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        current_app.logger.error(f"DB error purchasing post {post.id} for user {user.id}: {e}", exc_info=True)
+        return {"success": False, "status_key": "db_error", "message": "Database error during purchase."}
+
 
 def process_virtual_good_purchase(user: 'User', virtual_good: VirtualGood) -> dict: # Use string literal for User hint
     """
