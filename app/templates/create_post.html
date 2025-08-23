@@ -49,6 +49,9 @@
                     {% else %}
                         <small class="form-text text-muted">Select one or more image or video files for your post.</small>
                     {% endif %}
+                    <div class="progress mt-2" style="display: none;">
+                        <div class="progress-bar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                    </div>
                 </div>
 
                 <div class="form-group mb-3">
@@ -150,6 +153,62 @@
         // dateFormat: "Y-m-d H:i",
         // });
         // Ensure the actual library (e.g., Flatpickr) is included in your base template or page.
+    });
+
+    const form = document.querySelector('form');
+    const progressBar = document.querySelector('.progress');
+    const progressBarInner = document.querySelector('.progress-bar');
+    const fileInput = document.querySelector('input[type="file"]');
+
+    form.addEventListener('submit', function(e) {
+        // Only use AJAX if files are selected
+        if (fileInput.files.length === 0) {
+            return; // Allow normal form submission
+        }
+
+        e.preventDefault();
+
+        const formData = new FormData(form);
+        const xhr = new XMLHttpRequest();
+
+        xhr.open('POST', form.action, true);
+
+        xhr.upload.addEventListener('progress', function(e) {
+            if (e.lengthComputable) {
+                const percentComplete = (e.loaded / e.total) * 100;
+                progressBar.style.display = 'block';
+                progressBarInner.style.width = percentComplete + '%';
+                progressBarInner.textContent = Math.round(percentComplete) + '%';
+            }
+        });
+
+        xhr.addEventListener('load', function() {
+            if (xhr.status >= 200 && xhr.status < 400) {
+                // On success, Flask redirects, and the browser follows.
+                // The final URL is in xhr.responseURL.
+                if (xhr.responseURL) {
+                    window.location.href = xhr.responseURL;
+                } else {
+                    // Fallback if responseURL is not available (e.g., for some error pages that don't redirect)
+                    // We can parse the response to see if there are flashed messages to display
+                    // For now, a simple redirect is fine.
+                    window.location.href = "{{ url_for('main.index') }}";
+                }
+            } else {
+                // Handle server-side validation errors or other issues
+                // A more advanced implementation would parse the response HTML
+                // and display the flashed messages without a full page reload.
+                alert('An error occurred during the upload. The page will now reload.');
+                window.location.reload();
+            }
+        });
+
+        xhr.addEventListener('error', function() {
+            alert('An unexpected error occurred. Please check your connection and try again.');
+            progressBar.style.display = 'none';
+        });
+
+        xhr.send(formData);
     });
 </script>
 {% endblock %}
