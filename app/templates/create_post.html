@@ -3,7 +3,7 @@
 
 {% block title %}{{ title if title else "Create Post" }}{% endblock %}
 
-{% block app_content %} {# Changed from content to app_content to match base.html #}
+{% block content %}
 <div class="container mt-4">
     <div class="row">
         <div class="col-md-8 offset-md-2 col-lg-6 offset-lg-3">
@@ -12,10 +12,8 @@
                 <div class="alert alert-info" role="alert">
                     You are posting in: <strong>{{ group_name }}</strong>
                 </div>
-                {# The group_id will be part of the action URL if it was in the GET request #}
             {% endif %}
 
-            {# Link to create a poll #}
             <div class="mb-3 text-center">
                 {% if group_id %}
                     <a href="{{ url_for('main.create_poll', group_id=group_id) }}" class="btn btn-outline-info">Create a Poll in {{ group_name }} Instead?</a>
@@ -25,9 +23,8 @@
             </div>
             <hr>
 
-            {# Using wtf.quick_form for consistency if desired, or keep manual rendering #}
             <form method="POST" action="{{ url_for('main.create_post', group_id=group_id if group_id else None) }}" enctype="multipart/form-data">
-                {{ form.hidden_tag() }} {# CSRF token #}
+                {{ form.hidden_tag() }}
 
                 <div class="form-group mb-3">
                     {{ form.body.label(class="form-label") }}
@@ -41,7 +38,7 @@
 
                 <div class="form-group mb-3">
                     {{ form.media_files.label(class="form-label") }}
-                    {{ form.media_files(class="form-control") }} {# Updated to media_files #}
+                    {{ form.media_files(class="form-control") }}
                     {% if form.media_files.errors %}
                          <div class="invalid-feedback d-block">
                             {% for error in form.media_files.errors %}{{ error }}{% endfor %}
@@ -81,7 +78,7 @@
                     {% endif %}
                 </div>
 
-                <div class="form-group" id="custom_list_select_div" style="display: none;"> {# Initially hidden #}
+                <div class="form-group" id="custom_list_select_div" style="display: none;">
                     {{ form.custom_friend_list_id.label(class="form-control-label") }}
                     {{ form.custom_friend_list_id(class="form-control form-control-lg") }}
                     {% if form.custom_friend_list_id.errors %}
@@ -95,7 +92,7 @@
 
                 <div class="form-group mb-3">
                     {{ form.alt_text.label(class="form-label") }}
-                    {{ form.alt_text(class="form-control", rows="2", placeholder="Describe your media for accessibility...") }} {# Updated placeholder #}
+                    {{ form.alt_text(class="form-control", rows="2", placeholder="Describe your media for accessibility...") }}
                     <small class="form-text text-muted">{{ form.alt_text.description }}</small>
                     {% if form.alt_text.errors %}
                         <div class="invalid-feedback d-block">
@@ -104,7 +101,7 @@
                     {% endif %}
                 </div>
 
-                <div class="form-group mb-3"> {# Added schedule_time field #}
+                <div class="form-group mb-3">
                     {{ form.schedule_time.label(class="form-control-label") }}
                     {{ form.schedule_time(class="form-control") }}
                     {% if form.schedule_time.errors %}
@@ -122,7 +119,10 @@
         </div>
     </div>
 </div>
+{% endblock %}
 
+{% block scripts %}
+{{ super() }}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         var privacyLevelSelect = document.getElementById('privacy_level');
@@ -132,7 +132,7 @@
         var customListDiv = document.getElementById('custom_list_select_div');
 
         function toggleCustomListDiv() {
-            if (privacyLevelSelect && customListDiv) { // Ensure elements exist
+            if (privacyLevelSelect && customListDiv) {
                 if (privacyLevelSelect.value === 'CUSTOM_LIST') {
                     customListDiv.style.display = 'block';
                 } else {
@@ -145,70 +145,13 @@
              privacyLevelSelect.addEventListener('change', toggleCustomListDiv);
              toggleCustomListDiv();
         }
-
-        // Placeholder for Flatpickr or other datetime picker initialization
-        // Example:
-        // flatpickr("input[name='schedule_time']", {
-        // enableTime: true,
-        // dateFormat: "Y-m-d H:i",
-        // });
-        // Ensure the actual library (e.g., Flatpickr) is included in your base template or page.
     });
-
-    const form = document.querySelector('form');
-    const progressBar = document.querySelector('.progress');
-    const progressBarInner = document.querySelector('.progress-bar');
-    const fileInput = document.querySelector('input[type="file"]');
-
-    form.addEventListener('submit', function(e) {
-        // Only use AJAX if files are selected
-        if (fileInput.files.length === 0) {
-            return; // Allow normal form submission
-        }
-
-        e.preventDefault();
-
-        const formData = new FormData(form);
-        const xhr = new XMLHttpRequest();
-
-        xhr.open('POST', form.action, true);
-
-        xhr.upload.addEventListener('progress', function(e) {
-            if (e.lengthComputable) {
-                const percentComplete = (e.loaded / e.total) * 100;
-                progressBar.style.display = 'block';
-                progressBarInner.style.width = percentComplete + '%';
-                progressBarInner.textContent = Math.round(percentComplete) + '%';
-            }
-        });
-
-        xhr.addEventListener('load', function() {
-            if (xhr.status >= 200 && xhr.status < 400) {
-                // On success, Flask redirects, and the browser follows.
-                // The final URL is in xhr.responseURL.
-                if (xhr.responseURL) {
-                    window.location.href = xhr.responseURL;
-                } else {
-                    // Fallback if responseURL is not available (e.g., for some error pages that don't redirect)
-                    // We can parse the response to see if there are flashed messages to display
-                    // For now, a simple redirect is fine.
-                    window.location.href = "{{ url_for('main.index') }}";
-                }
-            } else {
-                // Handle server-side validation errors or other issues
-                // A more advanced implementation would parse the response HTML
-                // and display the flashed messages without a full page reload.
-                alert('An error occurred during the upload. The page will now reload.');
-                window.location.reload();
-            }
-        });
-
-        xhr.addEventListener('error', function() {
-            alert('An unexpected error occurred. Please check your connection and try again.');
-            progressBar.style.display = 'none';
-        });
-
-        xhr.send(formData);
+</script>
+<script src="{{ url_for('static', filename='js/upload_progress.js') }}"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.querySelector('form');
+        initializeUploadProgress(form);
     });
 </script>
 {% endblock %}

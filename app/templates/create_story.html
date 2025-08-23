@@ -9,11 +9,11 @@
             <h2>Upload Your Story</h2>
             <hr>
             <form method="POST" enctype="multipart/form-data" novalidate>
-                {{ form.hidden_tag() }} {# CSRF token #}
+                {{ form.hidden_tag() }}
 
                 <div class="form-group mb-3">
                     {{ form.media_file.label(class="form-label") }}
-                    {{ form.media_file(class="form-control") }} {# Bootstrap 5 uses form-control for file inputs too #}
+                    {{ form.media_file(class="form-control") }}
                     {% if form.media_file.errors %}
                         <div class="invalid-feedback d-block">
                             {% for error in form.media_file.errors %}
@@ -21,6 +21,9 @@
                             {% endfor %}
                         </div>
                     {% endif %}
+                    <div class="progress mt-2" style="display: none;">
+                        <div class="progress-bar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                    </div>
                 </div>
 
                 <div class="form-group mb-3">
@@ -49,7 +52,7 @@
                     {% endif %}
                 </div>
 
-                <div class="form-group" id="custom_list_select_div_story" style="display: none;"> {# Initially hidden, unique ID #}
+                <div class="form-group" id="custom_list_select_div_story" style="display: none;">
                     {{ form.custom_friend_list_id.label(class="form-control-label") }}
                     {{ form.custom_friend_list_id(class="form-control form-control-lg") }}
                     {% if form.custom_friend_list_id.errors %}
@@ -61,7 +64,7 @@
                     {% endif %}
                 </div>
 
-                <div class="form-group mb-3"> {# Added schedule_time field #}
+                <div class="form-group mb-3">
                     {{ form.schedule_time.label(class="form-control-label") }}
                     {{ form.schedule_time(class="form-control") }}
                     {% if form.schedule_time.errors %}
@@ -80,22 +83,24 @@
         </div>
     </div>
 </div>
+{% endblock %}
 
+{% block scripts %}
+{{ super() }}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // Use a more specific selector if privacy_level field ID might not be unique globally
         var storyPrivacyLevelSelect = document.querySelector('form [name="privacy_level"]');
-        if (!storyPrivacyLevelSelect && document.getElementById('privacy_level')) { // Fallback for simple ID
+        if (!storyPrivacyLevelSelect && document.getElementById('privacy_level')) {
              storyPrivacyLevelSelect = document.getElementById('privacy_level');
-        } else if (!storyPrivacyLevelSelect) { // General fallback by name if ID is not 'privacy_level'
+        } else if (!storyPrivacyLevelSelect) {
              storyPrivacyLevelSelect = document.getElementsByName('privacy_level')[0];
         }
 
         var storyCustomListDiv = document.getElementById('custom_list_select_div_story');
 
         function toggleStoryCustomListDiv() {
-            if (storyPrivacyLevelSelect && storyCustomListDiv) { // Check if elements exist
-                if (storyPrivacyLevelSelect.value === 'CUSTOM_LIST') { // Use actual string value
+            if (storyPrivacyLevelSelect && storyCustomListDiv) {
+                if (storyPrivacyLevelSelect.value === 'CUSTOM_LIST') {
                     storyCustomListDiv.style.display = 'block';
                 } else {
                     storyCustomListDiv.style.display = 'none';
@@ -105,18 +110,15 @@
 
         if (storyPrivacyLevelSelect && storyCustomListDiv) {
             storyPrivacyLevelSelect.addEventListener('change', toggleStoryCustomListDiv);
-            toggleStoryCustomListDiv(); // Call on page load
-        } else {
-            // console.warn("Story privacy script: Could not find privacy_level select or custom_list_select_div_story.");
+            toggleStoryCustomListDiv();
         }
-
-        // Placeholder for Flatpickr or other datetime picker initialization
-        // Example:
-        // flatpickr("input[name='schedule_time']", {
-        // enableTime: true,
-        // dateFormat: "Y-m-d H:i",
-        // });
-        // Ensure the actual library (e.g., Flatpickr) is included in your base template or page.
+    });
+</script>
+<script src="{{ url_for('static', filename='js/upload_progress.js') }}"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.querySelector('form');
+        initializeUploadProgress(form);
     });
 </script>
 {% endblock %}
