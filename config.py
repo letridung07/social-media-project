@@ -15,7 +15,17 @@ class Config:
     AUDIO_UPLOAD_FOLDER_NAME = 'audio_uploads' # Name of the folder under static for audio
     MEDIA_UPLOAD_BASE_DIR = 'static' # Base directory for user-uploaded media (e.g. 'static' or 'uploads')
 
-    MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16 MB limit
+    MAX_CONTENT_LENGTH = 20 * 1024 * 1024  # 20 MB limit
+
+    # Granular file size limits
+    MAX_IMAGE_SIZE = 2 * 1024 * 1024      # 2 MB
+    MAX_VIDEO_SIZE = 15 * 1024 * 1024     # 15 MB
+    MAX_AUDIO_SIZE = 10 * 1024 * 1024     # 10 MB
+
+    # ClamAV configuration
+    CLAMAV_HOST = os.environ.get('CLAMAV_HOST', 'localhost')
+    CLAMAV_PORT = int(os.environ.get('CLAMAV_PORT', 3310))
+    CLAMAV_TIMEOUT = int(os.environ.get('CLAMAV_TIMEOUT', 30))
 
     # Flask-Mail configuration
     MAIL_SERVER = os.environ.get('MAIL_SERVER', 'smtp.googlemail.com')

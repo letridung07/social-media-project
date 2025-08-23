@@ -4,8 +4,8 @@
     <h1>Edit Post</h1>
     <div class="row">
         <div class="col-md-6">
-            <form method="POST" action="" enctype="multipart/form-data"> {# Changed action to "" #}
-                {{ form.hidden_tag() }} {# CSRF token #}
+            <form method="POST" action="" enctype="multipart/form-data">
+                {{ form.hidden_tag() }}
 
                 <div class="form-group">
                     {{ form.body.label(class="form-control-label") }}
@@ -17,7 +17,6 @@
                     {% endif %}
                 </div>
 
-                {# Display existing media items #}
                 <h5>Existing Media:</h5>
                 {% if post.media_items and post.media_items.count() > 0 %}
                     <div class="existing-media-gallery row mb-3">
@@ -28,7 +27,7 @@
                                     <img src="{{ url_for('static', filename=(config.MEDIA_ITEMS_UPLOAD_FOLDER + '/' + item.filename)) }}" alt="Media item {{ item.id }}" class="card-img-top" style="max-height: 150px; object-fit: cover;">
                                 {% elif item.media_type == 'video' %}
                                     <video width="100%" height="150" controls style="object-fit: cover;">
-                                        <source src="{{ url_for('static', filename=(config.MEDIA_ITEMS_UPLOAD_FOLDER + '/' + item.filename)) }}" type="video/mp4"> {# Adjust type based on actual video types you support #}
+                                        <source src="{{ url_for('static', filename=(config.MEDIA_ITEMS_UPLOAD_FOLDER + '/' + item.filename)) }}" type="video/mp4">
                                         Your browser does not support the video tag.
                                     </video>
                                 {% else %}
@@ -51,7 +50,6 @@
                 {% endif %}
                 <hr>
 
-                {# Field for uploading new media files #}
                 <div class="form-group">
                     {{ form.media_files.label(class="form-control-label") }}
                     {{ form.media_files(class="form-control-file") }}
@@ -62,6 +60,9 @@
                     {% else %}
                         <small class="form-text text-muted">Upload new images or videos. Selected files here will be added to the existing media. Mark existing items above for deletion.</small>
                     {% endif %}
+                    <div class="progress mt-2" style="display: none;">
+                        <div class="progress-bar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                    </div>
                 </div>
 
                 <div class="form-group mb-3">
@@ -79,7 +80,7 @@
 
                 <div class="form-group">
                     {{ form.privacy_level.label(class="form-control-label") }}
-                    {{ form.privacy_level(class="form-control form-control-lg", value=post.privacy_level) }} {# Ensure current value is selected #}
+                    {{ form.privacy_level(class="form-control form-control-lg", value=post.privacy_level) }}
                     {% if form.privacy_level.errors %}
                         <div class="invalid-feedback d-block">
                             {% for error in form.privacy_level.errors %}
@@ -91,7 +92,7 @@
                     {% endif %}
                 </div>
 
-                <div class="form-group" id="custom_list_select_div" style="display: none;"> {# Initially hidden #}
+                <div class="form-group" id="custom_list_select_div" style="display: none;">
                     {{ form.custom_friend_list_id.label(class="form-control-label") }}
                     {{ form.custom_friend_list_id(class="form-control form-control-lg") }}
                     {% if form.custom_friend_list_id.errors %}
@@ -104,12 +105,15 @@
                 </div>
 
                 <div class="form-group">
-                    {{ form.submit(class="btn btn-primary", value="Save Changes") }} {# Changed submit button text #}
+                    {{ form.submit(class="btn btn-primary", value="Save Changes") }}
                 </div>
             </form>
         </div>
     </div>
+{% endblock %}
 
+{% block scripts %}
+{{ super() }}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         var privacyLevelSelect = document.getElementById('privacy_level');
@@ -119,7 +123,7 @@
         var customListDiv = document.getElementById('custom_list_select_div');
 
         function toggleCustomListDiv() {
-            if (privacyLevelSelect && customListDiv) { // Ensure elements exist
+            if (privacyLevelSelect && customListDiv) {
                 if (privacyLevelSelect.value === 'CUSTOM_LIST') {
                     customListDiv.style.display = 'block';
                 } else {
@@ -132,6 +136,13 @@
              privacyLevelSelect.addEventListener('change', toggleCustomListDiv);
              toggleCustomListDiv();
         }
+    });
+</script>
+<script src="{{ url_for('static', filename='js/upload_progress.js') }}"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.querySelector('form');
+        initializeUploadProgress(form);
     });
 </script>
 {% endblock %}
