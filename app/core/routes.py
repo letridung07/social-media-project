@@ -1662,98 +1662,45 @@ ALLOWED_REACTIONS = {'like', 'love', 'haha', 'wow', 'sad', 'angry'}
 @login_required
 def react_to_post(post_id, reaction_type):
     post = Post.query.get_or_404(post_id)
-
     if reaction_type not in ALLOWED_REACTIONS:
-        flash('Invalid reaction type.', 'danger')
-        return redirect(request.referrer or url_for('main.index'))
+        return jsonify({'success': False, 'error': 'Invalid reaction type.'}), 400
 
     existing_reaction = Reaction.query.filter_by(user_id=current_user.id, post_id=post.id).first()
+
+    user_new_reaction_type = None
 
     if existing_reaction:
         if existing_reaction.reaction_type == reaction_type:
             # User clicked the same reaction again, so remove it (toggle off)
             db.session.delete(existing_reaction)
-            db.session.commit()
-            flash(f'Your reaction "{reaction_type}" has been removed.', 'success')
         else:
             # User changed their reaction
             existing_reaction.reaction_type = reaction_type
             existing_reaction.timestamp = get_current_utc()
-            db.session.commit()
-            flash(f'Your reaction has been updated to "{reaction_type}".', 'success')
-            # Notification logic for changed reaction can be added here if needed
+            user_new_reaction_type = reaction_type
     else:
         # New reaction
         new_reaction = Reaction(user_id=current_user.id, post_id=post.id, reaction_type=reaction_type)
         db.session.add(new_reaction)
-        # db.session.commit() # Commit will be done after potential points awarding and notifications
+        user_new_reaction_type = reaction_type
 
-        # Award points to the post author for receiving a new reaction
-        if post.author.id != current_user.id: # Don't award points if user reacts to their own post
-            points_for_reaction = 0
-            if reaction_type == 'like':
-                points_for_reaction = 2
-            else:
-                points_for_reaction = 3 # For other reactions like 'love', 'haha', etc.
+    db.session.commit()
 
-            action_name_for_reaction = f'receive_{reaction_type}_reaction'
-            # Gamification: Award points to post author for receiving a reaction (more for non-likes)
-            award_points(post.author, action_name_for_reaction, points_for_reaction, related_item=post)
+    # After commit, get the new counts
+    reaction_counts = {r_type: post.reaction_count(r_type) for r_type in ALLOWED_REACTIONS}
 
-        db.session.commit() # Commit reaction and any points/activity logs
-        flash(f'You reacted with "{reaction_type}" to the post!', 'success')
+    # Simplified notification and gamification for AJAX
+    if post.author.id != current_user.id:
+        socketio.emit('new_notification', {
+            'message': f'{current_user.username} reacted to your post.',
+            'post_id': post.id,
+        }, room=str(post.author.id))
 
-        # Notification for the post author (if not reacting to own post)
-        if post.author.id != current_user.id:
-            notification = Notification(
-                recipient_id=post.author.id,
-                actor_id=current_user.id,
-                type=f'reaction_{reaction_type}', # More specific notification type
-                related_post_id=post.id
-            )
-            db.session.add(notification)
-            db.session.commit() # Commit notification separately or ensure it's part of a larger transaction
-            socketio.emit('new_notification', {
-                'message': f'{current_user.username} reacted with "{reaction_type}" to your post.',
-                'type': f'reaction_{reaction_type}',
-                'reaction_type': reaction_type,
-                'actor_username': current_user.username,
-                'post_id': post.id,
-                'post_author_username': post.author.username
-            }, room=str(post.author.id))
-
-            # Milestone notifications specifically for 'like' reactions
-            if reaction_type == 'like':
-                current_like_count = post.reaction_count('like') # Use new method
-                for milestone_val in LIKE_MILESTONES:
-                    if current_like_count == milestone_val:
-                        # Check if a milestone notification of this type already exists for this post for this author
-                        # To prevent duplicate notifications if something causes a recount or re-trigger
-                        existing_milestone_notif = Notification.query.filter_by(
-                            recipient_id=post.author.id, # Should be post.author.id
-                            related_post_id=post.id,
-                            type=f'like_milestone_{milestone_val}'
-                        ).first()
-                        if not existing_milestone_notif:
-                            milestone_notif = Notification(
-                                recipient_id=post.author.id,
-                                actor_id=current_user.id, # The user whose 'like' caused the milestone
-                                type=f'like_milestone_{milestone_val}',
-                                related_post_id=post.id
-                            )
-                            db.session.add(milestone_notif)
-                            db.session.commit() # Commit milestone notification
-                            socketio.emit('new_notification', {
-                                'message': f"Your post '{post.body[:30]}{'...' if len(post.body) > 30 else ''}' reached {milestone_val} likes!",
-                                'type': f'like_milestone_{milestone_val}',
-                                'actor_username': current_user.username, # Or system/generic for milestones
-                                'post_id': post.id,
-                                'post_author_username': post.author.username,
-                                'milestone_count': milestone_val
-                            }, room=str(post.author.id))
-
-
-    return redirect(request.referrer or url_for('main.index'))
+    return jsonify({
+        'success': True,
+        'reaction_counts': reaction_counts,
+        'new_reaction_type': user_new_reaction_type
+    })
 
 
 @main.route('/bookmark/<int:post_id>', methods=['POST'])

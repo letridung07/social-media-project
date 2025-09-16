@@ -10,7 +10,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_babel import Babel, lazy_gettext as _l, refresh # Standard import
 from flask import g, session, request
-# from bootstrap_flask import Bootstrap
+from bootstrap_flask import Bootstrap
 from config import Config
 # from app.scheduler import init_scheduler
 
@@ -22,6 +22,7 @@ login_manager = LoginManager()
 socketio = SocketIO()
 mail = Mail()
 migrate = Migrate()
+bootstrap = Bootstrap()
 
 limiter = Limiter(
     key_func=get_remote_address,
@@ -70,7 +71,7 @@ def create_app(config_class=Config):
     migrate.init_app(app, db)
     cache.init_app(app, config={'CACHE_TYPE': 'SimpleCache'})
     limiter.init_app(app)
-    # bootstrap.init_app(app)
+    bootstrap.init_app(app)
 
     from app.core.routes import main as main_blueprint
     app.register_blueprint(main_blueprint)

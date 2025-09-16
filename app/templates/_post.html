@@ -181,28 +181,24 @@
             {% set current_reaction = post.get_reaction_by_user(current_user) if current_user.is_authenticated else None %}
             {% set reaction_types = {'like': '👍', 'love': '❤️', 'haha': '😂', 'wow': '😮', 'sad': '😢', 'angry': '😠'} %}
 
-            <div class="d-flex align-items-center flex-wrap">
+            <div class="d-flex align-items-center flex-wrap reaction-counts-wrapper" data-post-id="{{ post.id }}">
                 {# Display reaction counts #}
                 {% for r_type, r_emoji in reaction_types.items() %}
                     {% set count = post.reaction_count(reaction_type=r_type) %}
-                    {% if count > 0 %}
-                        <span class="badge badge-pill badge-light mr-1 mb-1 reaction-count-pill">
-                            {{ r_emoji }} {{ count }}
-                        </span>
-                    {% endif %}
+                    <span class="badge badge-pill badge-light mr-1 mb-1 reaction-count-pill" data-reaction-type="{{ r_type }}" style="{{ 'display: none;' if count == 0 else '' }}">
+                        {{ r_emoji }} <span class="reaction-count-number">{{ count }}</span>
+                    </span>
                 {% endfor %}
             </div>
 
             {% if current_user.is_authenticated %}
-                <div class="reaction-buttons mt-2">
+                <div class="reaction-buttons mt-2" data-post-id="{{ post.id }}">
+                    <input type="hidden" class="csrf_token" name="csrf_token" value="{{ csrf_token() if csrf_token else '' }}"/>
                     {% for r_type, r_emoji in reaction_types.items() %}
-                        <form action="{{ url_for('main.react_to_post', post_id=post.id, reaction_type=r_type) }}" method="post" class="d-inline">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token else '' }}"/>
-                            <button type="submit" class="btn btn-sm {{ 'btn-primary' if current_reaction and current_reaction.reaction_type == r_type else 'btn-outline-secondary' }} mr-1 mb-1 reaction-button"
-                                    title="{{ r_type|capitalize }}">
-                                {{ r_emoji }}
-                            </button>
-                        </form>
+                        <button type="button" class="btn btn-sm {{ 'btn-primary' if current_reaction and current_reaction.reaction_type == r_type else 'btn-outline-secondary' }} mr-1 mb-1 reaction-button"
+                                title="{{ r_type|capitalize }}" data-reaction-type="{{ r_type }}">
+                            {{ r_emoji }}
+                        </button>
                     {% endfor %}
                 </div>
             {% else %}
