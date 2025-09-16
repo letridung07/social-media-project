@@ -6,7 +6,7 @@ from PIL import Image
 from werkzeug.utils import secure_filename
 import re
 import magic
-import clamd
+import pyclamd as clamd
 
 try:
     from mutagen.mp3 import MP3

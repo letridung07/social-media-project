@@ -2,12 +2,13 @@ import unittest
 from app import create_app, db
 from app.core.models import User # Assuming User model might have a locale field later
 from flask import session, get_flashed_messages, current_app
-from flask_babel import gettext, lazy_gettext as _l
+from flask_babel import gettext, lazy_gettext as _l, refresh
 from app.core.forms import LoginForm # To test form label translation
+from config import TestingConfig
 
 class I18nTestCase(unittest.TestCase):
     def setUp(self):
-        self.app = create_app('testing')
+        self.app = create_app(TestingConfig)
         # Ensure LANGUAGES is set for testing config
         self.app.config['LANGUAGES'] = {'en': 'English', 'es': 'Español'}
         self.app.config['BABEL_DEFAULT_LOCALE'] = 'en'

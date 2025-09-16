@@ -11,7 +11,7 @@ from flask import current_app
 from app.utils.helpers import get_current_utc # Import the centralized helper
 
 if TYPE_CHECKING:
-from app.core.models import User # User for type hinting
+    from app.core.models import User # User for type hinting
 
 if TYPE_CHECKING:
     from app.core.models import Post

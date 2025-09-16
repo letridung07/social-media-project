@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/app/run.py", line 1, in <module>
+    from app import create_app, db, socketio
+  File "/app/app/__init__.py", line 13, in <module>
+    from bootstrap_flask import Bootstrap
+ModuleNotFoundError: No module named 'bootstrap_flask'
